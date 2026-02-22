@@ -67,10 +67,13 @@ DB_NAME=nori_app
 
 ### Arrancar el Servidor (Local)
 
+Nori incluye un CLI interactivo para desarrollo rápido con Hot Reloading de plantillas y servidor.
+
 ```bash
-cd rootsystem/application
-uvicorn asgi:app --reload --host 0.0.0.0 --port 8000
+python3 nori.py serve
 ```
+
+*(Alternativamente, puedes ejecutar la aplicación manualmente: `cd rootsystem/application && uvicorn asgi:app --reload --host 0.0.0.0 --port 8000`)*
 
 ### Arrancar con Docker (Alternativa)
 
@@ -216,27 +219,25 @@ nori/
 ├── requirements.txt                 ← Dependencias Python
 ├── tests/                           ← Tests E2E y de API (httpx + SQLite en memoria)
 │   ├── conftest.py                  ← Fixtures: app ASGI, DB en memoria, client async
-│   ├── test_api/test_auth.py        ← Tests de endpoints de autenticacion
+│   ├── test_api/test_auth.py        ← Tests de endpoints
 │   └── test_core/                   ← Tests unitarios de core (collection, validation)
 │
+├── nori.py                          ← Nori Artisan CLI (make:controller, make:model, serve)
 └── rootsystem/
     ├── static/                      ← Archivos estaticos (CSS, JS, imagenes)
     ├── templates/                   ← Vistas Jinja2
     │   ├── base.html                ← Layout base con nav
-    │   ├── 500.html                 ← Pagina de error interno (produccion)
-    │   ├── auth/                    ← Login, registro, perfil
-    │   └── product/                 ← Listado, detalle, formulario
+    │   ├── 404.html/500.html        ← Paginas de error (produccion)
+    │   └── home.html                ← Landing page
     └── application/
         ├── asgi.py                  ← Entry point ASGI, middleware stack, error handler
         ├── settings.py              ← Configuracion (DB, debug, rutas de templates)
         ├── routes.py                ← Rutas con nombres, agrupadas con Mount
         ├── models/                  ← Modelos Tortoise ORM
-        │   ├── user.py              ← User (id, name, email, password, level, status)
-        │   └── product.py           ← Product (id, name, price, status)
+        │   └── __init__.py          ← Registro central de Modelos
         ├── modules/                 ← Controladores (clases con metodos por accion)
-        │   ├── auth.py              ← Login, logout, registro, perfil
-        │   ├── page.py              ← Paginas estaticas (home)
-        │   └── product.py           ← CRUD de productos
+        │   ├── echo.py              ← Demo de WebSockets
+        │   └── page.py              ← Paginas estaticas (home)
         └── core/                    ← Motor del framework
             ├── jinja.py             ← Instancia Jinja2Templates + globals
             ├── logger.py            ← Logger centralizado (nori.*)
@@ -247,6 +248,7 @@ nori/
             │   ├── csrf.py          ← Middleware CSRF + helpers
             │   └── decorators.py    ← @login_required, @require_role
             ├── http/
+            │   ├── inject.py        ← Decorador @inject para Inyección de Dependencias
             │   └── validation.py    ← Validacion declarativa pipe-separated
             └── mixins/
                 ├── model.py         ← NoriModelMixin (to_dict)
@@ -263,15 +265,7 @@ Todas las rutas tienen nombre para reversing con `request.url_for()`:
 | Metodo | Ruta | Nombre | Descripcion |
 |---|---|---|---|
 | `GET` | `/` | `home` | Pagina de inicio |
-| `GET, POST` | `/login` | `login` | Formulario y procesamiento de login |
-| `POST` | `/logout` | `logout` | Cierre de sesion (POST por seguridad CSRF) |
-| `GET, POST` | `/register` | `register` | Formulario y procesamiento de registro |
-| `GET` | `/profile` | `profile` | Perfil del usuario autenticado |
-| `GET` | `/products/` | `product_list` | Listado paginado de productos |
-| `GET, POST` | `/products/create` | `product_create` | Formulario y creacion |
-| `GET` | `/products/{id}` | `product_show` | Detalle de producto |
-| `GET, POST` | `/products/{id}/edit` | `product_edit` | Formulario y edicion |
-| `POST` | `/products/{id}/delete` | `product_delete` | Eliminacion de producto |
+| `WS` | `/ws/echo` | `ws_echo` | Conexión WebSocket de pruebas |
 
 ---
 
@@ -295,13 +289,23 @@ Nori está documentado en un formato modular para que encuentres rápidamente lo
 
 ---
 
-## Agregar un Nuevo Modulo
+## Nori CLI y Módulos Nuevos
 
-1. **Modelo**: Crea tu entidad en `models/` y registrala en `models/__init__.py` y en `settings.TORTOISE_ORM['apps']['models']['models']`.
-2. **Controlador**: Crea una clase en `modules/` con metodos async por accion.
-3. **Rutas**: Instancia el controlador en `routes.py` y monta las rutas con `name=` para reversing.
-4. **Templates**: Disena las vistas en `templates/`.
-5. **Tests**: Agrega tests en la carpeta unificada `tests/` (por ejemplo, unitarios en `tests/test_core/` o E2E en `tests/test_api/`).
+Nori incluye su propio gestor por consola en la raíz para agilizar tu programación ("Nori Artisan"):
+
+1. **Generar Modelo**: `python3 nori.py make:model Category`. Esto creará el esqueleto auto-poblado en la carpeta `models/`. (Recuerda registrar el import en `models/__init__.py`).
+2. **Generar Controlador**: `python3 nori.py make:controller Category`. Generará tu Controlador en base vacía en `modules/`.
+3. **Rutas e IO**: Instancia tus controladores listos en `routes.py` y enlaza tus vistas en `templates/`.
+4. **Inyección de Dependencias (@inject)**: Olvídate de extraer diccionarios de request manualmente. Usa `@inject()` arriba del método de tu controlador y define los parámetros con *Type Hints* nativos:
+   ```python
+   from core.http.inject import inject
+
+   @inject()
+   async def create(self, request, form: dict, user_id: int):
+       # user_id automáticamente extraído de ?user_id=X o del path variable /user/{user_id}
+       # form automáticamente despachado y convertido en dict desde await request.form()
+       pass
+   ```
 
 ---
 
