@@ -1,84 +1,84 @@
-# Plantillas y Frontend (Jinja2)
+# Templates and Frontend (Jinja2)
 
-Nori utiliza el sistema de templates **Jinja2** estándar de la industria. Cada ruta puede responder pintando un archivo HTML con diccionarios contextuales variables servidos desde el controlador.
+Nori uses the industry-standard **Jinja2** template system. Each route can respond by rendering an HTML file with variable contextual dictionaries served from the controller.
 
-La jerarquía base reside en la carpeta general del framework `/rootsystem/templates/`.
+The base hierarchy resides in the general framework folder `/rootsystem/templates/`.
 
-## Herencias y Bloques 
+## Inheritance and Blocks 
 
-Al igual que Blade (Laravel) o Twig (Symfony), los archivos Jinja2 recomiendan operar en herencias `base.html` e iterar variables hijo `{% extends %}`.
+Like Blade (Laravel) or Twig (Symfony), Jinja2 files recommend operating on `base.html` inheritance and iterating child variables `{% extends %}`.
 
-**`base.html` (Layout Base)**:
-Construye la envolvente del portal, con *placeholders* titulados llamados `{% block %}`:
+**`base.html` (Base Layout)**:
+Builds the portal wrapper, with titled *placeholders* called `{% block %}`:
 ```html
 <!DOCTYPE html>
-<html lang="es">
+<html lang="en">
 <head>
     <title>{% block title %}Nori App{% endblock %}</title>
-    <!-- Tus Inyecciones CSS Custom aquí -->
+    <!-- Your Custom CSS Injections here -->
     {% block head %}{% endblock %} 
 </head>
 <body>
     <nav>...</nav>
 
     <main>
-        <!-- Tu Contenido Hijo se renderiza aquí -->
+        <!-- Your Child Content is rendered here -->
         {% block content %}{% endblock %}
     </main>
 </body>
 </html>
 ```
 
-**Hijo / View HTML (`home.html`)**:
-Inicia inyectando el dictámen `extends` en la línea uno y satura sus propios overrides de contexto a voluntad:
+**Child / HTML View (`home.html`)**:
+Starts by injecting the `extends` directive on line one and saturates its own context overrides at will:
 
 ```html
 {% extends "base.html" %}
 
-{% block title %}Dashboard Principal{% endblock %}
+{% block title %}Main Dashboard{% endblock %}
 
 {% block content %}
-    <h1>Listado de Clientes</h1>
-    <!-- Más HTML... -->
+    <h1>Client List</h1>
+    <!-- More HTML... -->
 {% endblock %}
 ```
 
-## Variables, Bucles y Condicionales
+## Variables, Loops, and Conditionals
 
-Jinja2 provee una lógica mínima para renderizado de variables dinámicas transferidas por tu controlador, usando las llaves dobles `{{ variable }}` y bloques cerrados para if/for `{% instruccion %}`.
+Jinja2 provides minimal logic for rendering dynamic variables transferred by your controller, using double braces `{{ variable }}` and enclosed blocks for if/for `{% instruction %}`.
 
 ### If / Else
 ```html
 {% if request.session.get('user_id') %}
-    <p>¡Bienvenido Administrador!</p>
+    <p>Welcome Administrator!</p>
 {% else %}
-    <a href="/login">Inicia Sesión</a>
+    <a href="/login">Log In</a>
 {% endif %}
 ```
 
-*(Importante: Puedes notar que la variable global de Starlette Request viaja siempre pre-inyectada por Nori. No es necesario re-exportarla del controlador y puede usarse de inmediato, p/ej `request.url.path` o `request.session`).*
+*(Important: You might notice that the global Starlette Request variable always travels pre-injected by Nori. It is not necessary to re-export it from the controller and can be used immediately, e.g. `request.url.path` or `request.session`).*
 
-### Bucles For (Ciclos Colección o Querysets)
+### For Loops (Collection Cycles or Querysets)
 ```html
 <ul>
-    {% for usuario in total_usuarios %}
-        <li><a href="/user/{{ usuario.id }}">{{ usuario.name }}</a></li>
+    {% for user in total_users %}
+        <li><a href="/user/{{ user.id }}">{{ user.name }}</a></li>
     {% else %}
-        <li>La lista está vacía — no hay usuarios registrados.</li>
+        <li>The list is empty — no registered users.</li>
     {% endfor %}
 </ul>
 ```
 
-### URLs y Links Dinámicos
-Llamando `url_for` sobre el componente Request.
+### URLs and Dynamic Links
+Calling `url_for` on the Request component.
 
 ```html
-<a href="{{ request.url_for('editar_cliente', cliente_id=123) }}">Click para Editar</a>
+<a href="{{ request.url_for('edit_client', client_id=123) }}">Click to Edit</a>
 ```
 
-## Archivos Estáticos Nativo (StaticFiles)
+## Native Static Files (StaticFiles)
 
-Cualquier archivo css, javascript, logotipo svg o mp4 de multimedia que no necesite compilación debería copiarse puro en `rootsystem/static/`.
+Any css, javascript file, svg logo, or mp4 multimedia that does not need compilation should be copied purely into `rootsystem/static/`.
 
 ```
 rootsystem/
@@ -88,17 +88,17 @@ rootsystem/
         images/logo_nori.png
 ```
 
-Nori expone el tag estático frontalmente sin rutas abstractas innecesarias:
+Nori exposes the static tag positionally without unnecessary abstract routes:
 ```html
-<!-- En base.html, dentro de <head> -->
+<!-- In base.html, inside <head> -->
 <link rel="stylesheet" href="/static/css/style.css">
 
-<!-- Renderizado de Imágenes -->
-<img src="/static/images/logo_nori.png" alt="Logotipo Startup">
+<!-- Image Rendering -->
+<img src="/static/images/logo_nori.png" alt="Startup Logo">
 ```
 
 ## Custom Error Pages
 
-Al pasar la configuración `.env` de Nori a `DEBUG=false` en un servidor de Producción, tu sitio ocultará los Interactive Exception Tracebacks arrojando y compilando instantáneamente los planteles de la carpeta Raiz de Templates (`404.html` para un "Not Found" o URLs falsas, y `500.html` protegiendo crashes inesperados de base de datos contra los hackers).
+By switching Nori's `.env` configuration to `DEBUG=false` on a Production server, your site will hide Interactive Exception Tracebacks, instantly throwing and compiling the templates from the Root Templates folder (`404.html` for a "Not Found" or fake URLs, and `500.html` protecting unexpected database crashes from hackers).
 
-Su implementación no difiere de un HTML normal extendido de base con el fin de retener intacto y pulcro el look de tu aplicación nativa mientras proteges su estado de crash (Ocultándolo al usuario final y renderizando su propio dashboard intacto de emergencia).
+Their implementation does not differ from a normal base-extended HTML in order to keep the look of your native application intact and neat while protecting its crash state (Hiding it from the end user and rendering your own intact emergency dashboard).

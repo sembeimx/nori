@@ -10,8 +10,8 @@ _builtin_max = max
 
 class NoriCollection(list[T]):
     """
-    Lista con superpoderes. Envuelve resultados de Tortoise
-    para proveer la misma API que Collection de Nori Engine.
+    List with superpowers. Wraps Tortoise results
+    to provide the same API as Nori Engine's Collection.
     """
 
     def first(self) -> T | None:
@@ -24,12 +24,12 @@ class NoriCollection(list[T]):
         return len(self) == 0
 
     def pluck(self, key: str) -> list[Any]:
-        """Extraer valores de un campo."""
+        """Extract values from a field."""
         return [getattr(item, key, item.get(key) if isinstance(item, dict) else None)
                 for item in self]
 
     def where(self, key: str, operator_or_value: Any = '__sentinel__', value: Any = '__sentinel__') -> NoriCollection[T]:
-        """Filtrar en memoria con operadores."""
+        """Filter in-memory with operators."""
         def _get_val(item: Any) -> Any:
             return getattr(item, key, item.get(key) if isinstance(item, dict) else None)
 
@@ -99,11 +99,11 @@ class NoriCollection(list[T]):
         return _builtin_max(vals) if vals else None
 
     def to_list(self) -> list[Any]:
-        """Convierte a lista de dicts (serializable a JSON)."""
+        """Convert to list of dicts (JSON serializable)."""
         result: list[Any] = []
         for i in self:
             if hasattr(i, '__dict__'):
-                # Tortoise model: excluir campos internos
+                # Tortoise model: exclude internal fields
                 d = {k: v for k, v in i.__dict__.items() if not k.startswith('_')}
                 result.append(d)
             elif isinstance(i, dict):
@@ -113,13 +113,13 @@ class NoriCollection(list[T]):
         return result
 
     def to_dict(self, key_field: str) -> dict[Any, T]:
-        """Indexar por campo: {pk: model}."""
+        """Index by field: {pk: model}."""
         return {getattr(i, key_field): i for i in self}
 
 
 def collect(data: Iterable[T]) -> NoriCollection[T]:
     """
-    Helper para convertir cualquier iterable a NoriCollection.
+    Helper to convert any iterable to NoriCollection.
 
         users = collect(await User.all())
         names = users.pluck('name')

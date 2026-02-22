@@ -1,49 +1,49 @@
-# Formularios, CSRF y Validación
+# Forms, CSRF and Validation
 
-Nori cuenta con un agresivo motor de validación declarativa (inspirado al 100% en el sistema Pipe-Separated de Laravel) y un ecosistema nativo contra vulnerabilidades CSRF en los envíos de Estado.
+Nori features an aggressive declarative validation engine (100% inspired by Laravel's Pipe-Separated system) and a native ecosystem against CSRF vulnerabilities in State submissions.
 
-## Protección CSRF Obligatoria
+## Mandatory CSRF Protection
 
-Toda respuesta de servidor de un Controlador Nori que emita un Formulario con un action en método `POST` debe obligadamente despachar por el diccionario de contexto la etiqueta de seguridad hacia Jinja2.
+Every server response from a Nori Controller that issues a Form with a `POST` method action must mandatorily dispatch the security tag to Jinja2 via the context dictionary.
 
 ```python
 from core.auth.csrf import csrf_field
 
-# Renderizando mi html GET vacío al visitante
-return templates.TemplateResponse(request, 'auth/miform.html', {
+# Rendering my empty GET html to the visitor
+return templates.TemplateResponse(request, 'auth/myform.html', {
     'csrf_field': csrf_field(request.session)
 })
 ```
 
-En el respectivo HTML, usarás la etiqueta global, que inyectará en tiempo real el input `hidden` del Hash Dinámico.
+In the respective HTML, you will use the global tag, which will inject the `hidden` input of the Dynamic Hash in real time.
 
 ```html
 <form method="POST">
-    {{ csrf_field|safe }}  <!-- No olvides el |safe para rendedizar el TAG -->
+    {{ csrf_field|safe }}  <!-- Don't forget the |safe to render the TAG -->
     
-    <label>Usuario</label>
+    <label>User</label>
     <input type="text" name="usr">
     
-    <button type="submit">Enviar</button>
+    <button type="submit">Send</button>
 </form>
 ```
 
-Si el servidor detecta que en el archivo de Rutas el Endpoint `miform` se envía por `POST`, e intuye omitido u obsoleto el `_csrf_token` oculto, detendrá en seco la ejecución protegiendo tus esquemas de Base de Datos y devolviendo `403 Forbidden` JSON/HTML de rechazo inminente.
+If the server detects that in the Routes file the `myform` Endpoint is sent via `POST`, and infers the hidden `_csrf_token` is omitted or obsolete, it will halt execution immediately protecting your Database schemas and returning `403 Forbidden` JSON/HTML of imminent rejection.
 
-## Validación Declarativa Pipe-Separated (`validate`)
+## Pipe-Separated Declarative Validation (`validate`)
 
-Al capturar diccionarios form en `request.form()` tu controlador se delega al validador genérico, pasándole las reglas con cadenas delimitadas por Pipes `|`.
+By capturing form dictionaries in `request.form()`, your controller delegates them to the generic validator, passing the rules with strings delimited by Pipes `|`.
 
 ```python
 from core.http.validation import validate
 
 async def process_form(self, request: Request):
     
-    # 1. Obtenemos el diccionario entero enviado desde Jinja Form
+    # 1. We get the entire dictionary sent from the Jinja Form
     raw_form = dict(await request.form())
     
-    # 2. Validación central e inyección del esquema de fallas
-    errores = validate(raw_form, {
+    # 2. Central validation and injection of the failure schema
+    errors = validate(raw_form, {
         'username': 'required|min:4|max:20',
         'email': 'required|email|max:255',
         'password': 'required|min:8',
@@ -53,39 +53,39 @@ async def process_form(self, request: Request):
     })
     
     # 3. Decision Tree
-    if errores:
-        # Repoblamos el form actual incluyendo los strings pre-validados.
-        return templates.TemplateResponse(request, 'miform.html', {
+    if errors:
+        # We repopulate the current form including the pre-validated strings.
+        return templates.TemplateResponse(request, 'myform.html', {
             'csrf_field': csrf_field(request.session),
-            'errors': errores,
-            'usuarioname_enviado': raw_form.get('username', '')
+            'errors': errors,
+            'sent_username': raw_form.get('username', '')
         })
 
-    # Si todo validó correctamente, operamos a base de datos.
+    # If everything validated correctly, we proceed to the database.
 ```
 
-### Reglas Incluidas Nativas
+### Native Included Rules
 
-| Regla Declarada | Función Operativa |
+| Declared Rule | Operational Function |
 | :---: | :--- |
-| `required` | Bloquea strings vacíos o parámetros Keys omitidos en envío del Request Formulario. |
-| `min:N` | Establece un Count limitante Límite de carácteres menor a `N`. |
-| `max:N` | Acota que el string no desborde con Overflow `N`. |
-| `email` | RegEx de verificación estricta oficial Email String (`name@domain.tld`). |
-| `numeric` | Admite Integer y Decimales nativos parseables de la Key en el diccionario Web. |
-| `matches:campo_b` | Cross-check de valididad total equitativo (Ej `matches:password_antigua`). |
-| `in:op,op2` | Forzamiento de Enums Estáticos de Opciones delimitados por CSV (Ej: `in:activo,vetado,suspendido`). |
+| `required` | Blocks empty strings or omitted Key parameters in Form Request submission. |
+| `min:N` | Sets a limiting Count Limit of characters less than `N`. |
+| `max:N` | Ensures the string does not Overflow `N`. |
+| `email` | Strict verification RegEx for official Email String (`name@domain.tld`). |
+| `numeric` | Admits native parseable Integers and Decimals from the Web dictionary Key. |
+| `matches:field_b` | Full equitable validity cross-check (E.g. `matches:old_password`). |
+| `in:op,op2` | Forcing Static Enums of Options delimited by CSV (E.g.: `in:active,vetoed,suspended`). |
 
-### Template: Mostrando Errores Visuales
-Dentro de Jinja2, dado que has alimentado al template nuevamente con un diccionario `{campo: ['error 1', 'error 2']}`, basta por revisar la Key.
+### Template: Showing Visual Errors
+Inside Jinja2, since you have fed the template back with a dictionary `{field: ['error 1', 'error 2']}`, you just need to check the Key.
 
 ```html
 <form method="POST">
     {{ csrf_field|safe }}
     
-    <input name="email" value="{{ usr_correo|default('') }}" />
+    <input name="email" value="{{ usr_email|default('') }}" />
     {% if errors.email %}
-        <!-- Mostrando la falla principal del bloque iterado Array Index 0 -->
+        <!-- Showing the main failure of the iterated Array Index 0 block -->
         <span class="text-danger">{{ errors.email[0] }}</span> 
     {% endif %}
     

@@ -7,7 +7,7 @@ from tortoise.queryset import QuerySet
 
 
 class SoftDeleteQuerySet(QuerySet):
-    """QuerySet que auto-excluye registros con deleted_at."""
+    """QuerySet that auto-excludes records with deleted_at."""
 
     def _clone(self) -> SoftDeleteQuerySet:
         qs = super()._clone()
@@ -16,27 +16,27 @@ class SoftDeleteQuerySet(QuerySet):
 
 
 class SoftDeleteManager(Manager):
-    """Manager predeterminado: solo registros activos."""
+    """Default Manager: only active records."""
 
     def get_queryset(self) -> SoftDeleteQuerySet:
         return SoftDeleteQuerySet(self._model).filter(deleted_at__isnull=True)
 
 
 class TrashedManager(Manager):
-    """Manager para solo registros eliminados."""
+    """Manager for deleted records only."""
 
     def get_queryset(self) -> SoftDeleteQuerySet:
         return SoftDeleteQuerySet(self._model).filter(deleted_at__isnull=False)
 
 
 class AllObjectsManager(Manager):
-    """Manager sin filtros (incluye todo)."""
+    """Manager without filters (includes everything)."""
     pass
 
 
 class NoriSoftDeletes(Model):
     """
-    Mixin para soft deletes en Tortoise ORM.
+    Mixin for soft deletes in Tortoise ORM.
 
         class Post(NoriSoftDeletes):
             title = fields.CharField(max_length=200)
@@ -47,50 +47,50 @@ class NoriSoftDeletes(Model):
         post = await Post.get(id=1)
         await post.delete()              # SET deleted_at = NOW()
         await post.restore()             # SET deleted_at = NULL
-        await post.force_delete()        # DELETE real
+        await post.force_delete()        # real DELETE
 
-        # Queries auto-excluyen soft-deleted
-        posts = await Post.filter().all()                        # solo activos
-        posts = await Post.with_trashed().all()                  # todos
-        posts = await Post.only_trashed().all()                  # solo eliminados
+        # Queries auto-exclude soft-deleted
+        posts = await Post.filter().all()                        # only active
+        posts = await Post.with_trashed().all()                  # all
+        posts = await Post.only_trashed().all()                  # only deleted
     """
 
     deleted_at = fields.DatetimeField(null=True, default=None)
 
     # Managers
-    objects: SoftDeleteManager = SoftDeleteManager()         # default: excluye eliminados
-    all_objects: AllObjectsManager = AllObjectsManager()     # incluye todo
-    trashed: TrashedManager = TrashedManager()               # solo eliminados
+    objects: SoftDeleteManager = SoftDeleteManager()         # default: excludes deleted
+    all_objects: AllObjectsManager = AllObjectsManager()     # includes everything
+    trashed: TrashedManager = TrashedManager()               # only deleted
 
     class Meta:
         abstract = True
 
     async def delete(self, using_db: object = None) -> None:
-        """Soft delete: marca deleted_at con timestamp actual."""
+        """Soft delete: marks deleted_at with current timestamp."""
         from tortoise.timezone import now
         self.deleted_at = now()
         await self.save(update_fields=['deleted_at'], using_db=using_db)
 
     async def restore(self) -> None:
-        """Restaura un registro soft-deleted."""
+        """Restores a soft-deleted record."""
         self.deleted_at = None
         await self.save(update_fields=['deleted_at'])
 
     async def force_delete(self, using_db: object = None) -> None:
-        """Hard delete: elimina permanentemente de la DB."""
+        """Hard delete: permanently removes from the DB."""
         await super().delete(using_db=using_db)
 
     @property
     def is_trashed(self) -> bool:
-        """True si el registro esta soft-deleted."""
+        """True if the record is soft-deleted."""
         return self.deleted_at is not None
 
     @classmethod
     def with_trashed(cls) -> SoftDeleteQuerySet:
-        """Retorna QuerySet que incluye registros eliminados."""
+        """Returns QuerySet that includes deleted records."""
         return cls.all_objects.get_queryset()
 
     @classmethod
     def only_trashed(cls) -> SoftDeleteQuerySet:
-        """Retorna QuerySet con solo registros eliminados."""
+        """Returns QuerySet with only deleted records."""
         return cls.trashed.get_queryset()

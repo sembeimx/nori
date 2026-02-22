@@ -1,42 +1,42 @@
 # Nori
 
-Un *boilerplate* web asíncrono construido sobre **Starlette** y **Tortoise ORM** que preserva la ergonomía de desarrollo rápida inspirada en frameworks como Laravel o Nori Engine: estructura de archivos plana, controladores basados en clases, validación declarativa por pipes (`required|email|max:255`), decoradores de autenticación, JWT, CSRF propio, un agrupador de colecciones ágil (`NoriCollection`), WebSockets, Rate Limiting distribuido (Redis), y utilidades nativas para envíos de Email y subida de archivos.
+An asynchronous web boilerplate built on **Starlette** and **Tortoise ORM** that preserves the fast, ergonomic development experience inspired by frameworks like Laravel or Nori Engine: a flat file structure, class-based controllers, declarative pipe-separated validation (`required|email|max:255`), authentication decorators, JWT, native CSRF, an agile collections wrapper (`NoriCollection`), WebSockets, distributed Rate Limiting (Redis), and native utilities for Email sending and file uploads.
 
 ---
 
-## Puesta en Marcha
+## Getting Started
 
-### Requisitos
+### Requirements
 
-- Python 3.9 o superior
-- Una base de datos: **MySQL**, **PostgreSQL** o **SQLite**
+- Python 3.9 or higher
+- A database: **MySQL**, **PostgreSQL** or **SQLite**
 
-### Instalacion
+### Installation
 
 ```bash
-git clone <tu-repo> && cd nori
+git clone <your-repo> && cd nori
 
-# Entorno virtual
+# Virtual environment
 python3 -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
 
-# Dependencias
+# Dependencies
 pip install -r requirements.txt
 ```
 
-### Configuracion
+### Configuration
 
-Nori usa variables de entorno via `python-dotenv`. Copia la plantilla y edita segun tu motor de DB:
+Nori uses environment variables via `python-dotenv`. Copy the template and edit it according to your DB engine:
 
 ```bash
 cp .env.example rootsystem/application/.env
 ```
 
-**SQLite** (recomendado para empezar rapido, sin instalar motor):
+**SQLite** (recommended for a quick start without installing a database server):
 
 ```env
 DEBUG=true
-SECRET_KEY=mi-clave-secreta
+SECRET_KEY=my-secret-key
 
 DB_ENGINE=sqlite
 DB_NAME=db.sqlite3
@@ -64,56 +64,56 @@ DB_PASSWORD=
 DB_NAME=nori_app
 ```
 
-### Arrancar el Servidor (Local)
+### Starting the Server (Local)
 
-Nori incluye un CLI interactivo para desarrollo rápido con Hot Reloading de plantillas y servidor.
+Nori includes an interactive CLI for rapid development with Hot Reloading for templates and the server.
 
 ```bash
 python3 nori.py serve
 ```
 
-*(Alternativamente, puedes ejecutar la aplicación manualmente: `cd rootsystem/application && uvicorn asgi:app --reload --host 0.0.0.0 --port 8000`)*
+*(Alternatively, you can run the application manually: `cd rootsystem/application && uvicorn asgi:app --reload --host 0.0.0.0 --port 8000`)*
 
-### Arrancar con Docker (Alternativa)
+### Starting with Docker (Alternative)
 
-Si prefieres usar Docker, el proyecto incluye un `Dockerfile` y `docker-compose.yml` preconfigurado que levanta la app y una base de datos MySQL automáticamente.
+If you prefer using Docker, the project includes a `Dockerfile` and a pre-configured `docker-compose.yml` that automatically boots up the app and a MySQL database.
 
-1. Copia y ajusta tu `.env` si aún no lo has hecho:
+1. Copy and adjust your `.env` if you haven't already:
    ```bash
    cp .env.example rootsystem/application/.env
    ```
 
-2. Verifica que el `.env` apunte al servicio `db`:
+2. Verify that the `.env` points to the `db` service:
    ```env
    DB_ENGINE=mysql
    DB_HOST=db
    ```
 
-3. Levanta los servicios (esto construirá la imagen e iniciará MySQL y Nori):
+3. Spin up the services (this will build the image and start MySQL and Nori):
    ```bash
    docker compose up -d --build
    ```
 
-Abre `http://localhost:8000` en tu navegador para ver la aplicación corriendo.
+Open `http://localhost:8000` in your browser to see the application running.
 
 ---
 
-## Despliegue en Producción
+## Production Deployment
 
-Para entornos de producción (Linux/VPS), se recomienda servir Nori usando **Gunicorn** como administrador de procesos (workers), controlado por **Systemd**, y expuesto a internet mediante un proxy inverso como **Nginx** o **Apache**.
+For production environments (Linux/VPS), it is recommended to serve Nori using **Gunicorn** as a process manager (workers), controlled by **Systemd**, and exposed to the internet via a reverse proxy like **Nginx** or **Apache**.
 
-### 1. Iniciar con Gunicorn
+### 1. Start with Gunicorn
 
-El proyecto ya cuenta con un archivo `gunicorn.conf.py` configurado para usar `uvicorn.workers.UvicornWorker` y escalar los workers dinámicamente según los núcleos de tu CPU. Puedes probarlo ejecutando:
+The project already includes a `gunicorn.conf.py` file configured to use `uvicorn.workers.UvicornWorker` and scale the workers dynamically based on your CPU cores. You can test it by running:
 
 ```bash
 cd rootsystem/application
 gunicorn asgi:app -c ../gunicorn.conf.py
 ```
 
-### 2. Configurar Systemd (Servicio en Segundo Plano)
+### 2. Configure Systemd (Background Daemon)
 
-Crea un archivo de servicio, por ejemplo `/etc/systemd/system/nori.service`:
+Create a service file, for example `/etc/systemd/system/nori.service`:
 
 ```ini
 [Unit]
@@ -121,38 +121,38 @@ Description=Nori Gunicorn Daemon
 After=network.target
 
 [Service]
-User=tu_usuario
+User=your_user
 Group=www-data
-WorkingDirectory=/ruta/a/tu/proyecto/nori/rootsystem/application
-Environment="PATH=/ruta/a/tu/proyecto/nori/.venv/bin"
-ExecStart=/ruta/a/tu/proyecto/nori/.venv/bin/gunicorn asgi:app -c ../gunicorn.conf.py
+WorkingDirectory=/path/to/your/project/nori/rootsystem/application
+Environment="PATH=/path/to/your/project/nori/.venv/bin"
+ExecStart=/path/to/your/project/nori/.venv/bin/gunicorn asgi:app -c ../gunicorn.conf.py
 
 [Install]
 WantedBy=multi-user.target
 ```
 
-Luego inicia y habilita el servicio para que corra al arrancar el servidor:
+Then start and enable the service so it runs on server boot:
 ```bash
 sudo systemctl daemon-reload
 sudo systemctl start nori
 sudo systemctl enable nori
 ```
 
-### 3. Configurar Nginx (Proxy Inverso)
+### 3. Configure Nginx (Reverse Proxy)
 
-Añade este bloque a la configuración de tu sitio en Nginx (`/etc/nginx/sites-available/nori`):
+Add this block to your Nginx site configuration (`/etc/nginx/sites-available/nori`):
 
 ```nginx
 server {
     listen 80;
-    server_name tu_dominio.com;
+    server_name your_domain.com;
 
-    # Servir archivos estáticos directamente para mayor rendimiento
+    # Serve static files directly for better performance
     location /static/ {
-        alias /ruta/a/tu/proyecto/nori/rootsystem/static/;
+        alias /path/to/your/project/nori/rootsystem/static/;
     }
 
-    # Redirigir el resto del tráfico a Gunicorn
+    # Proxy the rest of the traffic to Gunicorn
     location / {
         proxy_pass http://127.0.0.0:8000;
         proxy_set_header Host $host;
@@ -163,46 +163,46 @@ server {
 }
 ```
 
-Habilita el sitio y reinicia Nginx:
+Enable the site and restart Nginx:
 ```bash
 sudo ln -s /etc/nginx/sites-available/nori /etc/nginx/sites-enabled
 sudo systemctl restart nginx
 ```
 
-### 4. Configurar Apache (Proxy Inverso Alternativo)
+### 4. Configure Apache (Alternative Reverse Proxy)
 
-Si prefieres usar Apache en lugar de Nginx, asegúrate de habilitar los módulos de proxy necesarios primero:
+If you prefer using Apache instead of Nginx, make sure to enable the necessary proxy modules first:
 
 ```bash
 sudo a2enmod proxy proxy_http proxy_wstunnel headers
 sudo systemctl restart apache2
 ```
 
-Añade este bloque a la configuración virtual de tu sitio (e.g. `/etc/apache2/sites-available/nori.conf`):
+Add this block to your site's virtual configuration (e.g. `/etc/apache2/sites-available/nori.conf`):
 
 ```apache
 <VirtualHost *:80>
-    ServerName tu_dominio.com
+    ServerName your_domain.com
 
-    # Servir archivos estáticos nativamente
-    Alias /static /ruta/a/tu/proyecto/nori/rootsystem/static
+    # Serve static files natively
+    Alias /static /path/to/your/project/nori/rootsystem/static
 
-    <Directory /ruta/a/tu/proyecto/nori/rootsystem/static>
+    <Directory /path/to/your/project/nori/rootsystem/static>
         Require all granted
     </Directory>
 
-    # Redirigir tráfico a Gunicorn
+    # Proxy traffic to Gunicorn
     ProxyPreserveHost On
     ProxyPass /static !
     ProxyPass / http://127.0.0.1:8000/
     ProxyPassReverse / http://127.0.0.1:8000/
 
-    # Cabeceras útiles
+    # Useful headers
     RequestHeader set X-Forwarded-Proto "http"
 </VirtualHost>
 ```
 
-Habilita el sitio en Apache y recarga:
+Enable the site in Apache and reload:
 ```bash
 sudo a2ensite nori
 sudo systemctl reload apache2
@@ -210,163 +210,163 @@ sudo systemctl reload apache2
 
 ---
 
-## Arquitectura del Proyecto
+## Project Architecture
 
 ```
 nori/
-├── .env.example                     ← Plantilla de variables de entorno
-├── requirements.txt                 ← Dependencias Python
-├── tests/                           ← Tests E2E y de API (httpx + SQLite en memoria)
-│   ├── conftest.py                  ← Fixtures: app ASGI, DB en memoria, client async
-│   ├── test_api/test_auth.py        ← Tests de endpoints
-│   └── test_core/                   ← Tests unitarios de core (collection, validation)
+├── .env.example                     ← Environment variables template
+├── requirements.txt                 ← Python dependencies
+├── tests/                           ← E2E and API Tests (httpx + in-memory SQLite)
+│   ├── conftest.py                  ← Fixtures: ASGI app, in-memory DB, async client
+│   ├── test_api/test_auth.py        ← Endpoint tests
+│   └── test_core/                   ← Core unit tests (collection, validation)
 │
 ├── nori.py                          ← Nori Artisan CLI (make:controller, make:model, serve)
 └── rootsystem/
-    ├── static/                      ← Archivos estaticos (CSS, JS, imagenes)
-    ├── templates/                   ← Vistas Jinja2
-    │   ├── base.html                ← Layout base con nav
-    │   ├── 404.html/500.html        ← Paginas de error (produccion)
+    ├── static/                      ← Static files (CSS, JS, images)
+    ├── templates/                   ← Jinja2 Views
+    │   ├── base.html                ← Base layout with nav
+    │   ├── 404.html/500.html        ← Error pages (production)
     │   └── home.html                ← Landing page
     └── application/
-        ├── asgi.py                  ← Entry point ASGI, middleware stack, error handler
-        ├── settings.py              ← Configuracion (DB, debug, rutas de templates)
-        ├── routes.py                ← Rutas con nombres, agrupadas con Mount
-        ├── models/                  ← Modelos Tortoise ORM
-        │   └── __init__.py          ← Registro central de Modelos
-        ├── modules/                 ← Controladores (clases con metodos por accion)
-        │   ├── echo.py              ← Demo de WebSockets
-        │   └── page.py              ← Paginas estaticas (home)
-        └── core/                    ← Motor del framework
-            ├── jinja.py             ← Instancia Jinja2Templates + globals
-            ├── logger.py            ← Logger centralizado (nori.*)
-            ├── collection.py        ← NoriCollection: listas con superpoderes
-            ├── pagination.py        ← Paginador asincrono para QuerySets
+        ├── asgi.py                  ← ASGI entry point, middleware stack, error handler
+        ├── settings.py              ← Configuration (DB, debug, template paths)
+        ├── routes.py                ← Named routes, grouped with Mount
+        ├── models/                  ← Tortoise ORM Models
+        │   └── __init__.py          ← Central Model registry
+        ├── modules/                 ← Controllers (classes with methods per action)
+        │   ├── echo.py              ← WebSockets demo
+        │   └── page.py              ← Static pages (home)
+        └── core/                    ← Framework engine
+            ├── jinja.py             ← Jinja2Templates instance + globals
+            ├── logger.py            ← Centralized logger (nori.*)
+            ├── collection.py        ← NoriCollection: lists with superpowers
+            ├── pagination.py        ← Async paginator for QuerySets
             ├── auth/
             │   ├── security.py      ← PBKDF2 password hashing, tokens
-            │   ├── csrf.py          ← Middleware CSRF + helpers
+            │   ├── csrf.py          ← CSRF Middleware + helpers
             │   └── decorators.py    ← @login_required, @require_role
             ├── http/
-            │   ├── inject.py        ← Decorador @inject para Inyección de Dependencias
-            │   └── validation.py    ← Validacion declarativa pipe-separated
+            │   ├── inject.py        ← @inject decorator for Dependency Injection
+            │   └── validation.py    ← Declarative pipe-separated validation
             └── mixins/
                 ├── model.py         ← NoriModelMixin (to_dict)
                 ├── soft_deletes.py  ← NoriSoftDeletes (delete/restore/force_delete)
-                └── tree.py          ← NoriTreeMixin (arboles con CTE recursivo)
+                └── tree.py          ← NoriTreeMixin (trees with recursive CTE)
 ```
 
 ---
 
-## Rutas
+## Routes
 
-Todas las rutas tienen nombre para reversing con `request.url_for()`:
+All routes are named for reversing with `request.url_for()`:
 
-| Metodo | Ruta | Nombre | Descripcion |
+| Method | Route | Name | Description |
 |---|---|---|---|
-| `GET` | `/` | `home` | Pagina de inicio |
-| `WS` | `/ws/echo` | `ws_echo` | Conexión WebSocket de pruebas |
+| `GET` | `/` | `home` | Home page |
+| `WS` | `/ws/echo` | `ws_echo` | Test WebSocket connection |
 
 ---
 
-## Documentación del Framework
+## Framework Documentation
 
-Nori está documentado en un formato modular para que encuentres rápidamente lo que necesitas. Consulta las guías a continuación:
+Nori is documented in a modular format so you can quickly find what you need. Check out the guides below:
 
-### Fundamentos
-* **[Enrutamiento y Rutas](docs/routing.md):** Definir verbos HTTP, Path params (`/user/{id}`), y Reverse Routing.
-* **[Controladores](docs/controllers.md):** Clases HTTP estandarizadas, el objeto `Request`, y Tipos de Respuesta (JSON, HTML, Redirecciones).
-* **[Base de Datos (Tortoise ORM)](docs/database.md):** Creación de Modelos Básicos, Relaciones, y Mixins avanzados (NoriSoftDeletes, NoriTreeMixin).
-* **[Plantillas (Jinja2)](docs/templates.md):** Renderizado de vistas, Blocks e Inyección de Archivos Estáticos `/static/`.
+### Fundamentals
+* **[Routing and Routes](docs/routing.md):** Defining HTTP verbs, Path params (`/user/{id}`), and Reverse Routing.
+* **[Controllers](docs/controllers.md):** Standardized HTTP classes, the `Request` object, and Response Types (JSON, HTML, Redirects).
+* **[Database (Tortoise ORM)](docs/database.md):** Basic Model Creation, Relationships, and advanced Mixins (NoriSoftDeletes, NoriTreeMixin).
+* **[Templates (Jinja2)](docs/templates.md):** Rendering views, Blocks, and Static File Injection `/static/`.
 
-### Lógica Avanzada
-* **[Colecciones Nori](docs/collections.md):** El envoltorio ágil similar a Laravel Collections (`collect()`), `map`, `filter`, `where`, y Paginación asíncrona nativa (`paginate()`).
-* **[Formularios, CSRF y Validación](docs/forms_validation.md):** Prevención de inyección CSRF (`csrf_field`), Validadores declarativos Pipe-separated (`required|email|max:20`).
-* **[Autenticación y Sesiones](docs/authentication.md):** Login clásico por Cookies, Hashing Automático PBKDF2 (`Security`), APIs Stateless por JSON Web Tokens (JWT), y Restricciones de Controladores (`@login_required`, `@require_role`).
-* **[Seguridad y Limitadores](docs/security.md):** Protección de fuerza bruta distribuida (`@throttle` via memoria/Redis) y Cabeceras Strict HTTP automáticas.
-* **[WebSockets (Tiempo Real)](docs/websockets.md):** Manejo orientado a objetos JSON de conexiones persistentes para chats y notificaciones `ws://`.
-* **[Servicios Integrados](docs/services.md):** Motor de Envíos Masivos SMTP asíncronos (`send_mail` visual por Jinja2) y carga segura en disco de FileUploads genéricos (`save_upload`).
+### Advanced Logic
+* **[Nori Collections](docs/collections.md):** The agile wrapper similar to Laravel Collections (`collect()`), `map`, `filter`, `where`, and native async Pagination (`paginate()`).
+* **[Forms, CSRF, and Validation](docs/forms_validation.md):** CSRF injection prevention (`csrf_field`), Declarative Pipe-separated validators (`required|email|max:20`).
+* **[Authentication and Sessions](docs/authentication.md):** Classic Cookie login, Automatic PBKDF2 Hashing (`Security`), Stateless APIs via JSON Web Tokens (JWT), and Controller Restrictions (`@login_required`, `@require_role`).
+* **[Security and Rate Limiters](docs/security.md):** Distributed brute force protection (`@throttle` via memory/Redis) and automatic Strict HTTP Headers.
+* **[WebSockets (Real-Time)](docs/websockets.md):** JSON object-oriented handling of persistent connections for chats and notifications `ws://`.
+* **[Built-in Services](docs/services.md):** Async SMTP Mass Mailing engine (`send_mail` visual via Jinja2) and secure disk saving for generic FileUploads (`save_upload`).
 
 ---
 
-## Nori CLI y Módulos Nuevos
+## Nori CLI & New Modules
 
-Nori incluye su propio gestor por consola en la raíz para agilizar tu programación ("Nori Artisan"):
+Nori includes its own command-line manager at the root to streamline your programming ("Nori Artisan"):
 
-1. **Generar Modelo**: `python3 nori.py make:model Category`. Esto creará el esqueleto auto-poblado en la carpeta `models/`. (Recuerda registrar el import en `models/__init__.py`).
-2. **Generar Controlador**: `python3 nori.py make:controller Category`. Generará tu Controlador en base vacía en `modules/`.
-3. **Rutas e IO**: Instancia tus controladores listos en `routes.py` y enlaza tus vistas en `templates/`.
-4. **Inyección de Dependencias (@inject)**: Olvídate de extraer diccionarios de request manualmente. Usa `@inject()` arriba del método de tu controlador y define los parámetros con *Type Hints* nativos:
+1. **Generate Model**: `python3 nori.py make:model Category`. This will create the auto-populated skeleton in the `models/` folder. (Remember to register the import in `models/__init__.py`).
+2. **Generate Controller**: `python3 nori.py make:controller Category`. It will generate your blank base Controller in `modules/`.
+3. **Routes and IO**: Instantiate your ready controllers in `routes.py` and link your views in `templates/`.
+4. **Dependency Injection (@inject)**: Forget about manually extracting dictionaries from the request. Use `@inject()` above your controller method and define parameters with native *Type Hints*:
    ```python
    from core.http.inject import inject
 
    @inject()
    async def create(self, request, form: dict, user_id: int):
-       # user_id automáticamente extraído de ?user_id=X o del path variable /user/{user_id}
-       # form automáticamente despachado y convertido en dict desde await request.form()
+       # user_id automatically extracted from ?user_id=X or from the path variable /user/{user_id}
+       # form automatically parsed and converted to dict from await request.form()
        pass
    ```
 
 ---
 
-## Pruebas
+## Testing
 
-El proyecto cuenta con una robusta suite unificada combinando unit tests y flujos E2E:
+The project has a robust unified suite combining unit tests and E2E flows:
 
 ```bash
-# Suite completa
+# Complete suite
 pytest tests/ -v
 ```
 
-Los tests utilizan `conftest.py` para levantar la app completa y realizar aserciones de forma aislada sin tocar la DB local, valiéndose de un SQLite persistido *in-memory* y `httpx.AsyncClient`.
+Tests use `conftest.py` to boot up the entire app and perform assertions in isolation without touching the local DB, utilizing a persistent *in-memory* SQLite and `httpx.AsyncClient`.
 
 ---
 
-## Variables de Entorno
+## Environment Variables
 
-| Variable | Default | Descripcion |
+| Variable | Default | Description |
 |---|---|---|
-| `DEBUG` | `false` | Modo debug (`true` = traceback interactivo, `false` = error handler 500) |
-| `SECRET_KEY` | `change-me-in-production` | Clave para sesiones y tokens |
-| `DB_ENGINE` | `mysql` | Motor de DB: `mysql`, `postgres` o `sqlite` |
-| `DB_HOST` | `localhost` | Host de la base de datos (MySQL/Postgres) |
-| `DB_PORT` | `3306` / `5432` | Puerto (auto-detectado segun engine) |
-| `DB_USER` | *(vacio)* | Usuario de la base de datos |
-| `DB_PASSWORD` | *(vacio)* | Password de la base de datos |
-| `DB_NAME` | *(vacio)* / `db.sqlite3` | Nombre de la DB o path del archivo SQLite |
-| `THROTTLE_BACKEND` | `memory` | Backend de rate limiting (`memory` o `redis`) |
-| `REDIS_URL` | `redis://localhost:6379` | Cadena de conexión a Redis (si se usa) |
-| `JWT_SECRET` | *Mismo que SECRET_KEY* | Secreto de firmado JWT |
-| `JWT_EXPIRATION` | `3600` | Expiración de tokens JWT en segundos |
-| `MAIL_HOST` | `localhost` | Servidor SMTP |
-| `MAIL_PORT` | `587` | Puerto SMTP |
-| `MAIL_USER` / `MAIL_PASSWORD` | *(vacios)* | Credenciales SMTP |
-| `UPLOAD_DIR` | `uploads/` | Directorio destino para archivos estáticos |
-| `UPLOAD_MAX_SIZE` | `10485760` (10MB) | Límite por defecto de archivos subidos |
+| `DEBUG` | `false` | Debug mode (`true` = interactive traceback, `false` = 500 error handler) |
+| `SECRET_KEY` | `change-me-in-production` | Key for sessions and tokens |
+| `DB_ENGINE` | `mysql` | DB Engine: `mysql`, `postgres` or `sqlite` |
+| `DB_HOST` | `localhost` | Database host (MySQL/Postgres) |
+| `DB_PORT` | `3306` / `5432` | Port (auto-detected based on engine) |
+| `DB_USER` | *(empty)* | Database user |
+| `DB_PASSWORD` | *(empty)* | Database password |
+| `DB_NAME` | *(empty)* / `db.sqlite3` | DB Name or SQLite file path |
+| `THROTTLE_BACKEND` | `memory` | Rate limiting backend (`memory` or `redis`) |
+| `REDIS_URL` | `redis://localhost:6379` | Redis connection string (if used) |
+| `JWT_SECRET` | *Same as SECRET_KEY* | JWT signing secret |
+| `JWT_EXPIRATION` | `3600` | JWT token expiration in seconds |
+| `MAIL_HOST` | `localhost` | SMTP Server |
+| `MAIL_PORT` | `587` | SMTP Port |
+| `MAIL_USER` / `MAIL_PASSWORD` | *(empty)* | SMTP Credentials |
+| `UPLOAD_DIR` | `uploads/` | Destination directory for uploaded files |
+| `UPLOAD_MAX_SIZE` | `10485760` (10MB) | Default limit for uploaded files |
 
 ---
 
-## Contribucion
+## Contributing
 
-Las contribuciones son bienvenidas. Para colaborar:
+Contributions are welcome. To collaborate:
 
-1. Haz un fork del repositorio.
-2. Crea una rama para tu feature o fix: `git checkout -b mi-feature`.
-3. Realiza tus cambios siguiendo las convenciones del proyecto:
-   - Controladores como clases en `modules/`.
-   - Type hints con `from __future__ import annotations` en modulos core.
-   - Tests para logica nueva agrupados en la suite `tests/`.
-4. Asegurate de que toda la suite pase: `pytest -v`.
-5. Haz commit con un mensaje descriptivo y envia un Pull Request.
+1. Fork the repository.
+2. Create a branch for your feature or fix: `git checkout -b my-feature`.
+3. Make your changes following the project conventions:
+   - Controllers as classes in `modules/`.
+   - Type hints with `from __future__ import annotations` in core modules.
+   - Tests for new logic grouped in the `tests/` suite.
+4. Ensure the entire suite passes: `pytest -v`.
+5. Commit with a descriptive message and submit a Pull Request.
 
-### Convenciones de Codigo
+### Code Conventions
 
-- **Rutas**: siempre con `name=` y metodos explicitos (`methods=['GET']`).
-- **Logout y acciones destructivas**: solo `POST` (nunca `GET` para evitar CSRF via links).
-- **Validacion**: usar el validador declarativo en lugar de validacion manual.
-- **Modelos**: heredar de `NoriModelMixin` para `to_dict()`.
+- **Routes**: always with `name=` and explicit methods (`methods=['GET']`).
+- **Logout and destructive actions**: `POST` only (never `GET` to prevent CSRF via links).
+- **Validation**: use the declarative validator instead of manual validation.
+- **Models**: inherit from `NoriModelMixin` for `to_dict()`.
 
 ---
 
-## Licencia
+## License
 
-Este proyecto se distribuye bajo la licencia **MIT**. Consulta el archivo [LICENSE](LICENSE) para mas detalles.
+This project is distributed under the **MIT** license. See the [LICENSE](LICENSE) file for more details.

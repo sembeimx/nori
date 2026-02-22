@@ -1,57 +1,58 @@
-# Seguridad y Limitadores
+# Security and Limiters
 
-Nori proporciona middlewares de seguridad esenciales ya activados para proteger cada endpoint contra ataques web comunes y abusos de red, desde cabeceras seguras hasta rate limiters elásticos.
+Nori provides essential security middlewares already activated to protect each endpoint against common web attacks and network abuse, from secure headers to elastic rate limiters.
 
-## Cabeceras de Seguridad (Security Headers)
-Al arrancar, Nori inyecta en todo `Response` el `SecurityHeadersMiddleware`. Está habilitado y blinda pasivamente tu app Web con defaults férreos para Headers:
+## Security Headers
 
-* **X-Content-Type-Options:** `nosniff` (Previene ataques basados en sniffeo y camuflaje MIME malicioso).
-* **X-Frame-Options:** `DENY` (Aislamiento absoluto ante ataques de Clickjacking o Cross-Iframe).
+Upon startup, Nori injects the `SecurityHeadersMiddleware` into every `Response`. It is enabled and passively shields your Web app with ironclad defaults for Headers:
+
+* **X-Content-Type-Options:** `nosniff` (Prevents sniffing-based attacks and malicious MIME camouflage).
+* **X-Frame-Options:** `DENY` (Absolute isolation against Clickjacking or Cross-Iframe attacks).
 * **X-XSS-Protection:** `1; mode=block`
-* **Referrer-Policy:** `strict-origin-when-cross-origin` (Cuida enrutamiento y exposición pasiva ante analítica e intrusión externa cruzada).
-* **Strict-Transport-Security (HSTS):** Impone conexión cifrada local durante 1 Año para browsers que detecten el flag.
+* **Referrer-Policy:** `strict-origin-when-cross-origin` (Safeguards routing and passive exposure against cross-external analytics and intrusion).
+* **Strict-Transport-Security (HSTS):** Imposes local encrypted connection for 1 Year for browsers that detect the flag.
 
-## Compartición de Recursos Cruzados (CORS)
+## Cross-Origin Resource Sharing (CORS)
 
-Exclusivamente activado si Nori se usa como un back-end API o si requiere peticiones *AJAX Fetch* entre dominios distanciados o puertos diferentes.
+Exclusively activated if Nori is used as an API back-end or if it requires *AJAX Fetch* requests between distant domains or different ports.
 
-Solución: Inyecta explícitamente tú (o tus) dominios Front-End oficiales en tu macrovariable ambiente en la raíz primaria de configuración.
+Solution: Explicitly inject your official Front-End domain(s) into your macro environment variable in the primary configuration root.
 
 `.env`:
 ```text
 CORS_ORIGINS=http://localhost:3000,https://app.com_front
 ```
-(El omitir esta fila en los archivos o dejarla sin poblar, automáticamente inhabilitará cualquier bypass de seguridad cross-origin negando fetch y blindándolo `Same-Site`).
+(Omitting this row in the files or leaving it unpopulated will automatically disable any cross-origin security bypass denying fetch and shielding it `Same-Site`).
 
 ---
 
-## Limitador Distribuido de Solicitudes (Rate Limiter `@throttle`)
+## Distributed Rate Limiter (`@throttle`)
 
-Detención de escalamientos maliciosos Brute Force, Scripts Scraping y Overload DoS en los controladores de autenticación.
+Stops malicious Brute Force escalations, Scraping Scripts, and DoS Overloads on authentication controllers.
 
-La directiva `@throttle("Cantidad/Ventana")` rastrea contadores de Request y arroja status bloqueados `HTTP 429 Too Many Requests` (HTML amigable u API Json si se pide Accept).
+The `@throttle("Amount/Window")` directive tracks Request counters and returns blocked `HTTP 429 Too Many Requests` statuses (Friendly HTML or Json API if Accept is requested).
 
-El bloqueo es unificado **Por Endpoint + Por Dirección IP Dinámica**. Si un Bot intenta adivinar tu endpoint global `/login` 5 veces con passwords rotos, su dirección IP local estará denegada solo para seguir intentando `/login` mientras Nori le otorga y prioriza banda ancha para iterar rutas lícitas adyacentes como `/dashboard` u `/products` simultáneamente.
+The block is unified **Per Endpoint + Per Dynamic IP Address**. If a Bot tries to guess your global `/login` endpoint 5 times with broken passwords, its local IP address will be denied *only* for continuing to try `/login` while Nori grants and prioritizes bandwidth to iterate adjacent lawful routes like `/dashboard` or `/products` simultaneously.
 
 ```python
 from core.http.throttle import throttle
 
 class AuthController:
 
-    @throttle('5/minute')   # Limita a solo 5 intentos limpios en ventana minúto.
+    @throttle('5/minute')   # Limits to only 5 clean attempts in a minute window.
     async def login_api_post(self, request):
         return await Log(...)
 
-    @throttle('100/hour')   # Acota consumo intensivo a clientes en recursos API.
+    @throttle('100/hour')   # Restricts intensive consumption to clients in API resources.
     async def get_report_xlsx(self, request):
         return
 ```
 
-### Backends Centrales o Escalables
+### Central or Scalable Backends
 
-El Rate Limiter por defecto cuenta en `Dictionary` de memoria de Python. Esta solución "Memory" basta como limitador seguro en monolitos limitados en recursos o máquinas unificadas pequeñas.
+The default Rate Limiter counts in a Python memory `Dictionary`. This "Memory" solution suffices as a secure limiter in resource-limited monoliths or small unified machines.
 
-Pero si escalas tu despliegue Nori bajo **Docker Swarm**,  o múltiples réplicas (Workers Gunicorn balanceados en Cluster), puedes optar de forma instantánea inyectando configuración `redis` unificada sin afectar ó tocar el código original de los controladores, para que contadores actúen a su vez centralizados entre múltiples máquinas aisladas sobre una única latencia.
+But if you scale your Nori deployment under **Docker Swarm**, or multiple replicas (Gunicorn Workers balanced in a Cluster), you can instantly opt by injecting unified `redis` configuration without affecting or touching the original controller code, so that counters act centrally between multiple isolated machines over a single latency.
 
 `.env`:
 ```test

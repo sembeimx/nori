@@ -1,99 +1,99 @@
-# Colecciones y Listados
+# Collections and Listings
 
-En Nori, iterar sobre la Base de Datos es simple. Sin embargo, para manipular lógica empresarial compleja en listas multivariables, `NoriCollection` provee un Wrapper de superpoderes ergonómico basado fuertemente en Laravel Collection.
+In Nori, iterating over the Database is simple. However, to manipulate complex business logic in multivariable lists, `NoriCollection` provides an ergonomic superpowers wrapper heavily based on Laravel Collection.
 
-## Colecciones
+## Collections
 
-Si requieres envolver una lista y encadenar manipulación de flujos de listas en pocos strings de código, simplemente invoca `collect()`.
+If you need to wrap a list and chain list flow manipulation in a few lines of code, simply invoke `collect()`.
 
 ```python
 from core.collection import collect
 
-lista_base = await User.all() # Retorno general Tortoise (Lista plana)
-nori_collection = collect(lista_base)
+base_list = await User.all() # General Tortoise return (flat List)
+nori_collection = collect(base_list)
 ```
 
-### Explorando Opciones
+### Exploring Options
 
-Puedes encadenar peticiones sin interferir o dañar tu lista primitiva asincrónica base.
+You can chain requests without interfering with or mutating your base asynchronous primitive list.
 
 **Pluck / Sum / Max:**
-Extracción de valores en lista nativa o contadores absolutos de sumatorias y extremos.
+Value extraction in a native list or absolute counters for sums and extremes.
 
 ```python
-nombres = collect(usuarios).pluck('name')
+names = collect(users).pluck('name')
 # ['ellery', 'foo', 'bar']
-total_score = collect(juegos).sum('score')
-highest_score = collect(juegos).max('score')
+total_score = collect(games).sum('score')
+highest_score = collect(games).max('score')
 ```
 
 **Where:**
-Filtros algoritmicos de in-memory sin ir o desgastar a la BD.
-Operadores lógicos aceptables: `=`, `!=`, `>`, `<`, `>=`, `<=`.
+In-memory algorithmic filters without hitting or wearing down the DB.
+Acceptable logical operators: `=`, `!=`, `>`, `<`, `>=`, `<=`.
 
 ```python
-admins = collect(usuarios).where('role', 'admin')           # Retorna Colección
-caros = collect(productos).where('price', '>', 500)         # Retorna Colección
+admins = collect(users).where('role', 'admin')           # Returns Collection
+expensive = collect(products).where('price', '>', 500)   # Returns Collection
 ```
 
 **GroupBy / Chunk / Sorted:**
-Agrupadores estructurados y matrices multidimensionales en memoria: 
+Structured groupers and multidimensional arrays in memory: 
 
 ```python
-por_rol = collect(usuarios).group_by('role')
+by_role = collect(users).group_by('role')
 # {'admin': [User1], 'guest': [User2, User3]}
 
-por_filas_de_tres = collect(usuarios).chunk(3)
+by_rows_of_three = collect(users).chunk(3)
 # [[1, 2, 3], [4, 5, 6], [7]]
 ```
 
-### Mutaciones en Iterables
+### Iterable Mutations
 
 **Map / Each:**
 
 ```python
-# Map (Modifica y reforma un nuevo diccionario/valor por cada iteración del Collection)
-precios_con_iva = collect(productos).map(lambda p: p.price * 1.16)
+# Map (Modifies and reforms a new dictionary/value for each iteration of the Collection)
+prices_with_tax = collect(products).map(lambda p: p.price * 1.16)
 
-# Each (Mutación o ejecución lineal y transversal)
-collect(usuarios).each(lambda u: notificar_admin(u))
+# Each (Linear and transversal mutation or execution)
+collect(users).each(lambda u: notify_admin(u))
 ```
 
-Al final del encadenamiento, o al enviarlo serializado al API, puedes cerrar con `to_list()` (array nativo) o `to_dict()` en caso de modelos ORM.
+At the end of the chaining, or when sending it serialized to the API, you can close it with `to_list()` (native array) or `to_dict()` in the case of ORM models.
 
 ---
 
-## Paginación Asíncrona
+## Asynchronous Pagination
 
-Toda lógica en listado no debería jamás superar límites computacionales locales ni estrangular a un frontend; este motivo insta siempre a utilizar `paginate()` como solución llave-en-mano para las páginas list-view y APIs.
+Any list logic should never exceed local computational limits or bottleneck a frontend; this reason always urges the use of `paginate()` as a turnkey solution for list-view pages and APIs.
 
 ```python
 from core.pagination import paginate
 
 async def product_list(self, request):
-    page_act = int(request.query_params.get('page', 1))
+    current_page = int(request.query_params.get('page', 1))
     
-    # 1. Creamos base query asíncrono
+    # 1. Create base async query
     queryset = Product.filter(status=True).order_by('-id')
 
-    # 2. Invocamos paginador dict (limit=20)
-    result = await paginate(queryset, page=page_act, per_page=20)
+    # 2. Invoke dict paginator (limit=20)
+    result = await paginate(queryset, page=current_page, per_page=20)
     
-    # [Retorno JSON / HTML Inyectando Paginador a plantillas]
+    # [JSON / HTML Return, Injecting Paginator into templates]
 ```
 
-### Retorno Paginado
+### Paginated Return
 
-El diccionario devuelto posee la siguiente estructura unificada y blindada de validaciones de límites de salto:
+The returned dictionary has the following unified and leap-limit shielded structure:
 
 ```python
 {
-    'data': NoriCollection([Product, Product...]),  # NoriCollection iterativa resultante
-    'total': 455,                    # Absoluto total registros indexados disponibles
-    'page': 3,                       # Estado int página actual validada
-    'per_page': 20,                  # Ratio per-page utilizado en chunking
-    'last_page': 23,                 # Calculo asintótico último slot activo disponible
+    'data': NoriCollection([Product, Product...]),  # Resulting iterative NoriCollection
+    'total': 455,                    # Absolute total of available indexed records
+    'page': 3,                       # Validated current page int state
+    'per_page': 20,                  # Per-page ratio used in chunking
+    'last_page': 23,                 # Asymptotic calculation of the last available active slot
 }
 ```
 
-Usando plantillas Jinja2 y `range()` puedes forjar dinámicamente un Paginador inferior estético sobre esta estructura dict.
+Using Jinja2 templates and `range()` you can dynamically forge an aesthetic bottom Paginator over this dict structure.

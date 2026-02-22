@@ -3,16 +3,16 @@ import inspect
 
 def inject():
     """
-    Decorador utilitario de Inyección de Dependencias.
-    Lee los Type Hints y nombres de argumentos del método del controlador
-    para extraer e inyectar automáticamente datos desde el Request 
-    (form_data, query_params, path_params) sin necesidad de variables globales.
+    Dependency Injection utility decorator.
+    Reads the Type Hints and argument names of the controller method
+    to automatically extract and inject data from the Request 
+    (form_data, query_params, path_params) without needing global variables.
 
-    Ejemplo de uso en un controlador:
+    Usage example in a controller:
         @inject()
         async def create(self, request, form: dict, product_id: int):
-            # 'form' será el dict() de request.form()
-            # 'product_id' será extraído de path_params o query_params y convertido a int
+            # 'form' will be the dict() from request.form()
+            # 'product_id' will be extracted from path_params or query_params and cast to int
             # ...
     """
     def decorator(func):
@@ -22,7 +22,7 @@ def inject():
         async def wrapper(self, request, *args, **kwargs):
             injected_kwargs = {}
             
-            # Recolectar datos FormData asíncronos de forma perezosa solo si se solicitan
+            # Lazily collect async FormData only if requested
             form_data = None
             needs_form = "form" in sig.parameters or any(
                 p.annotation == dict for p in sig.parameters.values() if p.name not in ['self', 'request']
@@ -34,17 +34,17 @@ def inject():
                 except Exception:
                     form_data = {}
             
-            # Analizar el signature y poblar argumentos
+            # Analyze signature and populate arguments
             for name, param in sig.parameters.items():
-                # Omitimos auto inputs
+                # Skip auto inputs
                 if name in ("self", "request") or name in kwargs:
                     continue
                 
-                # 1. Solicita Diccionario completo o Form
+                # 1. Requests full Dictionary or Form
                 if name == "form" or param.annotation == dict:
                     injected_kwargs[name] = form_data
                 
-                # 2. Solicita variable anclada a la URL (Path Params)
+                # 2. Requests URL-anchored variable (Path Params)
                 elif name in request.path_params:
                     val = request.path_params[name]
                     if param.annotation != inspect.Parameter.empty:
@@ -54,7 +54,7 @@ def inject():
                             pass
                     injected_kwargs[name] = val
                 
-                # 3. Solicita variables de Query Param HTTP (?q=buscar)
+                # 3. Requests HTTP Query Param variables (?q=search)
                 elif name in request.query_params:
                     val = request.query_params.get(name)
                     if param.annotation != inspect.Parameter.empty:
@@ -64,14 +64,14 @@ def inject():
                             pass
                     injected_kwargs[name] = val
                 
-                # 4. Fallback a parámetros base
+                # 4. Fallback to base parameters
                 else:
                     if param.default != inspect.Parameter.empty:
                         injected_kwargs[name] = param.default
                     else:
                         injected_kwargs[name] = None
                         
-            # Finalmente pasamos los valores computados de vuelta al controlador
+            # Finally, pass the computed values back to the controller
             return await func(self, request, *args, **kwargs, **injected_kwargs)
         return wrapper
     return decorator

@@ -1,16 +1,16 @@
 """
-Validacion declarativa con reglas pipe-separated.
+Declarative validation with pipe-separated rules.
 
     errors = validate(data, {
         'email': 'required|email|max:255',
         'password': 'required|min:8',
     })
-    # {} = valido, {'field': ['msg', ...]} = errores
+    # {} = valid, {'field': ['msg', ...]} = errors
 
-    # Con mensajes custom:
+    # With custom messages:
     errors = validate(data, rules, {
-        'email.required': 'El correo es obligatorio',
-        'password.min': 'La clave debe tener al menos 8 caracteres',
+        'email.required': 'Email is mandatory',
+        'password.min': 'Password must be at least 8 characters',
     })
 """
 from __future__ import annotations
@@ -20,16 +20,16 @@ import re
 _EMAIL_RE = re.compile(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')
 
 _DEFAULT_MESSAGES = {
-    'required': '{field} es obligatorio',
-    'min': '{field} debe tener al menos {n} caracteres',
-    'max': '{field} debe tener como maximo {n} caracteres',
-    'email': '{field} debe ser un email valido',
-    'numeric': '{field} debe ser numerico',
-    'matches': '{field} debe coincidir con {param}',
-    'in': '{field} debe ser uno de: {options}',
-    'file': '{field} debe ser un archivo valido',
-    'file_max': '{field} excede el tamaño maximo de {size}',
-    'file_types': '{field} debe ser de tipo: {types}',
+    'required': '{field} is required',
+    'min': '{field} must be at least {n} characters',
+    'max': '{field} must be at most {n} characters',
+    'email': '{field} must be a valid email',
+    'numeric': '{field} must be numeric',
+    'matches': '{field} must match {param}',
+    'in': '{field} must be one of: {options}',
+    'file': '{field} must be a valid file',
+    'file_max': '{field} exceeds maximum size of {size}',
+    'file_types': '{field} must be of type: {types}',
 }
 
 
@@ -49,15 +49,15 @@ def validate(
     messages: dict[str, str] | None = None,
 ) -> dict[str, list[str]]:
     """
-    Valida un dict de datos contra reglas declarativas.
+    Validates a data dict against declarative rules.
 
     Args:
-        data: dict de field_name -> value (de request.form())
-        rules: dict de field_name -> reglas (string pipe-separated o lista)
-        messages: dict opcional de 'field.rule' -> mensaje custom
+        data: dict of field_name -> value (from request.form())
+        rules: dict of field_name -> rules (pipe-separated string or list)
+        messages: optional dict of 'field.rule' -> custom message
 
     Returns:
-        dict de field_name -> lista de errores. Vacio = valido.
+        dict of field_name -> list of errors. Empty = valid.
     """
     errors: dict[str, list[str]] = {}
 
@@ -162,7 +162,7 @@ def _msg(
     messages: dict[str, str] | None,
     **kwargs: object,
 ) -> str:
-    """Resuelve el mensaje: custom (field.rule) > default."""
+    """Resolves the message: custom (field.rule) > default."""
     if messages and f'{field}.{rule}' in messages:
         return messages[f'{field}.{rule}']
     template = _DEFAULT_MESSAGES[rule]

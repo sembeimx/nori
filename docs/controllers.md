@@ -1,10 +1,10 @@
-# Controladores
+# Controllers
 
-Los controladores en Nori son el nexo entre tus Modelos (Base de datos) y tus Vistas (Templates/JSON). Se escriben como clases dentro de `rootsystem/application/modules/` para mantener las reglas de negocio encapsuladas e intuitivas.
+Controllers in Nori are the bridge between your Models (Database) and your Views (Templates/JSON). They are written as classes inside `rootsystem/application/modules/` to keep business rules encapsulated and intuitive.
 
-## Estructura Básica
+## Basic Structure
 
-Un controlador consta de métodos asíncronos (`async def`). Todos los métodos de un controlador reciben exactamente dos argumentos: `self` y `request`, donde request es un objeto `Request` inyectado por Starlette.
+A controller consists of asynchronous methods (`async def`). All methods in a controller receive exactly two arguments: `self` and `request`, where request is a `Request` object injected by Starlette.
 
 ```python
 from starlette.requests import Request
@@ -17,67 +17,67 @@ class ProductController:
     @login_required
     async def list(self, request: Request):
         return templates.TemplateResponse(request, 'product/list.html', {
-            'title': 'Mis Productos'
+            'title': 'My Products'
         })
 ```
 
-## El Objeto Request
+## The Request Object
 
-El `request` tiene toda la información de la petición HTTP entrante. Todo en Nori es asíncrono, por lo tanto la lectura del *body* debe ser esperada (`await`).
+The `request` has all the information about the incoming HTTP request. Everything in Nori is asynchronous, therefore reading the *body* must be awaited (`await`).
 
-**Lectura de datos:**
+**Reading data:**
 ```python
 async def store(self, request: Request):
-    # Parámetros de query: /search?q=gatos
+    # Query parameters: /search?q=cats
     query = request.query_params.get('q', 'default')
 
-    # Parámetros de ruta dinámica: /products/5
+    # Dynamic route parameters: /products/5
     product_id = request.path_params['product_id']
 
-    # Datos enviados por formulario (application/x-www-form-urlencoded o multipart/form-data)
+    # Data sent by form (application/x-www-form-urlencoded or multipart/form-data)
     form = await request.form()
     name = form.get('name')
 
-    # Datos JSON (application/json)
+    # JSON Data (application/json)
     data = await request.json()
 
-    # Lectura de la IP del cliente
+    # Reading the client IP
     ip = request.client.host
 ```
 
-## Manejo Integrado (GET/POST)
+## Integrated Handling (GET/POST)
 
-Nori está diseñado para procesar el ciclo de vida completo de un formulario (pintarlo y procesarlo) en **un solo método** del controlador. 
+Nori is designed to process the entire life cycle of a form (rendering it and processing it) in **a single controller method**. 
 
-Para lograrlo, la ruta recibe explícitamente ambos métodos (`methods=['GET', 'POST']`), y dentro del controlador simplemente consultas el verbo:
+To achieve this, the route explicitly receives both methods (`methods=['GET', 'POST']`), and inside the controller you simply check the verb:
 
 ```python
 from starlette.responses import RedirectResponse
 from core.auth.csrf import csrf_field
 
 async def create(self, request: Request):
-    # 1. Pintamos el fomulario cuando el usuario llega a la URL
+    # 1. We render the form when the user arrives at the URL
     if request.method == 'GET':
         return templates.TemplateResponse(request, 'product/form.html', {
             'csrf_field': csrf_field(request.session),
             'errors': {}
         })
 
-    # 2. Si el usuario envía POST, procesamos la lógica aquí
+    # 2. If the user sends a POST, we process the logic here
     form = dict(await request.form())
     
-    # [Lógica de validación omitida por brevedad]
+    # [Validation logic omitted for brevity]
     
-    # 3. Guardado en DB y Redirección
+    # 3. DB Save and Redirect
     return RedirectResponse(url='/products', status_code=302)
 ```
 
-## Formas de Responder
+## Ways to Respond
 
-Dado que Nori corre enteramente sobre Starlette, todo controlador **debe retornar un objeto Response**.
+Since Nori runs entirely on Starlette, every controller **must return a Response object**.
 
-### 1. Vistas HTML (Templates)
-Utiliza la interfaz de `core.jinja.templates`. El primer parámetro es el request, el segundo es la ruta del HTML, y el tercero es opcionalmente un diccionario de variables para el template.
+### 1. HTML Views (Templates)
+Uses the `core.jinja.templates` interface. The first parameter is the request, the second is the HTML path, and the third is optionally a dictionary of variables for the template.
 
 ```python
 from core.jinja import templates
@@ -85,8 +85,8 @@ from core.jinja import templates
 return templates.TemplateResponse(request, 'auth/login.html', {'error': True})
 ```
 
-### 2. Respuestas JSON (APIs)
-Para devolver JSON crudo (por ejemplo, para fetch/axios u endpoints nativos).
+### 2. JSON Responses (APIs)
+To return raw JSON (for example, for fetch/axios or native endpoints).
 
 ```python
 from starlette.responses import JSONResponse
@@ -94,24 +94,24 @@ from starlette.responses import JSONResponse
 return JSONResponse({'status': 'success', 'data': [1, 2, 3]})
 ```
 
-### 3. Redirecciones
-Exclusivamente usado tras modificaciones de estado (luego de un POST de creación, edición o borrado exitoso) para evitar doble-submits en caso de que el usuario recargue (F5).
+### 3. Redirects
+Exclusively used after state modifications (after a successful creation, edit, or deletion POST) to prevent double-submits in case the user reloads (F5).
 
 ```python
 from starlette.responses import RedirectResponse
 
 # status_code 302 ("Found")
-# status_code 303 ("See Other") en respuestas a POSTs API
+# status_code 303 ("See Other") in responses to API POSTs
 return RedirectResponse(url='/dashboard', status_code=302)
 ```
 
-### 4. Errores y Excepciones
-Si es necesario devolver manualmente un error como "No Encontrado" e invocar las páginas de error globales de Nori:
+### 4. Errors and Exceptions
+If you need to manually return an error like "Not Found" and invoke Nori's global error pages:
 
 ```python
 from starlette.exceptions import HTTPException
 
 async def show(self, request: Request):
-    # si el producto no existe, abortamos con status 404:
-    raise HTTPException(status_code=404, detail="Producto no localizado")
+    # if the product does not exist, abort with status 404:
+    raise HTTPException(status_code=404, detail="Product not found")
 ```

@@ -1,67 +1,67 @@
-# Autenticación y Autorización
+# Authentication and Authorization
 
-Nori proporciona un sistema de autenticación completo y listo para usar que incluye middlewares de sesión, decorators de rutas para permisos, autenticación basada en JSON Web Tokens (JWT) para APIs, y manejo seguro de contraseñas mediante hashing PBKDF2-SHA256.
+Nori provides a complete, ready-to-use authentication system that includes session middlewares, route decorators for permissions, JSON Web Token (JWT) based authentication for APIs, and secure password handling using PBKDF2-SHA256 hashing.
 
-## Hash de Contraseñas (Security)
+## Password Hashing (Security)
 
-Para crear usuarios o validar logins manuales, siempre debes utilizar la clase `Security` proporcionada por el framework en `core.auth.security`. 
+To create users or validate manual logins, you must always use the `Security` class provided by the framework in `core.auth.security`.
 
 ```python
 from core.auth.security import Security
 
-# Hashing de contraseña plana
-hashed_password = Security.hash_password('mi_password_secreta')
+# Hashing a plain text password
+hashed_password = Security.hash_password('my_secret_password')
 # 'pbkdf2_sha256$100000$salt$hash'
 
-# Comparación / Verificación
-es_valida = Security.verify_password('mi_password_secreta', hashed_password) # True
+# Comparison / Verification
+is_valid = Security.verify_password('my_secret_password', hashed_password) # True
 ```
 
-`Security` también ofrece generadores rápidos de tokens hexadecimales estocásticos:
+`Security` also offers quick stochastic hexadecimal token generators:
 ```python
-token = Security.generate_token()      # 64 caracteres hex
-csrf = Security.generate_csrf_token()  # 64 caracteres hex
+token = Security.generate_token()      # 64 hex characters
+csrf = Security.generate_csrf_token()  # 64 hex characters
 ```
 
-## Middlewares de Sesión
+## Session Middlewares
 
-Nori administra el estado del usuario logueado en una cookie de sesión cifrada por la clave `SECRET_KEY` del `.env`.
+Nori manages the logged-in user state in an encrypted session cookie using the `SECRET_KEY` from `.env`.
 
-Para iniciar sesión tras validar la contraseña correctamente, simplemente inyectas variables al dict `request.session`:
+To log in after successfully validating the password, simply inject variables into the `request.session` dict:
 
 ```python
 async def login(self, request: Request):
-    # [Lógica de validación omitida]
+    # [Validation logic omitted]
     
-    # Iniciar Sesión ("Login" efectivo)
+    # Start Session (Effective "Login")
     request.session['user_id'] = str(user.id)
     request.session['role'] = 'admin' if user.level > 0 else 'user'
     
     return RedirectResponse(url='/dashboard', status_code=302)
 
 async def logout(self, request: Request):
-    # Cerrar Sesión
+    # Close Session
     request.session.clear()
     
     return RedirectResponse(url='/', status_code=302)
 ```
 
-## Restricción de Vistas (Decoradores)
+## View Restriction (Decorators)
 
-Puedes restringir controladores enteros omitiendo o aplicando decoradores según tu necesidad. Se aplican por encima de la definición `async def`:
+You can restrict entire controllers by applying decorators above the `async def` definition:
 
 * `@login_required`
-* `@require_role('mi_rol')`
-* `@require_any_role('ventas', 'gerencia')`
+* `@require_role('my_role')`
+* `@require_any_role('sales', 'management')`
 
-*(Aviso: El string role `'admin'` posee un bypass general por defecto).*
+*(Note: The role string `'admin'` has a general bypass by default).*
 
 ```python
 from core.auth.decorators import login_required, require_role, require_any_role
 
 class DashboardController:
 
-    @login_required # Obliga a que la sesión contenga el dict 'user_id' activo.
+    @login_required # Forces the session to contain an active 'user_id' dict key.
     async def account(self, request: Request):
         return ...
 
@@ -70,43 +70,43 @@ class DashboardController:
         return ...
 ```
 
-**Comportamiento de los decoradores:**
-Dependiendo de qué intentó acceder el cliente, actúan inteligentemente (Negociación de Contenido por Header `Accept`):
-* Si el cliente es un navegador (`Content-Type` HTML), redirigen transparentemente a `/login` (302) o `/forbidden` (403).
-* Si el cliente es Fetch/AJAX HTTP puro (`application/json`), arrojan diccionarios JSON estándares `{"error": "Unauthorized"}` con códigos HTTP `401` y `403`.
+**Decorator Behavior:**
+Depending on what the client tried to access, they act smartly (Content Negotiation via `Accept` Header):
+* If the client is a browser (`Content-Type` HTML), they transparently redirect to `/login` (302) or `/forbidden` (403).
+* If the client is pure Fetch/AJAX HTTP (`application/json`), they throw standard JSON dictionaries `{"error": "Unauthorized"}` with HTTP codes `401` and `403`.
 
 ---
 
-## APIs y JSON Web Tokens (JWT)
+## APIs and JSON Web Tokens (JWT)
 
-Para crear API RESTfuls *Stateless*, el sistema de sesiones tradicional (cookies) no es el adecuado. Nori posee firmas HMAC-SHA256 nativas en `core.auth.jwt`.
+For creating *Stateless* RESTful APIs, the traditional session system (cookies) is not suitable. Nori has native HMAC-SHA256 signatures in `core.auth.jwt`.
 
-### Crear un JWT (Login)
+### Create a JWT (Login)
 ```python
 from core.auth.jwt import create_token
 from starlette.responses import JSONResponse
 
 async def api_login(self, request: Request):
-    # [Validar pwd...]
+    # [Validate pwd...]
     
-    # Payload general y envío JSON
+    # General payload and JSON dispatch
     jwt_str = create_token({'user_id': user.id}, expires_in=3600)
     return JSONResponse({'token': jwt_str})
 ```
-*Se firman validando contra la variable `JWT_SECRET` y expiran automáticamente bajo los contadores Unix Epoch de Nori.*
+*They are signed validating against the `JWT_SECRET` variable and automatically expire under Nori's Unix Epoch counters.*
 
-### Proteger Rutas API (Decorador)
+### Protect API Routes (Decorator)
 ```python
 from core.auth.decorators import token_required
 
 @token_required
 async def api_profile(self, request: Request):
-    # Si llegó aquí, el token existe, es válido y no expiró.
+    # If reached here, the token exists, is valid, and hasn't expired.
     
-    # El payload inyectado se recupera directamente del decorador:
+    # The injected payload is recovered directly from the decorator:
     user_id = request.state.jwt_payload['user_id']
     
     return JSONResponse({'status': 'ok', 'id': user_id})
 ```
 
-El decorador leerá de forma implícita y nativa el header HTTP del request del cliente (`Authorization: Bearer <token_string_aqui>`). De no poseerlo devolverá Error `401 JSON` bloqueando la capa.
+The decorator will implicitly and natively read the HTTP header from the client request (`Authorization: Bearer <token_string_here>`). If it doesn't have it, it will return a `401 JSON` Error, blocking the layer.

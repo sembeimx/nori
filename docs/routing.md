@@ -1,10 +1,10 @@
-# Routing y Rutas
+# Routing and Routes
 
-Todas las rutas en Nori se definen en el archivo `rootsystem/application/routes.py`. El sistema está construido sobre el *router* nativo de Starlette, ofreciendo un enrutamiento rápido, explícito y basado en endpoints asíncronos.
+All routes in Nori are defined in the `rootsystem/application/routes.py` file. The system is built on Starlette's native *router*, offering fast, explicit routing based on asynchronous endpoints.
 
-## Declaración de Rutas
+## Route Declaration
 
-Para mapear una URL a un controlador, se utiliza la clase `Route`. Recomendamos instanciar los controladores como *singletons* al inicio del archivo para mantener la memoria limpia y evitar instanciación excesiva.
+To map a URL to a controller, the `Route` class is used. We recommend instantiating controllers as *singletons* at the beginning of the file to keep memory clean and avoid excessive instantiation.
 
 ```python
 from starlette.routing import Route
@@ -18,15 +18,15 @@ routes = [
 ]
 ```
 
-### Componentes de una `Route`:
-1. **Path (`'/'`)**: La URL.
-2. **Endpoint (`endpoint=page.home`)**: El método asíncrono en tu controlador que manejará el request.
-3. **Methods (`methods=['GET']`)**: Una lista explícita de los verbos HTTP aceptados.
-4. **Name (`name='home'`)**: El identificador único para generar links reversos (URL Building).
+### Components of a `Route`:
+1. **Path (`'/'`)**: The URL.
+2. **Endpoint (`endpoint=page.home`)**: The asynchronous method in your controller that will handle the request.
+3. **Methods (`methods=['GET']`)**: An explicit list of accepted HTTP verbs.
+4. **Name (`name='home'`)**: The unique identifier to generate reverse links (URL Building).
 
-## Agrupación de Rutas (Mount)
+## Route Grouping (Mount)
 
-Para agrupar URLs bajo un prefijo común (por ejemplo, `/products`), utiliza `Mount`. Esto es ideal para los endpoints CRUD.
+To group URLs under a common prefix (for example, `/products`), use `Mount`. This is ideal for CRUD endpoints.
 
 ```python
 from starlette.routing import Mount
@@ -45,55 +45,55 @@ routes = [
 ]
 ```
 
-## Parámetros de Ruta (Path Params)
+## Route Parameters (Path Params)
 
-Puedes capturar variables directamente desde la URL utilizando `{nombre:tipo}`. 
+You can capture variables directly from the URL using `{name:type}`. 
 
 ```python
 Route('/users/{user_id:int}/posts/{post_id:int}', endpoint=user.show_post, methods=['GET'])
 ```
 
-En tu controlador, estos se acceden mediante `request.path_params`:
+In your controller, these are accessed via `request.path_params`:
 
 ```python
 async def show_post(self, request: Request):
     user_id = request.path_params['user_id']
     post_id = request.path_params['post_id']
-    # user_id y post_id ya son enteros gracias a ':int'
+    # user_id and post_id are already integers thanks to ':int'
 ```
 
-Tipos disponibles por defecto en Starlette:
-- `:str` (por defecto si se omite)
-- `:int` (convierte a entero)
-- `:float` (convierte a flotante)
-- `:uuid` (convierte a objeto UUID)
-- `:path` (captura el resto del path, ignorando las barras `/`)
+Available default types in Starlette:
+- `:str` (default if omitted)
+- `:int` (converts to integer)
+- `:float` (converts to float)
+- `:uuid` (converts to a UUID object)
+- `:path` (captures the rest of the path, including `/` slashes)
 
-## Generación de URLs (Reversing)
+## URL Generation (Reversing)
 
-En vez de quemar (hardcodear) URLs como `/products/5/edit` en tu código, puedes (y deberías) generarlas usando el argumento `name` definido en la ruta.
+Instead of hardcoding URLs like `/products/5/edit` into your code, you can (and should) generate them using the `name` argument defined in the route.
 
-**En un controlador:**
+**In a controller:**
 ```python
 url = request.url_for('product_edit', product_id=5)
-# url = RequestURL('http://tudominio.com/products/5/edit')
+# url = RequestURL('http://yourdomain.com/products/5/edit')
 ```
 
-**En tus Templates Jinja:**
+**In your Jinja Templates:**
 ```html
-<a href="{{ request.url_for('product_edit', product_id=p.id) }}">Editar Producto</a>
+<a href="{{ request.url_for('product_edit', product_id=p.id) }}">Edit Product</a>
 ```
 
-## Mejores Prácticas de Seguridad en Rutas
+## Best Security Practices in Routes
 
-Todas las rutas que ejecuten una acción destructiva (ej: Borrar producto, Cerrar sesión, Cambiar contraseña) deben ser **estrictamente POST** (o estructurarse como API con PUT/DELETE).
+All routes that execute a destructive action (e.g.: Delete product, Log out, Change password) must be **strictly POST** (or structured as an API with PUT/DELETE).
 
-Nunca uses `GET` para acciones que cambian estado, ya que el navegador podría hacer un pre-fetch de los links, o un atacante podría enviar el link a un admin para engañarlo y ejecutar la acción no intencionada (Vulnerabilidad CSRF).
+Never use `GET` for actions that change state, as the browser could pre-fetch the links, or an attacker could send the link to an admin to trick them and execute the unintended action (CSRF Vulnerability).
 
 ```python
-# CORRECTO
+# CORRECT
 Route('/logout', endpoint=auth.logout, methods=['POST'], name='logout')
 
-# INCORRECTO - Expuesto a CSRF via tags de imagenes o links
+# INCORRECT - Exposed to CSRF via image tags or links
 Route('/logout', endpoint=auth.logout, methods=['GET'], name='logout')
 ```

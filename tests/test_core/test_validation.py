@@ -7,7 +7,7 @@ from core.http.validation import validate
 def test_required_missing():
     errors = validate({}, {'name': 'required'})
     assert 'name' in errors
-    assert 'obligatorio' in errors['name'][0]
+    assert 'is required' in errors['name'][0]
 
 
 def test_required_empty_string():
@@ -25,7 +25,7 @@ def test_required_present():
 def test_min_too_short():
     errors = validate({'pw': '123'}, {'pw': 'required|min:6'})
     assert 'pw' in errors
-    assert 'al menos 6' in errors['pw'][0]
+    assert 'at least 6' in errors['pw'][0]
 
 
 def test_min_ok():
@@ -36,7 +36,7 @@ def test_min_ok():
 def test_max_too_long():
     errors = validate({'name': 'a' * 10}, {'name': 'required|max:5'})
     assert 'name' in errors
-    assert 'maximo 5' in errors['name'][0]
+    assert 'at most 5' in errors['name'][0]
 
 
 def test_max_ok():
@@ -102,7 +102,7 @@ def test_in_valid():
 def test_in_invalid():
     errors = validate({'role': 'hacker'}, {'role': 'required|in:admin,user,editor'})
     assert 'role' in errors
-    assert 'uno de' in errors['role'][0]
+    assert 'one of' in errors['role'][0]
 
 
 # --- multiple rules ---
@@ -120,7 +120,7 @@ def test_required_stops_chain():
     """When required fails, subsequent rules for that field are skipped."""
     errors = validate({'email': ''}, {'email': 'required|email|min:5'})
     assert len(errors['email']) == 1
-    assert 'obligatorio' in errors['email'][0]
+    assert 'is required' in errors['email'][0]
 
 
 # --- rules as list ---
@@ -150,15 +150,15 @@ def test_all_valid():
 
 def test_custom_message_overrides_default():
     errors = validate({}, {'email': 'required'}, {
-        'email.required': 'El correo es obligatorio',
+        'email.required': 'Email is mandatory',
     })
-    assert errors['email'][0] == 'El correo es obligatorio'
+    assert errors['email'][0] == 'Email is mandatory'
 
 
 def test_custom_message_only_affects_target_field():
     errors = validate({}, {'email': 'required', 'name': 'required'}, {
-        'email.required': 'El correo es obligatorio',
+        'email.required': 'Email is mandatory',
     })
-    assert errors['email'][0] == 'El correo es obligatorio'
-    assert 'obligatorio' in errors['name'][0]
-    assert errors['name'][0] != 'El correo es obligatorio'
+    assert errors['email'][0] == 'Email is mandatory'
+    assert 'is required' in errors['name'][0]
+    assert errors['name'][0] != 'Email is mandatory'
