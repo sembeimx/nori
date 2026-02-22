@@ -1,6 +1,5 @@
 # Nori
 
-<<<<<<< HEAD
 Un *boilerplate* web asíncrono construido sobre **Starlette** y **Tortoise ORM** que preserva la ergonomía de desarrollo rápida inspirada en frameworks como Laravel o Nori Engine: estructura de archivos plana, controladores basados en clases, validación declarativa por pipes (`required|email|max:255`), decoradores de autenticación, JWT, CSRF propio, un agrupador de colecciones ágil (`NoriCollection`), WebSockets, Rate Limiting distribuido (Redis), y utilidades nativas para envíos de Email y subida de archivos.
 
 ---
