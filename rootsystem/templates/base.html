@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Nori{% endblock %}</title>
+    <link rel="stylesheet" href="/static/css/main.css">
+    {% block head %}{% endblock %}
+</head>
+
+<body>
+    <nav class="main-nav">
+        <div class="nav-brand">Nori App</div>
+        <div class="nav-links">
+            <a href="/">Inicio</a>
+        </div>
+    </nav>
+
+    {% set messages = get_flashed_messages(request.session) %}
+    {% if messages %}
+    <div class="flash-messages">
+        {% for msg in messages %}
+        <div class="flash-{{ msg.category }}">{{ msg.message }}</div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <main>
+        {% block content %}{% endblock %}
+    </main>
+</body>
+
+</html>

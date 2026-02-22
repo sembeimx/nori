@@ -1,0 +1,16 @@
+starlette>=0.28
+uvicorn[standard]
+tortoise-orm
+asyncmy
+asyncpg
+jinja2
+python-multipart
+python-dotenv
+pytest
+pytest-asyncio
+httpx
+itsdangerous
+typing-extensions
+gunicorn
+aiosmtplib
+# redis[hiredis]  # opcional: para rate limiting distribuido

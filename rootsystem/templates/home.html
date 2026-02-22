@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+
+{% block title %}Nori Framework{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="/static/css/home.css">
+{% endblock %}
+
+{% block content %}
+<div class="hero">
+    <h1>Nori</h1>
+    <p>A pure, lightweight, asynchronous boilerplate built on Starlette and Tortoise ORM.</p>
+
+    <div class="system-status">
+        <div class="stat-item">
+            <span class="stat-label">System Status</span>
+            <span class="stat-value"><span class="status-indicator"></span>Online</span>
+        </div>
+        <div class="stat-item">
+            <span class="stat-label">Python Version</span>
+            <span class="stat-value">{{ python_version|default('3.x') }}</span>
+        </div>
+        <div class="stat-item">
+            <span class="stat-label">Nori Core</span>
+            <span class="stat-value">v{{ nori_version|default('1.0') }}</span>
+        </div>
+    </div>
+</div>
+
+<script src="/static/js/home.js"></script>
+{% endblock %}

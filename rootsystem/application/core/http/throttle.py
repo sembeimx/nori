@@ -1,0 +1,85 @@
+from __future__ import annotations
+
+import time
+from functools import wraps
+from typing import Any, Callable
+
+from starlette.requests import Request
+from starlette.responses import HTMLResponse, JSONResponse, Response
+
+from core.http.throttle_backends import get_backend
+
+_UNITS: dict[str, int] = {
+    'second': 1,
+    'minute': 60,
+    'hour': 3600,
+}
+
+
+def _parse_rate(rate: str) -> tuple[int, int]:
+    """Parse '10/minute' into (max_requests, window_seconds)."""
+    parts = rate.split('/')
+    if len(parts) != 2:
+        raise ValueError(f"Invalid rate format: '{rate}'. Use 'N/unit' (e.g. '10/minute').")
+    max_requests = int(parts[0])
+    unit = parts[1].strip().lower()
+    if unit not in _UNITS:
+        raise ValueError(f"Unknown time unit: '{unit}'. Use: {', '.join(_UNITS)}.")
+    return max_requests, _UNITS[unit]
+
+
+def throttle(rate: str) -> Callable[..., Any]:
+    """
+    Rate-limit decorator for controller methods.
+
+        @throttle('10/minute')
+        async def create(self, request): ...
+    """
+    max_requests, window = _parse_rate(rate)
+
+    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
+        @wraps(func)
+        async def wrapper(self: Any, request: Request, *args: Any, **kwargs: Any) -> Response:
+            now = time.time()
+            ip = request.client.host if request.client else '0.0.0.0'
+            key = f"{ip}:{request.url.path}"
+
+            backend = get_backend()
+
+            # Get valid timestamps within window
+            timestamps = await backend.get_timestamps(key, window)
+
+            remaining = max_requests - len(timestamps)
+            reset = int(window - (now - timestamps[0]) if timestamps else window)
+
+            if len(timestamps) >= max_requests:
+                headers = {
+                    'X-RateLimit-Limit': str(max_requests),
+                    'X-RateLimit-Remaining': '0',
+                    'X-RateLimit-Reset': str(reset),
+                }
+                accept = request.headers.get('accept', '')
+                if 'application/json' in accept:
+                    return JSONResponse(
+                        {'error': 'Too Many Requests'},
+                        status_code=429,
+                        headers=headers,
+                    )
+                return HTMLResponse(
+                    '<h1>429 Too Many Requests</h1><p>Demasiadas solicitudes. Intenta mas tarde.</p>',
+                    status_code=429,
+                    headers=headers,
+                )
+
+            # Allow request
+            await backend.add_timestamp(key, now, window)
+
+            response = await func(self, request, *args, **kwargs)
+
+            response.headers['X-RateLimit-Limit'] = str(max_requests)
+            response.headers['X-RateLimit-Remaining'] = str(remaining - 1)
+            response.headers['X-RateLimit-Reset'] = str(reset)
+
+            return response
+        return wrapper
+    return decorator
