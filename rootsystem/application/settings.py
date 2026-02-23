@@ -68,7 +68,7 @@ TORTOISE_ORM = {
     },
     'apps': {
         'models': {
-            'models': ['models.user', 'models.product'],
+            'models': ['models'],
             'default_connection': 'default',
         }
     },
