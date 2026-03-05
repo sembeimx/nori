@@ -2,6 +2,8 @@
 Nori - ASGI Entry Point
 Start with: uvicorn asgi:app --reload --host 0.0.0.0 --port 8000
 """
+from contextlib import asynccontextmanager
+
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
 from starlette.middleware.cors import CORSMiddleware
@@ -22,10 +24,12 @@ _log = get_logger('asgi')
 
 # Lifecycle
 
-async def on_startup():
+@asynccontextmanager
+async def lifespan(app):
     await Tortoise.init(config=settings.TORTOISE_ORM)
-
-async def on_shutdown():
+    if settings.DB_ENGINE == 'sqlite':
+        await Tortoise.generate_schemas()
+    yield
     await Tortoise.close_connections()
 
 # Error handler
@@ -66,8 +70,7 @@ app = Starlette(
     routes=routes,
     middleware=middleware,
     exception_handlers=exception_handlers,
-    on_startup=[on_startup],
-    on_shutdown=[on_shutdown],
+    lifespan=lifespan,
 )
 
 app.mount('/static', StaticFiles(directory=settings.STATIC_DIR), name='static')
