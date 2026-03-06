@@ -1,11 +1,11 @@
 """
-Security Headers Middleware para Starlette.
-Agrega headers de seguridad estandar a todas las respuestas HTTP.
+Security Headers Middleware for Starlette.
+Adds standard security headers to all HTTP responses.
 """
 
 
 class SecurityHeadersMiddleware:
-    """ASGI middleware que inyecta headers de seguridad en cada respuesta."""
+    """ASGI middleware that injects security headers into every response."""
 
     DEFAULT_HEADERS = {
         'X-Content-Type-Options': 'nosniff',
@@ -20,10 +20,10 @@ class SecurityHeadersMiddleware:
         """
         Args:
             app: ASGI application.
-            headers: Dict de headers custom que sobreescriben los defaults.
-            hsts: Activar Strict-Transport-Security (default True).
-            hsts_max_age: Max-age para HSTS en segundos (default 1 año).
-            csp: String de Content-Security-Policy. None = no se envia.
+            headers: Dict of custom headers that override the defaults.
+            hsts: Enable Strict-Transport-Security (default True).
+            hsts_max_age: Max-age for HSTS in seconds (default 1 year).
+            csp: Content-Security-Policy string. None = not sent.
         """
         self.app = app
         self.headers = {**self.DEFAULT_HEADERS, **(headers or {})}
@@ -31,7 +31,7 @@ class SecurityHeadersMiddleware:
             self.headers['Strict-Transport-Security'] = f'max-age={hsts_max_age}; includeSubDomains'
         if csp:
             self.headers['Content-Security-Policy'] = csp
-        # Pre-encode headers para evitar hacerlo en cada request
+        # Pre-encode headers to avoid doing it on every request
         self._encoded = [
             (k.lower().encode('latin1'), v.encode('latin1'))
             for k, v in self.headers.items()

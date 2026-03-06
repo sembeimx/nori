@@ -5,14 +5,14 @@ Email utilities with aiosmtplib.
 
     await send_mail(
         to='user@example.com',
-        subject='Bienvenido',
-        body_html='<h1>Hola!</h1>',
+        subject='Welcome',
+        body_html='<h1>Hello!</h1>',
     )
 
     # Or with template:
     await send_mail(
         to='user@example.com',
-        subject='Bienvenido',
+        subject='Welcome',
         template='email/welcome.html',
         context={'name': 'Alice'},
     )

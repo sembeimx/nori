@@ -79,3 +79,41 @@ TORTOISE_ORM = {
         }
     },
 }
+
+
+# ---------------------------------------------------------------------------
+# Startup validation
+# ---------------------------------------------------------------------------
+
+def validate_settings() -> list[str]:
+    """
+    Validate configuration at startup. Returns list of error messages.
+    Raises RuntimeError in production if critical settings are missing.
+    """
+    errors: list[str] = []
+
+    # Database credentials required for non-sqlite in production
+    if DB_ENGINE != 'sqlite' and not DEBUG:
+        if not os.environ.get('DB_USER'):
+            errors.append("DB_USER is required for production databases")
+        if not os.environ.get('DB_PASSWORD'):
+            errors.append("DB_PASSWORD is required for production databases")
+        if not os.environ.get('DB_NAME'):
+            errors.append("DB_NAME is required for production databases")
+
+    # Template and static dirs should exist
+    if not os.path.isdir(TEMPLATE_DIR):
+        errors.append(f"TEMPLATE_DIR not found: {TEMPLATE_DIR}")
+    if not os.path.isdir(STATIC_DIR):
+        errors.append(f"STATIC_DIR not found: {STATIC_DIR}")
+
+    # JWT secret should differ from SECRET_KEY in production
+    if not DEBUG and JWT_SECRET == SECRET_KEY:
+        errors.append("JWT_SECRET should be set independently from SECRET_KEY in production")
+
+    if errors and not DEBUG:
+        raise RuntimeError(
+            "Settings validation failed:\n  - " + "\n  - ".join(errors)
+        )
+
+    return errors

@@ -6,13 +6,13 @@ DEFAULT_ITERATIONS = 100_000
 
 
 class Security:
-    """Hashing de passwords y generacion de tokens."""
+    """Password hashing and token generation."""
 
     @staticmethod
     def hash_password(password: str, iterations: int = None) -> str:
         """
-        Hash con PBKDF2-HMAC-SHA256.
-        Retorna: 'pbkdf2_sha256$iterations$salt$hash'
+        Hash with PBKDF2-HMAC-SHA256.
+        Returns: 'pbkdf2_sha256$iterations$salt$hash'
         """
         iterations = iterations or DEFAULT_ITERATIONS
         salt = secrets.token_hex(16)
@@ -28,8 +28,8 @@ class Security:
     @staticmethod
     def verify_password(plain_password: str, password_hash: str) -> bool:
         """
-        Verifica password contra hash almacenado.
-        Soporta formato viejo (method$salt$hash) y nuevo (method$iterations$salt$hash).
+        Verify password against stored hash.
+        Supports old format (method$salt$hash) and new (method$iterations$salt$hash).
         """
         parts = password_hash.split('$')
 
@@ -58,7 +58,7 @@ class Security:
 
     @staticmethod
     def generate_token(length: int = 32) -> str:
-        """Token aleatorio criptografico (hex)."""
+        """Cryptographic random token (hex)."""
         return secrets.token_hex(length)
 
     @staticmethod

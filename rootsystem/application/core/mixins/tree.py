@@ -10,8 +10,8 @@ from core.collection import NoriCollection, collect
 
 class NoriTreeMixin(Model):
     """
-    Mixin para arboles con adjacency list.
-    Requiere campo parent (ForeignKey a self).
+    Mixin for adjacency-list tree structures.
+    Requires a parent ForeignKey field pointing to self.
 
         class Category(NoriTreeMixin):
             name = fields.CharField(max_length=100)
@@ -32,19 +32,19 @@ class NoriTreeMixin(Model):
     class Meta:
         abstract = True
 
-    # --- Configuracion ---
-    # Subclases deben definir un campo ForeignKey a 'self' llamado 'parent'
-    # con related_name='children_rel'
-    _parent_field: str = 'parent_id'  # nombre de la columna FK en la DB
+    # --- Configuration ---
+    # Subclasses must define a ForeignKey to 'self' named 'parent'
+    # with related_name='children_rel'
+    _parent_field: str = 'parent_id'  # FK column name in the DB
 
     async def children(self) -> NoriCollection[Any]:
-        """Hijos directos."""
+        """Direct children."""
         pk = self.pk
         results = await self.__class__.filter(**{self._parent_field: pk}).all()
         return collect(results)
 
     async def parent_node(self) -> Self | None:
-        """Nodo padre. None si es raiz."""
+        """Parent node. None if root."""
         parent_id = getattr(self, self._parent_field, None)
         if parent_id is None:
             return None
@@ -110,7 +110,7 @@ class NoriTreeMixin(Model):
         return await self._hydrate_rows(rows)
 
     async def siblings(self) -> NoriCollection[Any]:
-        """Hermanos (mismo parent, excluyendo self)."""
+        """Siblings (same parent, excluding self)."""
         parent_id = getattr(self, self._parent_field, None)
         if parent_id is None:
             nodes = await self.__class__.filter(**{self._parent_field + '__isnull': True}).all()
@@ -119,27 +119,27 @@ class NoriTreeMixin(Model):
         return NoriCollection(n for n in nodes if n.pk != self.pk)
 
     async def is_leaf(self) -> bool:
-        """True si no tiene hijos."""
+        """True if the node has no children."""
         count = await self.__class__.filter(**{self._parent_field: self.pk}).count()
         return count == 0
 
     async def is_root(self) -> bool:
-        """True si no tiene padre."""
+        """True if the node has no parent."""
         return getattr(self, self._parent_field, None) is None
 
     async def move_to(self, new_parent_id: Any) -> Self:
         """
-        Mover nodo a otro padre.
-        Valida que no se mueva a si mismo ni a un descendiente.
+        Move node to a new parent.
+        Validates that a node cannot be moved to itself or to one of its descendants.
         """
         if new_parent_id == self.pk:
-            raise ValueError("No se puede mover un nodo a si mismo")
+            raise ValueError("Cannot move a node to itself")
 
         if new_parent_id is not None:
             descendants = await self.descendants()
             descendant_ids = {d.pk for d in descendants}
             if new_parent_id in descendant_ids:
-                raise ValueError("No se puede mover un nodo a uno de sus descendientes")
+                raise ValueError("Cannot move a node to one of its descendants")
 
         setattr(self, self._parent_field, new_parent_id)
         await self.save(update_fields=[self._parent_field])
@@ -148,15 +148,15 @@ class NoriTreeMixin(Model):
     @classmethod
     async def tree(cls, root_id: Any = None) -> NoriCollection[Any]:
         """
-        Carga arbol completo en UNA query y lo estructura en memoria.
-        Retorna NoriCollection de nodos raiz, cada uno con ._children populado.
+        Load the full tree in ONE query and structure it in memory.
+        Returns NoriCollection of root nodes, each with ._children populated.
         """
         all_nodes = await cls.all()
         return cls._build_tree(all_nodes, root_id)
 
     @classmethod
     def _build_tree(cls, all_nodes: Sequence[Any], root_id: Any = None) -> NoriCollection[Any]:
-        """Construye arbol en memoria desde lista plana."""
+        """Build tree in memory from a flat list."""
         by_id: dict[Any, Any] = {}
         for node in all_nodes:
             node._children = NoriCollection()
@@ -179,7 +179,7 @@ class NoriTreeMixin(Model):
 
     @classmethod
     async def _hydrate_rows(cls, rows: Sequence[dict[str, Any]]) -> NoriCollection[Any]:
-        """Convierte dicts de raw SQL a instancias del modelo."""
+        """Convert raw SQL dicts to model instances."""
         result: NoriCollection[Any] = NoriCollection()
         for row in rows:
             instance = cls(**row)

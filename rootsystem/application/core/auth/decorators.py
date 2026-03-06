@@ -11,8 +11,8 @@ from core.auth.jwt import verify_token as _verify_token
 
 def login_required(func: Callable[..., Any]) -> Callable[..., Any]:
     """
-    Decorator: redirige a /login si no hay sesion.
-    Para JSON requests, retorna 401.
+    Decorator: redirects to /login if no session.
+    For JSON requests, returns 401.
     """
     @wraps(func)
     async def wrapper(self: Any, request: Request, *args: Any, **kwargs: Any) -> Response:
@@ -28,7 +28,7 @@ def login_required(func: Callable[..., Any]) -> Callable[..., Any]:
 
 def require_role(role: str) -> Callable[..., Any]:
     """
-    Decorator: requiere rol especifico. Admin accede a todo.
+    Decorator: requires a specific role. Admin bypasses all roles.
 
         @require_role('editor')
         async def edit(self, request): ...
@@ -57,7 +57,7 @@ def require_role(role: str) -> Callable[..., Any]:
 
 def require_any_role(*roles: str) -> Callable[..., Any]:
     """
-    Decorator: requiere uno de los roles especificados.
+    Decorator: requires one of the specified roles.
 
         @require_any_role('admin', 'moderator')
         async def moderate(self, request): ...

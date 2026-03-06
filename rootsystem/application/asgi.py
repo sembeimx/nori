@@ -26,8 +26,14 @@ _log = get_logger('asgi')
 
 @asynccontextmanager
 async def lifespan(app):
+    # Validate settings on startup
+    warnings = settings.validate_settings()
+    for w in warnings:
+        _log.warning("Settings: %s", w)
+
     await Tortoise.init(config=settings.TORTOISE_ORM)
     await Tortoise.generate_schemas()
+    _log.info("Nori started [debug=%s, db=%s]", settings.DEBUG, settings.DB_ENGINE)
     yield
     await Tortoise.close_connections()
 
