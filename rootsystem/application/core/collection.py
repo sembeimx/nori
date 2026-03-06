@@ -87,8 +87,10 @@ class NoriCollection(list[T]):
         return sum(getattr(i, key, 0) or 0 for i in self)
 
     def avg(self, key: str) -> float:
+        if not self:
+            return 0
         vals = [getattr(i, key, 0) or 0 for i in self]
-        return sum(vals) / len(vals) if vals else 0
+        return sum(vals) / len(self)
 
     def min(self, key: str) -> Any | None:
         vals = [getattr(i, key, None) for i in self if getattr(i, key, None) is not None]
@@ -102,12 +104,25 @@ class NoriCollection(list[T]):
         """Convert to list of dicts (JSON serializable)."""
         result: list[Any] = []
         for i in self:
-            if hasattr(i, '__dict__'):
-                # Tortoise model: exclude internal fields
-                d = {k: v for k, v in i.__dict__.items() if not k.startswith('_')}
+            if hasattr(i, 'to_dict') and callable(i.to_dict):
+                # Use NoriModelMixin.to_dict() when available
+                result.append(i.to_dict())
+            elif hasattr(i, '_meta') and hasattr(i._meta, 'fields_map'):
+                # Tortoise model without mixin: use fields_map
+                d = {}
+                for field in i._meta.fields_map:
+                    if not field.startswith('_'):
+                        try:
+                            d[field] = getattr(i, field)
+                        except Exception:
+                            pass
                 result.append(d)
             elif isinstance(i, dict):
                 result.append(i)
+            elif hasattr(i, '__dict__'):
+                # Plain objects: exclude internal fields
+                d = {k: v for k, v in i.__dict__.items() if not k.startswith('_')}
+                result.append(d)
             else:
                 result.append(i)
         return result

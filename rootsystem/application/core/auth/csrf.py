@@ -1,9 +1,10 @@
 """
-CSRF Middleware para Starlette.
-Valida tokens en requests state-changing (POST, PUT, DELETE, PATCH).
-Debe ir DESPUES de SessionMiddleware en el stack.
+CSRF Middleware for Starlette.
+Validates tokens on state-changing requests (POST, PUT, DELETE, PATCH).
+Must be placed AFTER SessionMiddleware in the stack.
 """
 import hmac
+from html import escape as _html_escape
 from urllib.parse import parse_qs
 from core.auth.security import Security
 from core.logger import get_logger
@@ -12,11 +13,11 @@ log = get_logger('csrf')
 
 _SAFE_METHODS = {'GET', 'HEAD', 'OPTIONS', 'TRACE'}
 _CSRF_SESSION_KEY = '_csrf_token'
-_MAX_BODY_SIZE = 10 * 1024 * 1024  # 10 MB — limite DoS
+_MAX_BODY_SIZE = 10 * 1024 * 1024  # 10 MB — DoS limit
 
 
 class CsrfMiddleware:
-    """ASGI middleware que enforce CSRF token."""
+    """ASGI middleware that enforces CSRF tokens."""
 
     def __init__(self, app, exempt_paths=None):
         self.app = app
@@ -26,10 +27,10 @@ class CsrfMiddleware:
         if scope['type'] != 'http':
             return await self.app(scope, receive, send)
 
-        # Starlette SessionMiddleware popula scope['session'] como dict
+        # Starlette SessionMiddleware populates scope['session'] as dict
         session = scope.get('session')
 
-        # Asegurar que el token existe
+        # Ensure token exists
         if session is not None and _CSRF_SESSION_KEY not in session:
             session[_CSRF_SESSION_KEY] = Security.generate_csrf_token()
 
@@ -42,13 +43,13 @@ class CsrfMiddleware:
         if path in self.exempt_paths:
             return await self.app(scope, receive, send)
 
-        # JSON requests pasan (APIs protegidas por otros medios)
+        # JSON requests pass through (APIs protected by other means)
         headers = dict(scope.get('headers', []))
         content_type = headers.get(b'content-type', b'').decode('latin1', errors='replace')
         if 'application/json' in content_type:
             return await self.app(scope, receive, send)
 
-        # Leer body con limite de tamaño y validar token
+        # Read body with size limit and validate token
         try:
             body = await self._read_body(receive)
         except ValueError:
@@ -68,13 +69,20 @@ class CsrfMiddleware:
             log.warning("CSRF validation failed for %s %s", method, path)
             return await self._send_403(send)
 
+        # Replay body so downstream can read it multiple times
+        body_sent = False
+
         async def replay_receive():
-            return {'type': 'http.request', 'body': body, 'more_body': False}
+            nonlocal body_sent
+            if not body_sent:
+                body_sent = True
+                return {'type': 'http.request', 'body': body, 'more_body': False}
+            return {'type': 'http.disconnect'}
 
         await self.app(scope, replay_receive, send)
 
     def _extract_form_token(self, body, content_type):
-        """Extrae _csrf_token del body (url-encoded o multipart)."""
+        """Extract _csrf_token from body (url-encoded or multipart)."""
         if 'multipart/form-data' in content_type:
             return self._parse_multipart_token(body, content_type)
         try:
@@ -85,14 +93,19 @@ class CsrfMiddleware:
             return None
 
     def _parse_multipart_token(self, body, content_type):
-        """Extrae _csrf_token de multipart form data."""
+        """Extract _csrf_token from multipart form data."""
         try:
+            boundary = None
             for part in content_type.split(';'):
                 part = part.strip()
                 if part.startswith('boundary='):
                     boundary = part[len('boundary='):]
+                    # Strip quotes per RFC 2046
+                    if len(boundary) >= 2 and boundary[0] in ('"', "'") and boundary[-1] == boundary[0]:
+                        boundary = boundary[1:-1]
                     break
-            else:
+
+            if not boundary:
                 return None
 
             boundary_bytes = ('--' + boundary).encode('utf-8')
@@ -102,7 +115,8 @@ class CsrfMiddleware:
                 if b'name="_csrf_token"' in part:
                     chunks = part.split(b'\r\n\r\n', 1)
                     if len(chunks) == 2:
-                        value = chunks[1].rstrip(b'\r\n-')
+                        # Strip only trailing CRLF, not dashes that could be part of the token
+                        value = chunks[1].split(b'\r\n', 1)[0]
                         return value.decode('utf-8', errors='replace')
         except Exception:
             return None
@@ -145,11 +159,11 @@ class CsrfMiddleware:
 
 
 def csrf_field(session):
-    """Retorna HTML hidden input con el CSRF token."""
-    token = session.get(_CSRF_SESSION_KEY, '')
+    """Return HTML hidden input with the CSRF token (XSS-safe)."""
+    token = _html_escape(session.get(_CSRF_SESSION_KEY, ''))
     return f'<input type="hidden" name="_csrf_token" value="{token}">'
 
 
 def csrf_token(session):
-    """Retorna el token CSRF como string."""
+    """Return the raw CSRF token string."""
     return session.get(_CSRF_SESSION_KEY, '')

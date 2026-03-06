@@ -22,6 +22,8 @@ def _parse_rate(rate: str) -> tuple[int, int]:
     if len(parts) != 2:
         raise ValueError(f"Invalid rate format: '{rate}'. Use 'N/unit' (e.g. '10/minute').")
     max_requests = int(parts[0])
+    if max_requests <= 0:
+        raise ValueError(f"Rate must be positive, got: {max_requests}")
     unit = parts[1].strip().lower()
     if unit not in _UNITS:
         raise ValueError(f"Unknown time unit: '{unit}'. Use: {', '.join(_UNITS)}.")
@@ -41,7 +43,10 @@ def throttle(rate: str) -> Callable[..., Any]:
         @wraps(func)
         async def wrapper(self: Any, request: Request, *args: Any, **kwargs: Any) -> Response:
             now = time.time()
-            ip = request.client.host if request.client else '0.0.0.0'
+            ip = request.client.host if request.client else None
+            if not ip:
+                forwarded = request.headers.get('x-forwarded-for', '').split(',')[0].strip()
+                ip = forwarded or 'unknown'
             key = f"{ip}:{request.url.path}"
 
             backend = get_backend()
@@ -49,8 +54,8 @@ def throttle(rate: str) -> Callable[..., Any]:
             # Get valid timestamps within window
             timestamps = await backend.get_timestamps(key, window)
 
-            remaining = max_requests - len(timestamps)
-            reset = int(window - (now - timestamps[0]) if timestamps else window)
+            reset = max(0, int(timestamps[0] + window - now)) if timestamps else window
+            remaining = max(0, max_requests - len(timestamps))
 
             if len(timestamps) >= max_requests:
                 headers = {
@@ -66,7 +71,7 @@ def throttle(rate: str) -> Callable[..., Any]:
                         headers=headers,
                     )
                 return HTMLResponse(
-                    '<h1>429 Too Many Requests</h1><p>Demasiadas solicitudes. Intenta mas tarde.</p>',
+                    '<h1>429 Too Many Requests</h1><p>Too many requests. Try again later.</p>',
                     status_code=429,
                     headers=headers,
                 )
@@ -77,7 +82,7 @@ def throttle(rate: str) -> Callable[..., Any]:
             response = await func(self, request, *args, **kwargs)
 
             response.headers['X-RateLimit-Limit'] = str(max_requests)
-            response.headers['X-RateLimit-Remaining'] = str(remaining - 1)
+            response.headers['X-RateLimit-Remaining'] = str(max(0, remaining - 1))
             response.headers['X-RateLimit-Reset'] = str(reset)
 
             return response

@@ -2,6 +2,10 @@ from __future__ import annotations
 
 from typing import Any
 
+from core.logger import get_logger
+
+_log = get_logger('model')
+
 
 class NoriModelMixin:
     """
@@ -31,6 +35,6 @@ class NoriModelMixin:
                 continue
             try:
                 result[field] = getattr(self, field)
-            except Exception:
-                pass
+            except Exception as exc:
+                _log.warning("Failed to serialize field '%s': %s", field, exc)
         return result

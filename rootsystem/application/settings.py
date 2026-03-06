@@ -6,8 +6,14 @@ _root = dirname(dirname(dirname(abspath(__file__))))
 _app_dir = dirname(abspath(__file__))
 load_dotenv(join(_app_dir, '.env'))
 
+import secrets as _secrets
+
 DEBUG = os.environ.get('DEBUG', 'false').lower() in ('true', '1', 'yes')
-SECRET_KEY = os.environ.get('SECRET_KEY', 'change-me-in-production')
+
+_secret_env = os.environ.get('SECRET_KEY', '')
+if not _secret_env and not DEBUG:
+    raise RuntimeError("SECRET_KEY environment variable is required in production")
+SECRET_KEY = _secret_env or _secrets.token_urlsafe(32)
 
 TEMPLATE_DIR = join(_root, 'rootsystem', 'templates')
 STATIC_DIR = join(_root, 'rootsystem', 'static')
@@ -39,7 +45,7 @@ CORS_ORIGINS = [
     if o.strip()
 ]
 CORS_ALLOW_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS']
-CORS_ALLOW_HEADERS = ['*']
+CORS_ALLOW_HEADERS = ['Content-Type', 'Authorization', 'X-CSRF-Token']
 CORS_ALLOW_CREDENTIALS = True
 
 # File Uploads

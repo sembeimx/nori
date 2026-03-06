@@ -52,8 +52,8 @@ class NoriTreeMixin(Model):
 
     async def ancestors(self) -> NoriCollection[Any]:
         """
-        Todos los ancestros hasta la raiz (1 query via CTE recursivo).
-        Retorna NoriCollection ordenada de padre directo a raiz.
+        All ancestors up to root (1 query via recursive CTE).
+        Returns NoriCollection ordered from direct parent to root.
         """
         pk = self.pk
         parent_id = getattr(self, self._parent_field, None)
@@ -63,6 +63,11 @@ class NoriTreeMixin(Model):
         table = self.__class__._meta.db_table
         pk_col = self.__class__._meta.pk_attr
         parent_col = self._parent_field
+
+        # Validate identifiers to prevent SQL injection
+        for ident in (table, pk_col, parent_col):
+            if not ident.replace('_', '').isalnum():
+                raise ValueError(f"Invalid SQL identifier: {ident}")
 
         sql = (
             f"WITH RECURSIVE ancestors AS ("
@@ -79,13 +84,17 @@ class NoriTreeMixin(Model):
 
     async def descendants(self) -> NoriCollection[Any]:
         """
-        Todos los descendientes recursivos (1 query via CTE recursivo).
-        Retorna NoriCollection.
+        All recursive descendants (1 query via recursive CTE).
+        Returns NoriCollection.
         """
         pk = self.pk
         table = self.__class__._meta.db_table
         pk_col = self.__class__._meta.pk_attr
         parent_col = self._parent_field
+
+        for ident in (table, pk_col, parent_col):
+            if not ident.replace('_', '').isalnum():
+                raise ValueError(f"Invalid SQL identifier: {ident}")
 
         sql = (
             f"WITH RECURSIVE descendants AS ("

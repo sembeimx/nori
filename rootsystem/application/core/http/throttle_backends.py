@@ -7,6 +7,7 @@ Default is MemoryBackend. Set settings.THROTTLE_BACKEND = 'redis' for Redis.
 """
 from __future__ import annotations
 
+import asyncio
 import time
 from abc import ABC, abstractmethod
 from typing import Any
@@ -31,37 +32,41 @@ class ThrottleBackend(ABC):
 
 
 class MemoryBackend(ThrottleBackend):
-    """In-memory rate limiting (single process). Same logic as the original."""
+    """In-memory rate limiting (single process) with asyncio lock."""
 
     def __init__(self) -> None:
         self._store: dict[str, list[float]] = {}
         self._request_count: int = 0
         self._CLEANUP_EVERY: int = 100
+        self._lock = asyncio.Lock()
 
     async def get_timestamps(self, key: str, window: int) -> list[float]:
-        cutoff = time.time() - window
-        timestamps = self._store.get(key, [])
-        return [t for t in timestamps if t > cutoff]
+        async with self._lock:
+            cutoff = time.time() - window
+            timestamps = self._store.get(key, [])
+            return [t for t in timestamps if t > cutoff]
 
     async def add_timestamp(self, key: str, now: float, window: int) -> None:
-        cutoff = now - window
-        timestamps = self._store.get(key, [])
-        timestamps = [t for t in timestamps if t > cutoff]
-        timestamps.append(now)
-        self._store[key] = timestamps
+        async with self._lock:
+            cutoff = now - window
+            timestamps = self._store.get(key, [])
+            timestamps = [t for t in timestamps if t > cutoff]
+            timestamps.append(now)
+            self._store[key] = timestamps
 
-        # Lazy cleanup
-        self._request_count += 1
-        if self._request_count % self._CLEANUP_EVERY == 0:
-            await self._global_cleanup(window)
+            # Lazy cleanup
+            self._request_count += 1
+            if self._request_count % self._CLEANUP_EVERY == 0:
+                self._global_cleanup_locked(window)
 
     async def cleanup(self, key: str, window: int) -> None:
-        cutoff = time.time() - window
-        timestamps = self._store.get(key, [])
-        self._store[key] = [t for t in timestamps if t > cutoff]
+        async with self._lock:
+            cutoff = time.time() - window
+            timestamps = self._store.get(key, [])
+            self._store[key] = [t for t in timestamps if t > cutoff]
 
-    async def _global_cleanup(self, window: int) -> None:
-        """Remove keys whose timestamps are all expired."""
+    def _global_cleanup_locked(self, window: int) -> None:
+        """Remove keys whose timestamps are all expired. Must hold lock."""
         cutoff = time.time() - window
         expired = [k for k, ts in self._store.items() if not ts or ts[-1] < cutoff]
         for k in expired:
@@ -78,7 +83,7 @@ class RedisBackend(ThrottleBackend):
 
     def __init__(self, redis_url: str) -> None:
         import redis.asyncio as aioredis
-        self._redis = aioredis.from_url(redis_url)
+        self._redis = aioredis.from_url(redis_url, socket_connect_timeout=5)
         self._prefix = 'throttle:'
 
     async def get_timestamps(self, key: str, window: int) -> list[float]:
@@ -99,6 +104,10 @@ class RedisBackend(ThrottleBackend):
         cutoff = time.time() - window
         rkey = f"{self._prefix}{key}"
         await self._redis.zremrangebyscore(rkey, '-inf', cutoff)
+
+    async def shutdown(self) -> None:
+        """Close the Redis connection pool."""
+        await self._redis.close()
 
 
 _backend: ThrottleBackend | None = None

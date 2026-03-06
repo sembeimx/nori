@@ -96,7 +96,7 @@ def token_required(func: Callable[..., Any]) -> Callable[..., Any]:
     @wraps(func)
     async def wrapper(self: Any, request: Request, *args: Any, **kwargs: Any) -> Response:
         auth_header = request.headers.get('authorization', '')
-        if not auth_header.startswith('Bearer '):
+        if not auth_header[:7].lower() == 'bearer ':
             return JSONResponse({'error': 'Unauthorized'}, status_code=401)
 
         token = auth_header[7:]

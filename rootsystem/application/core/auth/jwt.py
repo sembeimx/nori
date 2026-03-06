@@ -17,6 +17,18 @@ import json
 import time
 
 import settings
+from core.logger import get_logger
+
+_log = get_logger('jwt')
+
+
+def _get_secret() -> str:
+    """Return JWT secret, warning if it falls back to SECRET_KEY."""
+    secret = getattr(settings, 'JWT_SECRET', None)
+    if not secret or secret == settings.SECRET_KEY:
+        _log.warning("JWT_SECRET not set; falling back to SECRET_KEY")
+        return settings.SECRET_KEY
+    return secret
 
 
 def _base64url_encode(data: bytes) -> str:
@@ -56,7 +68,7 @@ def create_token(payload: dict, *, expires_in: int | None = None) -> str:
     if expires_in is None:
         expires_in = getattr(settings, 'JWT_EXPIRATION', 3600)
 
-    secret = getattr(settings, 'JWT_SECRET', settings.SECRET_KEY)
+    secret = _get_secret()
 
     header = _base64url_encode(json.dumps(
         {'alg': 'HS256', 'typ': 'JWT'}, separators=(',', ':'),
@@ -82,7 +94,7 @@ def verify_token(token: str) -> dict | None:
     Returns:
         Payload dict if valid, None if invalid/expired.
     """
-    secret = getattr(settings, 'JWT_SECRET', settings.SECRET_KEY)
+    secret = _get_secret()
 
     parts = token.split('.')
     if len(parts) != 3:
@@ -96,7 +108,8 @@ def verify_token(token: str) -> dict | None:
 
     try:
         payload = json.loads(_base64url_decode(parts[1]))
-    except (json.JSONDecodeError, Exception):
+    except (json.JSONDecodeError, ValueError):
+        _log.debug("Invalid JWT payload encoding")
         return None
 
     if 'exp' in payload and payload['exp'] < int(time.time()):

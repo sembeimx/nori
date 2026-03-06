@@ -17,7 +17,12 @@ from __future__ import annotations
 
 import re
 
-_EMAIL_RE = re.compile(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')
+_EMAIL_RE = re.compile(
+    r'^[a-zA-Z0-9][a-zA-Z0-9._%+-]*@'
+    r'[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?'
+    r'(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)*'
+    r'\.[a-zA-Z]{2,}$'
+)
 
 _DEFAULT_MESSAGES = {
     'required': '{field} is required',
@@ -37,9 +42,15 @@ def _parse_size(size_str: str) -> int:
     """Parse size string like '5mb', '500kb', '1024' into bytes."""
     size_str = size_str.strip().lower()
     if size_str.endswith('mb'):
-        return int(float(size_str[:-2]) * 1024 * 1024)
+        num = size_str[:-2].strip()
+        if not num:
+            raise ValueError(f"Invalid size: '{size_str}'")
+        return int(float(num) * 1024 * 1024)
     if size_str.endswith('kb'):
-        return int(float(size_str[:-2]) * 1024)
+        num = size_str[:-2].strip()
+        if not num:
+            raise ValueError(f"Invalid size: '{size_str}'")
+        return int(float(num) * 1024)
     return int(size_str)
 
 
@@ -107,12 +118,18 @@ def _check_rule(
             return _msg(field, rule, messages)
 
     elif rule == 'min':
-        n = int(param)
+        try:
+            n = int(param)
+        except (ValueError, TypeError):
+            raise ValueError(f"Invalid parameter for 'min' rule: '{param}'")
         if value and len(value) < n:
             return _msg(field, rule, messages, n=n)
 
     elif rule == 'max':
-        n = int(param)
+        try:
+            n = int(param)
+        except (ValueError, TypeError):
+            raise ValueError(f"Invalid parameter for 'max' rule: '{param}'")
         if value and len(value) > n:
             return _msg(field, rule, messages, n=n)
 
@@ -121,8 +138,11 @@ def _check_rule(
             return _msg(field, rule, messages)
 
     elif rule == 'numeric':
-        if value and not value.replace('.', '', 1).replace('-', '', 1).isdigit():
-            return _msg(field, rule, messages)
+        if value:
+            try:
+                float(value)
+            except ValueError:
+                return _msg(field, rule, messages)
 
     elif rule == 'matches':
         other_value = str(data.get(param, ''))

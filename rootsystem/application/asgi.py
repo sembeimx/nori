@@ -27,8 +27,7 @@ _log = get_logger('asgi')
 @asynccontextmanager
 async def lifespan(app):
     await Tortoise.init(config=settings.TORTOISE_ORM)
-    if settings.DB_ENGINE == 'sqlite':
-        await Tortoise.generate_schemas()
+    await Tortoise.generate_schemas()
     yield
     await Tortoise.close_connections()
 
@@ -46,7 +45,7 @@ async def server_error(request: Request, exc: Exception) -> Response:
 
 exception_handlers = {} if settings.DEBUG else {404: not_found, 500: server_error}
 
-# Middleware stack (orden: SecurityHeaders -> CORS -> Session -> CSRF)
+# Middleware stack (order: SecurityHeaders -> CORS -> Session -> CSRF)
 
 middleware = [
     Middleware(SecurityHeadersMiddleware),

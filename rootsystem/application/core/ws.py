@@ -14,6 +14,10 @@ from __future__ import annotations
 
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
+from core.logger import get_logger
+
+_log = get_logger('ws')
+
 
 class WebSocketHandler:
     """
@@ -30,9 +34,14 @@ class WebSocketHandler:
         try:
             while True:
                 data = await websocket.receive_text()
-                await self.on_receive(websocket, data)
+                try:
+                    await self.on_receive(websocket, data)
+                except Exception as exc:
+                    _log.error("Error in on_receive: %s", exc, exc_info=True)
         except WebSocketDisconnect as exc:
             await self.on_disconnect(websocket, exc.code)
+        except Exception as exc:
+            _log.error("WebSocket error: %s", exc, exc_info=True)
 
     async def on_connect(self, websocket: WebSocket) -> None:
         """Called when a client connects. Default: accept the connection."""
@@ -57,9 +66,14 @@ class JsonWebSocketHandler:
         try:
             while True:
                 data = await websocket.receive_json()
-                await self.on_receive_json(websocket, data)
+                try:
+                    await self.on_receive_json(websocket, data)
+                except Exception as exc:
+                    _log.error("Error in on_receive_json: %s", exc, exc_info=True)
         except WebSocketDisconnect as exc:
             await self.on_disconnect(websocket, exc.code)
+        except Exception as exc:
+            _log.error("WebSocket error: %s", exc, exc_info=True)
 
     async def on_connect(self, websocket: WebSocket) -> None:
         """Called when a client connects. Default: accept the connection."""

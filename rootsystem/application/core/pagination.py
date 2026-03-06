@@ -8,7 +8,7 @@ from core.collection import collect
 
 async def paginate(queryset: Any, page: int = 1, per_page: int = 20) -> dict[str, Any]:
     """
-    Pagina un QuerySet de Tortoise con el mismo formato que Nori.
+    Paginate a Tortoise QuerySet.
 
         result = await paginate(Product.filter(status=1), page=2, per_page=20)
         # {
@@ -19,8 +19,16 @@ async def paginate(queryset: Any, page: int = 1, per_page: int = 20) -> dict[str
         #     'last_page': 5
         # }
     """
+    if page < 1:
+        page = 1
+    if per_page < 1:
+        per_page = 20
+
     total = await queryset.count()
-    last_page = math.ceil(total / per_page) if total > 0 else 1
+    last_page = max(1, math.ceil(total / per_page))
+
+    if page > last_page:
+        page = last_page
 
     offset = (page - 1) * per_page
     items = await queryset.offset(offset).limit(per_page).all()
