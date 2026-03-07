@@ -1,2 +1,4 @@
 # Register your models here
-# from models.your_model import YourModel
+from models.audit_log import AuditLog
+from models.permission import Permission
+from models.role import Role

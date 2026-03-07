@@ -1,0 +1,122 @@
+"""Tests for core.audit — audit logging utility."""
+import pytest
+from starlette.background import BackgroundTask
+
+from core.audit import audit, get_client_ip
+
+
+# -- Fakes -------------------------------------------------------------------
+
+class FakeClient:
+    def __init__(self, host='127.0.0.1'):
+        self.host = host
+
+
+class FakeState:
+    pass
+
+
+class FakeSession(dict):
+    pass
+
+
+class FakeRequest:
+    def __init__(self, *, ip='127.0.0.1', user_id=None, request_id=None,
+                 forwarded_for=None):
+        self.client = FakeClient(ip) if ip else None
+        self.session = FakeSession()
+        if user_id is not None:
+            self.session['user_id'] = user_id
+        self.state = FakeState()
+        if request_id is not None:
+            self.state.request_id = request_id
+        self._headers = {}
+        if forwarded_for:
+            self._headers['x-forwarded-for'] = forwarded_for
+
+    @property
+    def headers(self):
+        return self._headers
+
+
+# -- get_client_ip -----------------------------------------------------------
+
+def test_get_client_ip_from_client():
+    req = FakeRequest(ip='10.0.0.1')
+    assert get_client_ip(req) == '10.0.0.1'
+
+
+def test_get_client_ip_from_forwarded_for():
+    req = FakeRequest(ip='10.0.0.1', forwarded_for='203.0.113.5, 10.0.0.1')
+    assert get_client_ip(req) == '203.0.113.5'
+
+
+def test_get_client_ip_no_client():
+    req = FakeRequest(ip=None)
+    assert get_client_ip(req) is None
+
+
+# -- audit() -----------------------------------------------------------------
+
+def test_audit_returns_background_task():
+    req = FakeRequest(user_id=1)
+    task = audit(req, 'create', model_name='Article', record_id=42)
+    assert isinstance(task, BackgroundTask)
+
+
+@pytest.mark.asyncio
+async def test_audit_writes_to_database():
+    req = FakeRequest(user_id=5, ip='192.168.1.1', request_id='abc-123')
+    task = audit(
+        req, 'update',
+        model_name='Article', record_id=7,
+        changes={'title': {'before': 'Old', 'after': 'New'}},
+    )
+    await task()
+
+    from models.audit_log import AuditLog
+    log = await AuditLog.filter(request_id='abc-123').first()
+    assert log is not None
+    assert log.user_id == 5
+    assert log.action == 'update'
+    assert log.model_name == 'Article'
+    assert log.record_id == '7'
+    assert log.ip_address == '192.168.1.1'
+    assert log.changes['title']['after'] == 'New'
+
+
+@pytest.mark.asyncio
+async def test_audit_resolves_user_from_session():
+    req = FakeRequest(user_id=99)
+    task = audit(req, 'login')
+    await task()
+
+    from models.audit_log import AuditLog
+    log = await AuditLog.filter(user_id=99, action='login').first()
+    assert log is not None
+
+
+@pytest.mark.asyncio
+async def test_audit_explicit_user_id_overrides_session():
+    req = FakeRequest(user_id=1)
+    task = audit(req, 'delete', user_id=42)
+    await task()
+
+    from models.audit_log import AuditLog
+    log = await AuditLog.filter(user_id=42, action='delete').first()
+    assert log is not None
+
+
+@pytest.mark.asyncio
+async def test_audit_nullable_fields():
+    req = FakeRequest()
+    task = audit(req, 'custom_action')
+    await task()
+
+    from models.audit_log import AuditLog
+    log = await AuditLog.filter(action='custom_action').first()
+    assert log is not None
+    assert log.user_id is None
+    assert log.model_name is None
+    assert log.record_id is None
+    assert log.changes is None

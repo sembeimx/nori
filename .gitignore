@@ -14,3 +14,5 @@ venv/
 *.swo
 *~
 .DS_Store
+:memory:
+:memory:-*

@@ -1,6 +1,7 @@
 """Tests for core.http.throttle."""
-import asyncio
 import time
+
+import pytest
 
 from core.http.throttle import throttle
 from core.http.throttle_backends import get_backend, reset_backend, MemoryBackend
@@ -52,37 +53,34 @@ class FakeController:
         return resp
 
 
-def _run(coro):
-    return asyncio.get_event_loop().run_until_complete(coro)
-
-
-def setup_function():
+@pytest.fixture(autouse=True)
+def _reset():
     reset_backend()
-    backend = get_backend()
-    if isinstance(backend, MemoryBackend):
-        backend.clear()
 
 
 # --- Tests ---
 
-def test_allows_within_limit():
+@pytest.mark.asyncio
+async def test_allows_within_limit():
     ctrl = FakeController()
     req = FakeRequest()
     for _ in range(3):
-        resp = _run(ctrl.action(req))
+        resp = await ctrl.action(req)
         assert not hasattr(resp, 'status_code') or resp.status_code != 429
 
 
-def test_blocks_over_limit():
+@pytest.mark.asyncio
+async def test_blocks_over_limit():
     ctrl = FakeController()
     req = FakeRequest()
     for _ in range(3):
-        _run(ctrl.action(req))
-    resp = _run(ctrl.action(req))
+        await ctrl.action(req)
+    resp = await ctrl.action(req)
     assert resp.status_code == 429
 
 
-def test_window_resets():
+@pytest.mark.asyncio
+async def test_window_resets():
     ctrl = FakeController()
     req = FakeRequest()
 
@@ -93,43 +91,46 @@ def test_window_resets():
     backend._store[key] = [old, old + 1, old + 2]
 
     # Should be allowed since all timestamps are outside the window
-    resp = _run(ctrl.action(req))
+    resp = await ctrl.action(req)
     assert not hasattr(resp, 'status_code') or resp.status_code != 429
 
 
-def test_different_ips_independent():
+@pytest.mark.asyncio
+async def test_different_ips_independent():
     ctrl = FakeController()
     req_a = FakeRequest(ip='10.0.0.1')
     req_b = FakeRequest(ip='10.0.0.2')
 
     for _ in range(3):
-        _run(ctrl.action(req_a))
+        await ctrl.action(req_a)
 
     # IP A blocked
-    resp_a = _run(ctrl.action(req_a))
+    resp_a = await ctrl.action(req_a)
     assert resp_a.status_code == 429
 
     # IP B still allowed
-    resp_b = _run(ctrl.action(req_b))
+    resp_b = await ctrl.action(req_b)
     assert not hasattr(resp_b, 'status_code') or resp_b.status_code != 429
 
 
-def test_response_headers():
+@pytest.mark.asyncio
+async def test_response_headers():
     ctrl = FakeController()
     req = FakeRequest()
 
-    resp = _run(ctrl.action(req))
+    resp = await ctrl.action(req)
     assert resp.headers['X-RateLimit-Limit'] == '3'
     assert resp.headers['X-RateLimit-Remaining'] == '2'
     assert 'X-RateLimit-Reset' in resp.headers
 
 
-def test_json_response_on_api_request():
+@pytest.mark.asyncio
+async def test_json_response_on_api_request():
     ctrl = FakeController()
     req = FakeRequest(accept='application/json')
 
     for _ in range(3):
-        _run(ctrl.action(req))
-    resp = _run(ctrl.action(req))
+        await ctrl.action(req)
+    resp = await ctrl.action(req)
     assert resp.status_code == 429
     assert resp.body == b'{"error":"Too Many Requests"}'

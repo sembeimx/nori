@@ -7,25 +7,189 @@
 {% endblock %}
 
 {% block content %}
+<!-- Hero -->
 <div class="hero">
     <h1>Nori</h1>
-    <p>A pure, lightweight, asynchronous boilerplate built on Starlette and Tortoise ORM.</p>
+    <p class="tagline">A pure, lightweight, asynchronous boilerplate built on Starlette and Tortoise ORM.</p>
 
-    <div class="system-status">
-        <div class="stat-item">
-            <span class="stat-label">System Status</span>
-            <span class="stat-value"><span class="status-indicator"></span>Online</span>
-        </div>
-        <div class="stat-item">
-            <span class="stat-label">Python Version</span>
-            <span class="stat-value">{{ python_version|default('3.x') }}</span>
-        </div>
-        <div class="stat-item">
-            <span class="stat-label">Nori Core</span>
-            <span class="stat-value">v{{ nori_version|default('1.0') }}</span>
-        </div>
+    <div class="status-pills">
+        <span class="pill"><span class="pill-dot"></span> Online</span>
+        <span class="pill">Python {{ python_version }}</span>
+        <span class="pill">DB: {{ db_engine }}</span>
+        <span class="pill">{{ 'Debug' if debug_mode else 'Production' }}</span>
+        <span class="pill">Nori v{{ nori_version }}</span>
     </div>
 </div>
+
+<!-- Quick Start -->
+<section class="dashboard-section">
+    <h2 class="section-title">Quick Start</h2>
+    <div class="cli-commands">
+        <div class="cli-block">
+            <code>python3 nori.py serve</code>
+            <button class="copy-btn" data-cmd="python3 nori.py serve">Copy</button>
+        </div>
+        <div class="cli-block">
+            <code>python3 nori.py make:controller User</code>
+            <button class="copy-btn" data-cmd="python3 nori.py make:controller User">Copy</button>
+        </div>
+        <div class="cli-block">
+            <code>python3 nori.py make:model User</code>
+            <button class="copy-btn" data-cmd="python3 nori.py make:model User">Copy</button>
+        </div>
+    </div>
+</section>
+
+<!-- Features Grid -->
+<section class="dashboard-section">
+    <h2 class="section-title">Features</h2>
+    <div class="feature-grid">
+        <div class="feature-card">
+            <div class="icon">&#x1F512;</div>
+            <h3>Authentication</h3>
+            <span class="import-path">core.auth.security</span>
+        </div>
+        <div class="feature-card">
+            <div class="icon">&#x1F6E1;</div>
+            <h3>ACL Permissions</h3>
+            <span class="import-path">core.auth.decorators</span>
+        </div>
+        <div class="feature-card">
+            <div class="icon">&#x2705;</div>
+            <h3>Validation</h3>
+            <span class="import-path">core.http.validation</span>
+        </div>
+        <div class="feature-card">
+            <div class="icon">&#x1F511;</div>
+            <h3>JWT Tokens</h3>
+            <span class="import-path">core.auth.jwt</span>
+        </div>
+        <div class="feature-card">
+            <div class="icon">&#x26A1;</div>
+            <h3>WebSockets</h3>
+            <span class="import-path">core.ws</span>
+        </div>
+        <div class="feature-card">
+            <div class="icon">&#x23F1;</div>
+            <h3>Rate Limiting</h3>
+            <span class="import-path">core.http.throttle</span>
+        </div>
+        <div class="feature-card">
+            <div class="icon">&#x1F4C1;</div>
+            <h3>File Uploads</h3>
+            <span class="import-path">core.http.upload</span>
+        </div>
+        <div class="feature-card">
+            <div class="icon">&#x2709;</div>
+            <h3>Email</h3>
+            <span class="import-path">core.mail</span>
+        </div>
+        <div class="feature-card">
+            <div class="icon">&#x1F4E6;</div>
+            <h3>Collections</h3>
+            <span class="import-path">core.collection</span>
+        </div>
+        <div class="feature-card">
+            <div class="icon">&#x1F5C3;</div>
+            <h3>Caching</h3>
+            <span class="import-path">core.cache</span>
+        </div>
+        <div class="feature-card">
+            <div class="icon">&#x1F4DD;</div>
+            <h3>Audit Logging</h3>
+            <span class="import-path">core.audit</span>
+        </div>
+        <div class="feature-card">
+            <div class="icon">&#x2699;</div>
+            <h3>Background Tasks</h3>
+            <span class="import-path">core.tasks</span>
+        </div>
+        <div class="feature-card">
+            <div class="icon">&#x1F5D1;</div>
+            <h3>Soft Deletes</h3>
+            <span class="import-path">core.mixins.soft_deletes</span>
+        </div>
+        <div class="feature-card">
+            <div class="icon">&#x1F333;</div>
+            <h3>Tree Structures</h3>
+            <span class="import-path">core.mixins.tree</span>
+        </div>
+    </div>
+</section>
+
+<!-- Documentation -->
+<section class="dashboard-section">
+    <h2 class="section-title">Documentation</h2>
+    <div class="docs-grid">
+        <a class="doc-card" href="https://www.starlette.io/" target="_blank" rel="noopener">
+            <div class="icon">&#x1F310;</div>
+            <h3>Starlette</h3>
+            <p>ASGI framework docs</p>
+        </a>
+        <a class="doc-card" href="https://tortoise.github.io/" target="_blank" rel="noopener">
+            <div class="icon">&#x1F4BE;</div>
+            <h3>Tortoise ORM</h3>
+            <p>Async ORM for Python</p>
+        </a>
+        <a class="doc-card" href="https://jinja.palletsprojects.com/" target="_blank" rel="noopener">
+            <div class="icon">&#x1F4C4;</div>
+            <h3>Jinja2</h3>
+            <p>Template engine</p>
+        </a>
+        <a class="doc-card" href="https://www.uvicorn.org/" target="_blank" rel="noopener">
+            <div class="icon">&#x1F680;</div>
+            <h3>Uvicorn</h3>
+            <p>ASGI server</p>
+        </a>
+        <a class="doc-card" href="https://gitlab.com/sembeimexico/nori" target="_blank" rel="noopener">
+            <div class="icon">&#x1F6E4;</div>
+            <h3>README</h3>
+            <p>Routes, controllers &amp; CLI</p>
+        </a>
+        <a class="doc-card" href="https://gitlab.com/sembeimexico/nori" target="_blank" rel="noopener">
+            <div class="icon">&#x1F6E1;</div>
+            <h3>Auth &amp; ACL</h3>
+            <p>Login, roles, permissions</p>
+        </a>
+        <a class="doc-card" href="https://gitlab.com/sembeimexico/nori" target="_blank" rel="noopener">
+            <div class="icon">&#x1F4CB;</div>
+            <h3>Validation</h3>
+            <p>Declarative rules</p>
+        </a>
+        <a class="doc-card" href="https://gitlab.com/sembeimexico/nori" target="_blank" rel="noopener">
+            <div class="icon">&#x1F50C;</div>
+            <h3>WebSockets</h3>
+            <p>Real-time handlers</p>
+        </a>
+    </div>
+</section>
+
+<!-- Environment -->
+<section class="dashboard-section">
+    <h2 class="section-title">Environment</h2>
+    <div class="env-grid">
+        <div class="env-card">
+            <span class="label">Database Engine</span>
+            <span class="value">{{ db_engine }}</span>
+        </div>
+        <div class="env-card">
+            <span class="label">Debug Mode</span>
+            <span class="value">{{ 'On' if debug_mode else 'Off' }}</span>
+        </div>
+        <div class="env-card">
+            <span class="label">Routes</span>
+            <span class="value">{{ route_count }}</span>
+        </div>
+        <div class="env-card">
+            <span class="label">Throttle Backend</span>
+            <span class="value">{{ throttle_backend }}</span>
+        </div>
+        <div class="env-card">
+            <span class="label">Cache Backend</span>
+            <span class="value">{{ cache_backend }}</span>
+        </div>
+    </div>
+</section>
 
 <script src="/static/js/home.js"></script>
 {% endblock %}

@@ -49,11 +49,6 @@ client = TestClient(app)
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _set_session(resp_or_client, data: dict):
-    """Inject session data by exploiting Starlette's signed cookie."""
-    # Use the app's session middleware to set values via a helper route
-    pass
-
 
 # Since we can't easily inject session data externally, we test via
 # the Accept header behavior (JSON returns 401, HTML returns redirect)

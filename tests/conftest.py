@@ -5,8 +5,11 @@ import os
 os.environ['DB_ENGINE'] = 'sqlite'
 os.environ['DB_NAME'] = ':memory:'
 
-# Add rootsystem/application to Python path so imports work
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../rootsystem/application')))
+# Add rootsystem/application and tests/ to Python path
+_tests_dir = os.path.dirname(__file__)
+_app_dir = os.path.abspath(os.path.join(_tests_dir, '../rootsystem/application'))
+sys.path.insert(0, _app_dir)
+sys.path.insert(0, _tests_dir)
 
 import pytest_asyncio
 from httpx import AsyncClient, ASGITransport
@@ -18,7 +21,16 @@ import settings
 
 @pytest_asyncio.fixture(scope="session", autouse=True, loop_scope="session")
 async def initialize_tests():
-    await Tortoise.init(config=settings.TORTOISE_ORM)
+    config = {
+        'connections': settings.TORTOISE_ORM['connections'],
+        'apps': {
+            'models': {
+                'models': ['models', 'test_models'],
+                'default_connection': 'default',
+            }
+        },
+    }
+    await Tortoise.init(config=config)
     await Tortoise.generate_schemas()
     yield
     await Tortoise.close_connections()

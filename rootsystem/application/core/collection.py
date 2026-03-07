@@ -6,6 +6,7 @@ T = TypeVar('T')
 
 _builtin_min = min
 _builtin_max = max
+_SENTINEL = object()
 
 
 class NoriCollection(list[T]):
@@ -28,13 +29,13 @@ class NoriCollection(list[T]):
         return [getattr(item, key, item.get(key) if isinstance(item, dict) else None)
                 for item in self]
 
-    def where(self, key: str, operator_or_value: Any = '__sentinel__', value: Any = '__sentinel__') -> NoriCollection[T]:
+    def where(self, key: str, operator_or_value: Any = _SENTINEL, value: Any = _SENTINEL) -> NoriCollection[T]:
         """Filter in-memory with operators."""
         def _get_val(item: Any) -> Any:
             return getattr(item, key, item.get(key) if isinstance(item, dict) else None)
 
-        if value == '__sentinel__':
-            if operator_or_value == '__sentinel__':
+        if value is _SENTINEL:
+            if operator_or_value is _SENTINEL:
                 return NoriCollection(i for i in self if _get_val(i))
             return NoriCollection(i for i in self if _get_val(i) == operator_or_value)
 

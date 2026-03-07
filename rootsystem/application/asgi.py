@@ -16,6 +16,7 @@ from tortoise import Tortoise
 import settings
 from routes import routes
 from core.auth.csrf import CsrfMiddleware
+from core.http.request_id import RequestIdMiddleware
 from core.http.security_headers import SecurityHeadersMiddleware
 from core.jinja import templates
 from core.logger import get_logger
@@ -31,11 +32,15 @@ async def lifespan(app):
     for w in warnings:
         _log.warning("Settings: %s", w)
 
-    await Tortoise.init(config=settings.TORTOISE_ORM)
-    await Tortoise.generate_schemas()
-    _log.info("Nori started [debug=%s, db=%s]", settings.DEBUG, settings.DB_ENGINE)
+    if settings.DB_ENABLED:
+        await Tortoise.init(config=settings.TORTOISE_ORM)
+        await Tortoise.generate_schemas()
+        _log.info("Nori started [debug=%s, db=%s]", settings.DEBUG, settings.DB_ENGINE)
+    else:
+        _log.info("Nori started [debug=%s, db=disabled]", settings.DEBUG)
     yield
-    await Tortoise.close_connections()
+    if settings.DB_ENABLED:
+        await Tortoise.close_connections()
 
 # Error handler
 
@@ -51,9 +56,10 @@ async def server_error(request: Request, exc: Exception) -> Response:
 
 exception_handlers = {} if settings.DEBUG else {404: not_found, 500: server_error}
 
-# Middleware stack (order: SecurityHeaders -> CORS -> Session -> CSRF)
+# Middleware stack (order: RequestId -> SecurityHeaders -> CORS -> Session -> CSRF)
 
 middleware = [
+    Middleware(RequestIdMiddleware),
     Middleware(SecurityHeadersMiddleware),
     Middleware(SessionMiddleware, secret_key=settings.SECRET_KEY),
     Middleware(CsrfMiddleware),

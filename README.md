@@ -1,6 +1,6 @@
 # Nori
 
-An asynchronous web boilerplate built on **Starlette** and **Tortoise ORM** that preserves the fast, ergonomic development experience inspired by frameworks like Laravel or Nori Engine: a flat file structure, class-based controllers, declarative pipe-separated validation (`required|email|max:255`), authentication decorators, JWT, native CSRF, an agile collections wrapper (`NoriCollection`), WebSockets, distributed Rate Limiting (Redis), and native utilities for Email sending and file uploads.
+An asynchronous web boilerplate built on **Starlette** and **Tortoise ORM** that preserves the fast, ergonomic development experience inspired by frameworks like Laravel or Nori Engine: a flat file structure, class-based controllers, declarative pipe-separated validation (`required|email|max:255`), authentication decorators, JWT, native CSRF, granular ACL permissions (`@require_permission`), audit logging, an agile collections wrapper (`NoriCollection`), WebSockets, distributed Rate Limiting (Redis), and native utilities for Email sending and file uploads.
 
 ---
 
@@ -218,7 +218,7 @@ nori/
 ├── requirements.txt                 ← Python dependencies
 ├── tests/                           ← E2E and API Tests (httpx + in-memory SQLite)
 │   ├── conftest.py                  ← Fixtures: ASGI app, in-memory DB, async client
-│   ├── test_api/test_auth.py        ← Endpoint tests
+│   ├── test_*.py                    ← Endpoint and integration tests
 │   └── test_core/                   ← Core unit tests (collection, validation)
 │
 ├── nori.py                          ← Nori Artisan CLI (make:controller, make:model, serve)
@@ -245,7 +245,8 @@ nori/
             ├── auth/
             │   ├── security.py      ← PBKDF2 password hashing, tokens
             │   ├── csrf.py          ← CSRF Middleware + helpers
-            │   └── decorators.py    ← @login_required, @require_role
+            │   └── decorators.py    ← @login_required, @require_role, @require_permission
+            ├── audit.py             ← Audit logging (audit(), get_client_ip)
             ├── http/
             │   ├── inject.py        ← @inject decorator for Dependency Injection
             │   └── validation.py    ← Declarative pipe-separated validation
@@ -264,6 +265,7 @@ All routes are named for reversing with `request.url_for()`:
 | Method | Route | Name | Description |
 |---|---|---|---|
 | `GET` | `/` | `home` | Home page |
+| `GET` | `/health` | `health` | Health check (DB connectivity, returns 200/503) |
 | `WS` | `/ws/echo` | `ws_echo` | Test WebSocket connection |
 
 ---
@@ -281,10 +283,10 @@ Nori is documented in a modular format so you can quickly find what you need. Ch
 ### Advanced Logic
 * **[Nori Collections](docs/collections.md):** The agile wrapper similar to Laravel Collections (`collect()`), `map`, `filter`, `where`, and native async Pagination (`paginate()`).
 * **[Forms, CSRF, and Validation](docs/forms_validation.md):** CSRF injection prevention (`csrf_field`), Declarative Pipe-separated validators (`required|email|max:20`).
-* **[Authentication and Sessions](docs/authentication.md):** Classic Cookie login, Automatic PBKDF2 Hashing (`Security`), Stateless APIs via JSON Web Tokens (JWT), and Controller Restrictions (`@login_required`, `@require_role`).
+* **[Authentication and Sessions](docs/authentication.md):** Classic Cookie login, Automatic PBKDF2 Hashing (`Security`), Stateless APIs via JSON Web Tokens (JWT), Controller Restrictions (`@login_required`, `@require_role`), and Granular ACL (`@require_permission`).
 * **[Security and Rate Limiters](docs/security.md):** Distributed brute force protection (`@throttle` via memory/Redis) and automatic Strict HTTP Headers.
 * **[WebSockets (Real-Time)](docs/websockets.md):** JSON object-oriented handling of persistent connections for chats and notifications `ws://`.
-* **[Built-in Services](docs/services.md):** Async SMTP Mass Mailing engine (`send_mail` visual via Jinja2) and secure disk saving for generic FileUploads (`save_upload`).
+* **[Built-in Services](docs/services.md):** Async SMTP Mass Mailing engine (`send_mail` visual via Jinja2), secure disk saving for generic FileUploads (`save_upload`), and Audit Logging (`audit()`).
 
 ---
 
@@ -292,9 +294,17 @@ Nori is documented in a modular format so you can quickly find what you need. Ch
 
 Nori includes its own command-line manager at the root to streamline your programming ("Nori Artisan"):
 
-1. **Generate Model**: `python3 nori.py make:model Category`. This will create the auto-populated skeleton in the `models/` folder. (Remember to register the import in `models/__init__.py`).
-2. **Generate Controller**: `python3 nori.py make:controller Category`. It will generate your blank base Controller in `modules/`.
-3. **Routes and IO**: Instantiate your ready controllers in `routes.py` and link your views in `templates/`.
+| Command | Description |
+|---------|-------------|
+| `python3 nori.py serve` | Start the dev server with hot reload |
+| `python3 nori.py make:model Name` | Generate a model skeleton in `models/` |
+| `python3 nori.py make:controller Name` | Generate a controller skeleton in `modules/` |
+| `python3 nori.py make:seeder Name` | Generate a seeder skeleton in `seeders/` |
+| `python3 nori.py migrate:init` | Initialize the Aerich migration system |
+| `python3 nori.py migrate:make <name>` | Create a new migration from model changes |
+| `python3 nori.py migrate:upgrade` | Run pending migrations |
+| `python3 nori.py migrate:downgrade` | Roll back the last migration |
+| `python3 nori.py db:seed` | Run all registered database seeders |
 4. **Dependency Injection (@inject)**: Forget about manually extracting dictionaries from the request. Use `@inject()` above your controller method and define parameters with native *Type Hints*:
    ```python
    from core.http.inject import inject
@@ -337,11 +347,17 @@ Tests use `conftest.py` to boot up the entire app and perform assertions in isol
 | `REDIS_URL` | `redis://localhost:6379` | Redis connection string (if used) |
 | `JWT_SECRET` | *Same as SECRET_KEY* | JWT signing secret |
 | `JWT_EXPIRATION` | `3600` | JWT token expiration in seconds |
+| `CORS_ORIGINS` | *(empty)* | Comma-separated allowed origins (empty = disabled) |
 | `MAIL_HOST` | `localhost` | SMTP Server |
 | `MAIL_PORT` | `587` | SMTP Port |
 | `MAIL_USER` / `MAIL_PASSWORD` | *(empty)* | SMTP Credentials |
+| `MAIL_FROM` | `noreply@example.com` | Default sender address |
+| `MAIL_TLS` | `true` | Enable STARTTLS for SMTP |
 | `UPLOAD_DIR` | `uploads/` | Destination directory for uploaded files |
 | `UPLOAD_MAX_SIZE` | `10485760` (10MB) | Default limit for uploaded files |
+| `LOG_LEVEL` | `INFO` | Logging level (`DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`) |
+| `LOG_FORMAT` | `text` | Log output format (`text` or `json`) |
+| `LOG_FILE` | *(empty)* | Optional log file path (enables rotating file handler) |
 
 ---
 

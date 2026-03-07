@@ -1,11 +1,7 @@
 """Tests for core.http.security_headers."""
-import asyncio
+import pytest
 
 from core.http.security_headers import SecurityHeadersMiddleware
-
-
-def _run(coro):
-    return asyncio.get_event_loop().run_until_complete(coro)
 
 
 async def _dummy_app(scope, receive, send):
@@ -25,7 +21,7 @@ def _make_scope(path='/'):
     return {'type': 'http', 'method': 'GET', 'path': path, 'headers': []}
 
 
-def _capture_headers(app, scope):
+async def _capture_headers(app, scope):
     """Run the ASGI app and return response headers as a dict."""
     captured = {}
 
@@ -37,15 +33,16 @@ def _capture_headers(app, scope):
     async def receive():
         return {'type': 'http.request', 'body': b''}
 
-    _run(app(scope, receive, send))
+    await app(scope, receive, send)
     return captured
 
 
 # --- Tests ---
 
-def test_default_headers_present():
+@pytest.mark.asyncio
+async def test_default_headers_present():
     app = SecurityHeadersMiddleware(_dummy_app)
-    headers = _capture_headers(app, _make_scope())
+    headers = await _capture_headers(app, _make_scope())
 
     assert headers['x-content-type-options'] == 'nosniff'
     assert headers['x-frame-options'] == 'DENY'
@@ -54,61 +51,69 @@ def test_default_headers_present():
     assert 'camera=()' in headers['permissions-policy']
 
 
-def test_hsts_enabled_by_default():
+@pytest.mark.asyncio
+async def test_hsts_enabled_by_default():
     app = SecurityHeadersMiddleware(_dummy_app)
-    headers = _capture_headers(app, _make_scope())
+    headers = await _capture_headers(app, _make_scope())
 
     assert 'strict-transport-security' in headers
     assert 'max-age=31536000' in headers['strict-transport-security']
     assert 'includeSubDomains' in headers['strict-transport-security']
 
 
-def test_hsts_disabled():
+@pytest.mark.asyncio
+async def test_hsts_disabled():
     app = SecurityHeadersMiddleware(_dummy_app, hsts=False)
-    headers = _capture_headers(app, _make_scope())
+    headers = await _capture_headers(app, _make_scope())
 
     assert 'strict-transport-security' not in headers
 
 
-def test_custom_hsts_max_age():
+@pytest.mark.asyncio
+async def test_custom_hsts_max_age():
     app = SecurityHeadersMiddleware(_dummy_app, hsts_max_age=3600)
-    headers = _capture_headers(app, _make_scope())
+    headers = await _capture_headers(app, _make_scope())
 
     assert 'max-age=3600' in headers['strict-transport-security']
 
 
-def test_csp_header():
+@pytest.mark.asyncio
+async def test_csp_header():
     csp = "default-src 'self'; script-src 'self'"
     app = SecurityHeadersMiddleware(_dummy_app, csp=csp)
-    headers = _capture_headers(app, _make_scope())
+    headers = await _capture_headers(app, _make_scope())
 
     assert headers['content-security-policy'] == csp
 
 
-def test_no_csp_by_default():
+@pytest.mark.asyncio
+async def test_no_csp_by_default():
     app = SecurityHeadersMiddleware(_dummy_app)
-    headers = _capture_headers(app, _make_scope())
+    headers = await _capture_headers(app, _make_scope())
 
     assert 'content-security-policy' not in headers
 
 
-def test_custom_header_override():
+@pytest.mark.asyncio
+async def test_custom_header_override():
     app = SecurityHeadersMiddleware(_dummy_app, headers={
         'X-Frame-Options': 'SAMEORIGIN',
     })
-    headers = _capture_headers(app, _make_scope())
+    headers = await _capture_headers(app, _make_scope())
 
     assert headers['x-frame-options'] == 'SAMEORIGIN'
 
 
-def test_preserves_original_headers():
+@pytest.mark.asyncio
+async def test_preserves_original_headers():
     app = SecurityHeadersMiddleware(_dummy_app)
-    headers = _capture_headers(app, _make_scope())
+    headers = await _capture_headers(app, _make_scope())
 
     assert headers['content-type'] == 'text/html'
 
 
-def test_skips_non_http():
+@pytest.mark.asyncio
+async def test_skips_non_http():
     """Non-HTTP scopes (websocket, lifespan) pass through untouched."""
     called = []
 
@@ -124,5 +129,5 @@ def test_skips_non_http():
     async def noop_send(msg):
         pass
 
-    _run(app(scope, noop_receive, noop_send))
+    await app(scope, noop_receive, noop_send)
     assert called == ['websocket']

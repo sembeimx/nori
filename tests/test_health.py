@@ -19,8 +19,7 @@ async def test_health_returns_503_on_db_error(client):
     mock_conn = AsyncMock()
     mock_conn.execute_query = AsyncMock(side_effect=Exception("Connection refused"))
 
-    with patch('modules.health.Tortoise') as mock_tortoise:
-        mock_tortoise.get_connection.return_value = mock_conn
+    with patch('tortoise.Tortoise.get_connection', return_value=mock_conn):
         resp = await client.get('/health')
 
     assert resp.status_code == 503

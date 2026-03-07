@@ -3,9 +3,19 @@ from __future__ import annotations
 from typing import Any, Sequence
 from typing_extensions import Self
 from tortoise.models import Model
-from tortoise import fields
 from tortoise import Tortoise
 from core.collection import NoriCollection, collect
+
+
+def _placeholders(count: int) -> list[str]:
+    """Return SQL parameter placeholders appropriate for the current DB backend."""
+    conn = Tortoise.get_connection('default')
+    cls_name = type(conn).__name__.lower()
+    if 'sqlite' in cls_name:
+        return ['?'] * count
+    if 'asyncpg' in cls_name or 'postgres' in cls_name:
+        return [f'${i}' for i in range(1, count + 1)]
+    return ['%s'] * count
 
 
 class NoriTreeMixin(Model):
@@ -69,13 +79,14 @@ class NoriTreeMixin(Model):
             if not ident.replace('_', '').isalnum():
                 raise ValueError(f"Invalid SQL identifier: {ident}")
 
+        ph = _placeholders(2)
         sql = (
             f"WITH RECURSIVE ancestors AS ("
-            f"  SELECT * FROM {table} WHERE {pk_col} = %s"
+            f"  SELECT * FROM {table} WHERE {pk_col} = {ph[0]}"
             f"  UNION ALL"
             f"  SELECT t.* FROM {table} t"
             f"  INNER JOIN ancestors a ON t.{pk_col} = a.{parent_col}"
-            f") SELECT * FROM ancestors WHERE {pk_col} != %s"
+            f") SELECT * FROM ancestors WHERE {pk_col} != {ph[1]}"
         )
 
         conn = Tortoise.get_connection('default')
@@ -96,9 +107,10 @@ class NoriTreeMixin(Model):
             if not ident.replace('_', '').isalnum():
                 raise ValueError(f"Invalid SQL identifier: {ident}")
 
+        ph = _placeholders(1)
         sql = (
             f"WITH RECURSIVE descendants AS ("
-            f"  SELECT * FROM {table} WHERE {parent_col} = %s"
+            f"  SELECT * FROM {table} WHERE {parent_col} = {ph[0]}"
             f"  UNION ALL"
             f"  SELECT t.* FROM {table} t"
             f"  INNER JOIN descendants d ON t.{parent_col} = d.{pk_col}"

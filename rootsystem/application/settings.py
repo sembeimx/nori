@@ -18,7 +18,8 @@ SECRET_KEY = _secret_env or _secrets.token_urlsafe(32)
 TEMPLATE_DIR = join(_root, 'rootsystem', 'templates')
 STATIC_DIR = join(_root, 'rootsystem', 'static')
 
-# Database engine: mysql | postgres | sqlite
+# Database
+DB_ENABLED = os.environ.get('DB_ENABLED', 'true').lower() in ('true', '1', 'yes')
 DB_ENGINE = os.environ.get('DB_ENGINE', 'mysql')
 
 if DB_ENGINE == 'sqlite':
@@ -68,13 +69,23 @@ JWT_EXPIRATION = int(os.environ.get('JWT_EXPIRATION', '3600'))
 THROTTLE_BACKEND = os.environ.get('THROTTLE_BACKEND', 'memory')  # memory | redis
 REDIS_URL = os.environ.get('REDIS_URL', 'redis://localhost:6379')
 
+# Caching
+CACHE_BACKEND = os.environ.get('CACHE_BACKEND', 'memory')  # memory | redis
+
+_model_modules = ['models']
+try:
+    import aerich  # noqa: F401
+    _model_modules.append('aerich.models')
+except ImportError:
+    pass
+
 TORTOISE_ORM = {
     'connections': {
         'default': _connection,
     },
     'apps': {
         'models': {
-            'models': ['models'],
+            'models': _model_modules,
             'default_connection': 'default',
         }
     },
@@ -93,7 +104,7 @@ def validate_settings() -> list[str]:
     errors: list[str] = []
 
     # Database credentials required for non-sqlite in production
-    if DB_ENGINE != 'sqlite' and not DEBUG:
+    if DB_ENABLED and DB_ENGINE != 'sqlite' and not DEBUG:
         if not os.environ.get('DB_USER'):
             errors.append("DB_USER is required for production databases")
         if not os.environ.get('DB_PASSWORD'):
