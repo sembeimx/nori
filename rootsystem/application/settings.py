@@ -50,10 +50,12 @@ CORS_ALLOW_HEADERS = ['Content-Type', 'Authorization', 'X-CSRF-Token']
 CORS_ALLOW_CREDENTIALS = True
 
 # File Uploads
+STORAGE_DRIVER = os.environ.get('STORAGE_DRIVER', 'local')  # local | (custom drivers)
 UPLOAD_DIR = join(_app_dir, 'uploads')
 UPLOAD_MAX_SIZE = int(os.environ.get('UPLOAD_MAX_SIZE', 10 * 1024 * 1024))  # 10 MB
 
-# Email (SMTP)
+# Email
+MAIL_DRIVER = os.environ.get('MAIL_DRIVER', 'smtp')  # smtp | log | (custom drivers)
 MAIL_HOST = os.environ.get('MAIL_HOST', 'localhost')
 MAIL_PORT = int(os.environ.get('MAIL_PORT', '587'))
 MAIL_USER = os.environ.get('MAIL_USER', '')
@@ -71,6 +73,9 @@ REDIS_URL = os.environ.get('REDIS_URL', 'redis://localhost:6379')
 
 # Caching
 CACHE_BACKEND = os.environ.get('CACHE_BACKEND', 'memory')  # memory | redis
+
+# Search (external drivers registered in services/)
+SEARCH_DRIVER = os.environ.get('SEARCH_DRIVER', '')  # meilisearch | (custom drivers)
 
 _model_modules = ['models']
 try:
@@ -97,9 +102,22 @@ TORTOISE_ORM = {
 # ---------------------------------------------------------------------------
 
 def validate_settings() -> list[str]:
-    """
-    Validate configuration at startup. Returns list of error messages.
-    Raises RuntimeError in production if critical settings are missing.
+    """Validate configuration at startup.
+
+    Checks performed:
+
+    - Database credentials are present for non-SQLite in production.
+    - Template and static directories exist on disk.
+    - ``JWT_SECRET`` differs from ``SECRET_KEY`` in production.
+    - ``JWT_SECRET`` has a minimum length of 32 characters in production
+      (required for HMAC-SHA256 security).
+
+    Returns:
+        List of warning/error messages (empty if everything is OK).
+
+    Raises:
+        RuntimeError: In production (``DEBUG=false``) if any critical
+            validation fails.
     """
     errors: list[str] = []
 
@@ -121,6 +139,13 @@ def validate_settings() -> list[str]:
     # JWT secret should differ from SECRET_KEY in production
     if not DEBUG and JWT_SECRET == SECRET_KEY:
         errors.append("JWT_SECRET should be set independently from SECRET_KEY in production")
+
+    # JWT secret must have minimum length for HMAC-SHA256 security
+    if not DEBUG and len(JWT_SECRET) < 32:
+        errors.append(
+            "JWT_SECRET is too short (minimum 32 characters). "
+            "Use a cryptographically random string: python3 -c \"import secrets; print(secrets.token_urlsafe(32))\""
+        )
 
     if errors and not DEBUG:
         raise RuntimeError(

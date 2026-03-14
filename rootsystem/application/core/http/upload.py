@@ -1,5 +1,17 @@
-"""
-File upload utilities.
+"""Multi-driver file upload with validation and magic-byte content verification.
+
+Provides ``save_upload()`` for secure file handling with three layers of
+validation:
+
+1. **Extension** — only extensions in ``allowed_types`` are accepted.
+2. **MIME type** — the client-declared ``Content-Type`` must match the
+   expected MIME for the extension (catches simple mismatches).
+3. **Magic bytes** — the **actual file content** is inspected for known
+   file signatures (JPEG ``\\xff\\xd8\\xff``, PNG ``\\x89PNG``, etc.).
+   This prevents an attacker from uploading a disguised file by simply
+   renaming it and setting a fake ``Content-Type`` header.
+
+Quick start::
 
     from core.http.upload import save_upload, UploadResult, UploadError
 
@@ -9,6 +21,25 @@ File upload utilities.
         max_size=5 * 1024 * 1024,  # 5 MB
     )
     # result.filename, result.path, result.url, result.size, result.original_name
+
+    # Override driver per-call:
+    result = await save_upload(file, driver='s3')
+
+    # Register a custom storage driver:
+    from core.http.upload import register_storage_driver
+
+    async def my_driver(filename, content, upload_dir):
+        ...
+        return path, url
+
+    register_storage_driver('custom', my_driver)
+
+Security note:
+    Magic-byte verification is implemented in pure Python (no external
+    dependencies like ``python-magic`` / ``libmagic``) to stay consistent
+    with Nori's "Keep it Native" philosophy.  It covers the most common
+    file types (JPEG, PNG, GIF, PDF, WebP).  For exotic formats the check
+    is skipped gracefully — the extension and MIME checks still apply.
 """
 from __future__ import annotations
 
@@ -16,6 +47,7 @@ import os
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable
 
 import settings
 
@@ -29,6 +61,27 @@ _MIME_MAP: dict[str, str] = {
     'svg': 'image/svg+xml',
 }
 
+# ---------------------------------------------------------------------------
+# Magic byte signatures for content-based file type verification.
+#
+# Each entry maps a file extension to a tuple of byte prefixes that are
+# valid for that type.  When a file is uploaded, the first bytes of its
+# content are compared against these signatures.  If the content does NOT
+# start with any of the expected prefixes, the upload is rejected — even
+# if the extension and Content-Type header look correct.
+#
+# This is a pure-Python approach that covers ~90% of real-world uploads
+# without requiring heavy C dependencies like libmagic.
+# ---------------------------------------------------------------------------
+_MAGIC_BYTES: dict[str, tuple[bytes, ...]] = {
+    'jpg':  (b'\xff\xd8\xff',),
+    'jpeg': (b'\xff\xd8\xff',),
+    'png':  (b'\x89PNG\r\n\x1a\n',),
+    'gif':  (b'GIF87a', b'GIF89a'),
+    'pdf':  (b'%PDF',),
+    'webp': (b'RIFF',),  # WebP starts with RIFF....WEBP; RIFF prefix is sufficient
+}
+
 
 class UploadError(Exception):
     """Raised when a file upload fails validation."""
@@ -36,6 +89,16 @@ class UploadError(Exception):
 
 @dataclass
 class UploadResult:
+    """Result of a successful file upload.
+
+    Attributes:
+        filename: Generated unique filename (e.g. ``'a1b2c3.jpg'``).
+        path: Full path or object key where the file was stored.
+        url: Public URL to access the file.
+        size: File size in bytes.
+        original_name: Original filename as provided by the client.
+    """
+
     filename: str
     path: str
     url: str
@@ -54,11 +117,46 @@ def _validate_extension(filename: str, allowed_types: list[str]) -> str:
 
 
 def _validate_mime_type(content_type: str | None, ext: str) -> None:
-    """Validate that MIME type matches expected type for the extension."""
+    """Validate that the client-declared MIME type matches the extension.
+
+    This checks the ``Content-Type`` header sent by the browser.  It is a
+    first line of defence but **not sufficient on its own** because the
+    header is trivially spoofable.  The real content verification happens
+    in ``_validate_magic_bytes()``.
+    """
     expected = _MIME_MAP.get(ext)
     if expected and content_type and content_type != expected:
         raise UploadError(
             f"MIME type '{content_type}' does not match extension '.{ext}' (expected '{expected}')"
+        )
+
+
+def _validate_magic_bytes(content: bytes, ext: str) -> None:
+    """Verify that file content matches expected magic-byte signatures.
+
+    Compares the first bytes of *content* against known file signatures
+    for the given extension.  If the extension has a known signature in
+    ``_MAGIC_BYTES`` and the content does not match **any** of them, the
+    upload is rejected with an ``UploadError``.
+
+    For extensions without a known signature (e.g. ``svg``, ``csv``),
+    this check is skipped — the extension and MIME validations still apply.
+
+    Args:
+        content: Raw file bytes (only the beginning is inspected).
+        ext: Lowercase file extension without dot.
+
+    Raises:
+        UploadError: If the content does not match the expected file
+            signature for *ext*.
+    """
+    signatures = _MAGIC_BYTES.get(ext)
+    if not signatures:
+        return  # No known signature for this extension — skip gracefully
+    if not any(content.startswith(sig) for sig in signatures):
+        raise UploadError(
+            f"File content does not match expected format for '.{ext}' "
+            f"(magic byte verification failed)"
         )
 
 
@@ -67,27 +165,99 @@ def _generate_filename(ext: str) -> str:
     return f"{uuid.uuid4().hex}.{ext}"
 
 
+# ---------------------------------------------------------------------------
+# Storage drivers
+# ---------------------------------------------------------------------------
+
+async def _store_local(
+    filename: str,
+    content: bytes,
+    upload_dir: str,
+) -> tuple[str, str]:
+    """Store a file on the local filesystem.
+
+    Creates ``upload_dir`` if it doesn't exist. This is the default
+    storage driver.
+
+    Args:
+        filename: Generated filename (e.g. ``'abc123.jpg'``).
+        content: Raw file bytes.
+        upload_dir: Directory to save into.
+
+    Returns:
+        A tuple of ``(absolute_path, url)`` where url is
+        ``/uploads/{filename}``.
+    """
+    Path(upload_dir).mkdir(parents=True, exist_ok=True)
+    file_path = os.path.join(upload_dir, filename)
+
+    with open(file_path, 'wb') as f:
+        f.write(content)
+
+    return file_path, f"/uploads/{filename}"
+
+
+_DRIVERS: dict[str, Callable] = {
+    'local': _store_local,
+}
+
+
+def register_storage_driver(name: str, handler: Callable) -> None:
+    """Register a custom storage driver.
+
+    The handler must be an async callable with signature:
+        async def handler(filename: str, content: bytes, upload_dir: str) -> tuple[str, str]
+
+    It must return a tuple of (path, url).
+    """
+    _DRIVERS[name] = handler
+
+
+def get_storage_drivers() -> set[str]:
+    """Return the names of all registered storage drivers."""
+    return set(_DRIVERS)
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
 async def save_upload(
     file,
     *,
     allowed_types: list[str] | None = None,
     max_size: int | None = None,
     upload_dir: str | None = None,
+    driver: str | None = None,
 ) -> UploadResult:
-    """
-    Validate and save an uploaded file.
+    """Validate and save an uploaded file using the configured storage driver.
+
+    Applies three layers of validation before storing:
+
+    1. **Extension check** — rejects files whose extension is not in
+       *allowed_types*.
+    2. **MIME type check** — rejects files whose client-declared
+       ``Content-Type`` doesn't match the expected MIME for the extension.
+    3. **Magic byte check** — inspects the **actual file content** for
+       known file signatures (e.g. JPEG ``\\xff\\xd8\\xff``, PNG
+       ``\\x89PNG``).  This prevents attackers from uploading disguised
+       files by renaming them and spoofing the ``Content-Type`` header.
 
     Args:
-        file: Starlette UploadFile instance.
-        allowed_types: List of allowed extensions (e.g. ['jpg', 'png']).
+        file: Starlette ``UploadFile`` instance.
+        allowed_types: List of allowed extensions (e.g. ``['jpg', 'png']``).
         max_size: Max file size in bytes.
-        upload_dir: Directory to save into (default: settings.UPLOAD_DIR).
+        upload_dir: Directory or prefix to save into (default:
+            ``settings.UPLOAD_DIR``).
+        driver: Override the default storage driver for this call.
 
     Returns:
-        UploadResult with file metadata.
+        ``UploadResult`` with file metadata.
 
     Raises:
-        UploadError: If validation fails.
+        UploadError: If any validation layer fails (extension, MIME,
+            magic bytes, or size).
+        ValueError: If the requested storage driver is not registered.
     """
     if allowed_types is None:
         allowed_types = list(_MIME_MAP.keys())
@@ -111,18 +281,27 @@ async def save_upload(
             f"File size ({len(content)} bytes) exceeds max ({max_size} bytes)"
         )
 
-    # Generate unique name and save
-    filename = _generate_filename(ext)
-    Path(upload_dir).mkdir(parents=True, exist_ok=True)
-    file_path = os.path.join(upload_dir, filename)
+    # Verify actual file content via magic bytes
+    _validate_magic_bytes(content, ext)
 
-    with open(file_path, 'wb') as f:
-        f.write(content)
+    # Generate unique name and dispatch to driver
+    filename = _generate_filename(ext)
+
+    driver_name = driver or getattr(settings, 'STORAGE_DRIVER', 'local')
+    handler = _DRIVERS.get(driver_name)
+    if handler is None:
+        available = ', '.join(sorted(_DRIVERS))
+        raise ValueError(
+            f"Unknown storage driver '{driver_name}'. "
+            f"Available drivers: {available}"
+        )
+
+    file_path, url = await handler(filename, content, upload_dir)
 
     return UploadResult(
         filename=filename,
         path=file_path,
-        url=f"/uploads/{filename}",
+        url=url,
         size=len(content),
         original_name=original_name,
     )

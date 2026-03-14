@@ -15,6 +15,19 @@ class SampleArticle(NoriModelMixin, Model):
         table = 'sample_article'
 
 
+class SampleUser(NoriModelMixin, Model):
+    """Model with protected_fields for testing sensitive data exclusion."""
+    protected_fields = ['password_hash', 'secret_token']
+
+    id = fields.IntField(pk=True)
+    username = fields.CharField(max_length=100)
+    password_hash = fields.CharField(max_length=255, default='hashed')
+    secret_token = fields.CharField(max_length=255, default='tok_secret')
+
+    class Meta:
+        table = 'sample_user'
+
+
 class SamplePost(NoriSoftDeletes):
     id = fields.IntField(pk=True)
     title = fields.CharField(max_length=200)

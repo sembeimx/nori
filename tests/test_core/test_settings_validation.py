@@ -96,3 +96,37 @@ def test_validate_settings_warns_missing_static_dir():
          patch.object(settings, 'STATIC_DIR', '/nonexistent/path'):
         warnings = settings.validate_settings()
         assert any('STATIC_DIR' in w for w in warnings)
+
+
+def test_validate_settings_jwt_short_secret_production():
+    """JWT_SECRET shorter than 32 chars in production should raise."""
+    import settings
+    with patch.object(settings, 'DEBUG', False), \
+         patch.object(settings, 'DB_ENGINE', 'sqlite'), \
+         patch.object(settings, 'JWT_SECRET', 'short'):
+        with pytest.raises(RuntimeError, match="JWT_SECRET is too short"):
+            settings.validate_settings()
+
+
+def test_validate_settings_jwt_short_secret_debug():
+    """JWT_SECRET length is not enforced in debug mode."""
+    import settings
+    with patch.object(settings, 'DEBUG', True), \
+         patch.object(settings, 'DB_ENGINE', 'sqlite'), \
+         patch.object(settings, 'JWT_SECRET', 'short'):
+        warnings = settings.validate_settings()
+        jwt_length_warnings = [w for w in warnings if 'too short' in w]
+        assert len(jwt_length_warnings) == 0
+
+
+def test_validate_settings_jwt_valid_length_production():
+    """JWT_SECRET with 32+ chars in production passes validation."""
+    import settings
+    long_secret = 'a' * 32
+    with patch.object(settings, 'DEBUG', False), \
+         patch.object(settings, 'DB_ENGINE', 'sqlite'), \
+         patch.object(settings, 'JWT_SECRET', long_secret), \
+         patch.object(settings, 'SECRET_KEY', 'different_key_here_123456789012'):
+        # Should not raise — all checks pass
+        errors = settings.validate_settings()
+        assert not any('too short' in e for e in errors)
