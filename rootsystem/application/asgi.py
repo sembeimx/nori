@@ -61,7 +61,7 @@ exception_handlers = {} if settings.DEBUG else {404: not_found, 500: server_erro
 middleware = [
     Middleware(RequestIdMiddleware),
     Middleware(SecurityHeadersMiddleware),
-    Middleware(SessionMiddleware, secret_key=settings.SECRET_KEY),
+    Middleware(SessionMiddleware, secret_key=settings.SECRET_KEY, https_only=not settings.DEBUG),
     Middleware(CsrfMiddleware),
 ]
 

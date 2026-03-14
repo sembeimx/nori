@@ -7,6 +7,7 @@ from typing import Any, Callable
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, Response
 
+from core.audit import get_client_ip
 from core.http.throttle_backends import get_backend
 
 _UNITS: dict[str, int] = {
@@ -43,10 +44,7 @@ def throttle(rate: str) -> Callable[..., Any]:
         @wraps(func)
         async def wrapper(self: Any, request: Request, *args: Any, **kwargs: Any) -> Response:
             now = time.time()
-            ip = request.client.host if request.client else None
-            if not ip:
-                forwarded = request.headers.get('x-forwarded-for', '').split(',')[0].strip()
-                ip = forwarded or 'unknown'
+            ip = get_client_ip(request) or 'unknown'
             key = f"{ip}:{request.url.path}"
 
             backend = get_backend()
