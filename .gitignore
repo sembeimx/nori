@@ -6,6 +6,8 @@ build/
 .env
 *.db
 *.sqlite3
+*.sqlite3-shm
+*.sqlite3-wal
 .venv/
 venv/
 .idea/
