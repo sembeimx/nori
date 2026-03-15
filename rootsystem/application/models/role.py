@@ -5,7 +5,7 @@ from tortoise import fields
 class Role(Model):
     """A role that groups permissions."""
 
-    id = fields.IntField(pk=True)
+    id = fields.IntField(primary_key=True)
     name = fields.CharField(max_length=50, unique=True)
     permissions = fields.ManyToManyField(
         'models.Permission', related_name='roles', through='role_permission',

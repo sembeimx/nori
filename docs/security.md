@@ -133,7 +133,7 @@ from core.mixins.model import NoriModelMixin
 class User(NoriModelMixin, Model):
     protected_fields = ['password_hash', 'remember_token', 'two_factor_secret']
 
-    id = fields.IntField(pk=True)
+    id = fields.IntField(primary_key=True)
     username = fields.CharField(max_length=100)
     email = fields.CharField(max_length=255)
     password_hash = fields.CharField(max_length=255)

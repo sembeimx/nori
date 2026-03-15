@@ -48,11 +48,11 @@ async def not_found(request: Request, exc: Exception) -> Response:
     accept = request.headers.get('accept', '')
     if 'application/json' in accept:
         return JSONResponse({'error': 'Not Found'}, status_code=404)
-    return templates.TemplateResponse('404.html', {'request': request}, status_code=404)
+    return templates.TemplateResponse(request, '404.html', status_code=404)
 
 async def server_error(request: Request, exc: Exception) -> Response:
     _log.error('Internal server error on %s: %s', request.url.path, exc, exc_info=True)
-    return templates.TemplateResponse('500.html', {'request': request}, status_code=500)
+    return templates.TemplateResponse(request, '500.html', status_code=500)
 
 exception_handlers = {} if settings.DEBUG else {404: not_found, 500: server_error}
 

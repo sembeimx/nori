@@ -59,7 +59,7 @@ from core.mixins.model import NoriModelMixin
 
 
 class {name}(NoriModelMixin, Model):
-    id = fields.IntField(pk=True)
+    id = fields.IntField(primary_key=True)
     name = fields.CharField(max_length=100)
     created_at = fields.DatetimeField(auto_now_add=True)
     updated_at = fields.DatetimeField(auto_now=True)

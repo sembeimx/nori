@@ -18,7 +18,7 @@ from tortoise import fields
 from core.mixins.model import NoriModelMixin
 
 class User(NoriModelMixin, Model):
-    id = fields.IntField(pk=True)
+    id = fields.IntField(primary_key=True)
     slug = fields.CharField(max_length=50, unique=True)
     name = fields.CharField(max_length=100)
     level = fields.IntField(default=0)

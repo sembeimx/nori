@@ -5,7 +5,7 @@ from tortoise import fields
 class AuditLog(Model):
     """Tracks who did what and when."""
 
-    id = fields.IntField(pk=True)
+    id = fields.IntField(primary_key=True)
     user_id = fields.IntField(null=True)
     action = fields.CharField(max_length=50)  # create/update/delete/login/logout/custom
     model_name = fields.CharField(max_length=100, null=True)

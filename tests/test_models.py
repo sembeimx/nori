@@ -7,7 +7,7 @@ from core.mixins.tree import NoriTreeMixin
 
 
 class SampleArticle(NoriModelMixin, Model):
-    id = fields.IntField(pk=True)
+    id = fields.IntField(primary_key=True)
     title = fields.CharField(max_length=100)
     body = fields.TextField(default='')
 
@@ -19,7 +19,7 @@ class SampleUser(NoriModelMixin, Model):
     """Model with protected_fields for testing sensitive data exclusion."""
     protected_fields = ['password_hash', 'secret_token']
 
-    id = fields.IntField(pk=True)
+    id = fields.IntField(primary_key=True)
     username = fields.CharField(max_length=100)
     password_hash = fields.CharField(max_length=255, default='hashed')
     secret_token = fields.CharField(max_length=255, default='tok_secret')
@@ -29,7 +29,7 @@ class SampleUser(NoriModelMixin, Model):
 
 
 class SamplePost(NoriSoftDeletes):
-    id = fields.IntField(pk=True)
+    id = fields.IntField(primary_key=True)
     title = fields.CharField(max_length=200)
 
     class Meta:
@@ -37,7 +37,7 @@ class SamplePost(NoriSoftDeletes):
 
 
 class SampleCategory(NoriTreeMixin):
-    id = fields.IntField(pk=True)
+    id = fields.IntField(primary_key=True)
     name = fields.CharField(max_length=100)
     parent = fields.ForeignKeyField(
         'models.SampleCategory', related_name='children_rel',
