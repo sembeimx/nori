@@ -288,6 +288,14 @@ Nori is documented in a modular format so you can quickly find what you need. Ch
 * **[WebSockets (Real-Time)](docs/websockets.md):** JSON object-oriented handling of persistent connections for chats and notifications `ws://`.
 * **[Built-in Services](docs/services.md):** Async SMTP Mass Mailing engine (`send_mail` visual via Jinja2), secure disk saving for generic FileUploads (`save_upload`), and Audit Logging (`audit()`).
 
+### Operations
+* **[Deployment](docs/deployment.md):** Production checklist, Gunicorn + systemd, Nginx/Apache reverse proxy, SSL, Docker, Redis, sizing guide.
+* **[Logging](docs/logging.md):** JSON/text formatters, rotating file handler, structured audit logs.
+* **[Caching](docs/caching.md):** Memory and Redis backends, TTL, response caching decorator.
+* **[Background Tasks](docs/background_tasks.md):** In-process async tasks with error logging.
+* **[Philosophy](docs/philosophy.md):** What Nori is, design principles, and comparable frameworks.
+* **[Roadmap](docs/roadmap.md):** Current state, production hardening gaps, and planned features.
+
 ---
 
 ## Nori CLI & New Modules
