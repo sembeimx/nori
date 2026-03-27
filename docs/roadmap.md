@@ -45,6 +45,27 @@ Current state of Nori and the pieces needed to support production-grade applicat
 
 ---
 
+## Production hardening — Before going live
+
+These are not new features — they are gaps in existing subsystems that must be addressed before serving real traffic. Ordered by severity.
+
+### P0 — Must fix
+
+| Gap | Problem | Fix |
+|-----|---------|-----|
+| **Memory cache unbounded growth** | `MemoryCacheBackend` has no max key limit. Under sustained load, the cache grows until the process runs out of memory (OOM kill). | Add a `max_keys` parameter with LRU eviction. Default to a sensible limit (e.g. 10,000 keys). Document that Redis is strongly recommended for production. |
+| **Memory backends unsuitable for production** | Both `MemoryCacheBackend` and `MemoryThrottleBackend` lose all state on restart or deploy. Rate limit counters reset, cached data vanishes. With multiple workers (Gunicorn), each process has its own isolated store — rate limits become ineffective. | Add a startup warning when `DEBUG=False` and memory backends are active. Document Redis as the production requirement for cache and rate limiting. |
+
+### P1 — Fix before real users have accounts
+
+| Gap | Problem | Fix |
+|-----|---------|-----|
+| ~~**No brute-force protection on login**~~ | ~~An attacker can attempt passwords against a known email indefinitely.~~ | **Done** — `check_login_allowed()`, `record_failed_login()`, `clear_failed_logins()` in `core/auth/login_guard.py`. Per-account lockout with escalating backoff (1m → 5m → 15m → 30m → 1h). Uses cache backend. |
+| **Session permissions never invalidate** | `load_permissions()` caches the user's roles and permissions in the session. If an admin revokes a role, the user keeps their old permissions until their session expires or they log out. | Add a TTL or version check: store a `permissions_loaded_at` timestamp in the session and re-fetch after a configurable interval (e.g. 5 minutes). |
+| **JWT has no revocation mechanism** | Once issued, a JWT is valid until it expires. A compromised token cannot be invalidated. | Implement a lightweight token blacklist (DB or cache-backed) checked on `@token_required`. Add an optional `jti` (JWT ID) claim for selective revocation. |
+
+---
+
 ## What's next — Priority order
 
 ### 1. Job Queue (persistent, with retries)

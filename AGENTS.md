@@ -37,6 +37,7 @@ When modifying or extending this project, AI agents MUST follow these rules:
 - Passwords should be hashed using `core.auth.security.Security`. Native JWT is supported via `core.auth.jwt`.
 - **JWT_SECRET** must be set independently from `SECRET_KEY` in production and must be at least 32 characters long (enforced by `validate_settings()`). Generate one with: `python3 -c "import secrets; print(secrets.token_urlsafe(32))"`.
 - Rate limiting (`@throttle`) supports pluggable backends (Memory or Redis) configured via the `THROTTLE_BACKEND` env var. IP address is resolved via `get_client_ip()` which only trusts `X-Forwarded-For` from IPs listed in `TRUSTED_PROXIES` env var.
+- **Brute-force protection**: Use `check_login_allowed(identifier)`, `record_failed_login(identifier)`, and `clear_failed_logins(identifier)` from `core.auth` in login flows. Locks accounts after 5 consecutive failures with escalating backoff (1m → 5m → 15m → 30m → 1h). Uses the cache backend.
 
 ### 5. WebSockets (`core.ws`)
 - Use `WebSocketHandler` or `JsonWebSocketHandler` (inherits from `WebSocketHandler`) by subclassing them for real-time endpoints.

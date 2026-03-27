@@ -3,6 +3,7 @@ from core.auth.decorators import login_required, require_role, require_any_role,
 from core.auth.decorators import require_permission, load_permissions
 from core.auth.security import Security
 from core.auth.jwt import create_token, verify_token
+from core.auth.login_guard import check_login_allowed, record_failed_login, clear_failed_logins
 
 __all__ = [
     'CsrfMiddleware', 'csrf_field', 'csrf_token',
@@ -10,4 +11,5 @@ __all__ = [
     'require_permission', 'load_permissions',
     'Security',
     'create_token', 'verify_token',
+    'check_login_allowed', 'record_failed_login', 'clear_failed_logins',
 ]

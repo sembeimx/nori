@@ -23,6 +23,56 @@ token = Security.generate_token()      # 64 hex characters
 csrf = Security.generate_csrf_token()  # 64 hex characters
 ```
 
+## Brute-Force Protection (Login Guard)
+
+Nori includes per-account brute-force protection that locks accounts after repeated failed login attempts, with escalating lockout durations.
+
+```python
+from core.auth import check_login_allowed, record_failed_login, clear_failed_logins
+
+async def login(self, request: Request):
+    form = await request.form()
+    email = form['email']
+
+    # 1. Check if the account is locked
+    allowed, retry_after = await check_login_allowed(email)
+    if not allowed:
+        return JSONResponse(
+            {'error': f'Too many attempts. Try again in {retry_after}s.'},
+            status_code=429,
+        )
+
+    # 2. Validate credentials
+    user = await User.get_or_none(email=email)
+    if not user or not Security.verify_password(form['password'], user.password_hash):
+        await record_failed_login(email)
+        return JSONResponse({'error': 'Invalid credentials'}, status_code=401)
+
+    # 3. Success — clear attempts and start session
+    await clear_failed_logins(email)
+    request.session['user_id'] = str(user.id)
+    return RedirectResponse(url='/dashboard', status_code=302)
+```
+
+**How it works:**
+- After **5 consecutive failures**, the account is locked for **1 minute**.
+- Each subsequent lockout escalates: **1m → 5m → 15m → 30m → 1h**.
+- A successful login resets the counter entirely.
+- Attempts made _during_ a lockout are ignored (don't extend the lockout).
+- Uses the cache backend (Memory or Redis), so it works with the same `CACHE_BACKEND` setting.
+- Lockouts are logged via `nori.auth` logger for monitoring.
+
+**API:** `core.auth.login_guard`
+| Function | Purpose |
+|----------|---------|
+| `check_login_allowed(identifier)` | Returns `(allowed: bool, retry_after: int)` |
+| `record_failed_login(identifier)` | Increments failures; triggers lockout at threshold |
+| `clear_failed_logins(identifier)` | Resets all tracking (call on successful login) |
+
+The `identifier` can be anything — email, username, phone number. It's the developer's choice.
+
+---
+
 ## Session Middlewares
 
 Nori manages the logged-in user state in an encrypted session cookie using the `SECRET_KEY` from `.env`.
@@ -32,17 +82,17 @@ To log in after successfully validating the password, simply inject variables in
 ```python
 async def login(self, request: Request):
     # [Validation logic omitted]
-    
+
     # Start Session (Effective "Login")
     request.session['user_id'] = str(user.id)
     request.session['role'] = 'admin' if user.level > 0 else 'user'
-    
+
     return RedirectResponse(url='/dashboard', status_code=302)
 
 async def logout(self, request: Request):
     # Close Session
     request.session.clear()
-    
+
     return RedirectResponse(url='/', status_code=302)
 ```
 
