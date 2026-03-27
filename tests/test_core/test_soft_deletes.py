@@ -74,3 +74,13 @@ async def test_only_trashed_returns_deleted_only():
     ids = [p.id for p in trashed]
     assert deleted.id in ids
     assert active.id not in ids
+
+
+@pytest.mark.asyncio
+async def test_restore_idempotent_on_active_record():
+    """Calling restore() on an already active record is a no-op."""
+    post = await SamplePost.create(title='Already Active')
+    assert post.deleted_at is None
+
+    await post.restore()  # should not error or issue unnecessary queries
+    assert post.deleted_at is None

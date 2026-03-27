@@ -104,9 +104,46 @@ async def api_profile(self, request: Request):
     # If reached here, the token exists, is valid, and hasn't expired.
     
     # The injected payload is recovered directly from the decorator:
-    user_id = request.state.jwt_payload['user_id']
+    user_id = request.state.token_payload['user_id']
     
     return JSONResponse({'status': 'ok', 'id': user_id})
 ```
 
-The decorator will implicitly and natively read the HTTP header from the client request (`Authorization: Bearer <token_string_here>`). If it doesn't have it, it will return a `401 JSON` Error, blocking the layer.
+The decorator reads the `Authorization: Bearer <token>` header. If missing, malformed, or invalid, it returns `401 Unauthorized` as JSON. The token is trimmed and limited to 4096 characters to prevent abuse.
+
+---
+
+## Granular Permissions (ACL)
+
+For fine-grained access control beyond simple roles, use the permission system. Permissions use dot-notation (e.g. `articles.edit`, `users.delete`) and are loaded from the database at login time.
+
+### Setup at Login
+
+After authenticating, set the user's `role_ids` in the session and call `load_permissions()`:
+
+```python
+from core.auth.decorators import load_permissions
+
+async def login(self, request: Request):
+    # [Validate credentials...]
+    request.session['user_id'] = str(user.id)
+    request.session['role'] = user.role
+    request.session['role_ids'] = [user.role_id]  # Required for load_permissions
+    await load_permissions(request.session, user.id)
+    return RedirectResponse(url='/dashboard', status_code=302)
+```
+
+**Important**: `load_permissions()` reads `role_ids` from the session to query the `Role→Permission` M2M. If `role_ids` is missing or empty, a warning is logged and the user will have no permissions.
+
+### Protecting Routes
+
+```python
+from core.auth.decorators import require_permission
+
+class ArticleController:
+    @require_permission('articles.edit')
+    async def edit(self, request: Request):
+        ...
+```
+
+The `admin` role bypasses all permission checks.

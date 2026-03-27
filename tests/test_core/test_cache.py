@@ -151,3 +151,60 @@ async def test_cache_response_skips_post():
     await ctrl.create(FakeRequest())
     await ctrl.create(FakeRequest())
     assert call_count == 2  # not cached
+
+
+@pytest.mark.asyncio
+async def test_cache_response_does_not_cache_errors():
+    """Error responses (non-2xx) should not be cached."""
+    call_count = 0
+
+    class FakeURL:
+        path = '/error-test'
+        query = ''
+
+    class FakeRequest:
+        method = 'GET'
+        url = FakeURL()
+
+    class Ctrl:
+        @cache_response(ttl=60)
+        async def failing(self, request):
+            nonlocal call_count
+            call_count += 1
+            return JSONResponse({'error': 'fail'}, status_code=500)
+
+    ctrl = Ctrl()
+    req = FakeRequest()
+
+    resp1 = await ctrl.failing(req)
+    assert resp1.status_code == 500
+
+    resp2 = await ctrl.failing(req)
+    assert resp2.status_code == 500
+    assert call_count == 2  # not cached — handler called both times
+
+
+@pytest.mark.asyncio
+async def test_cache_response_caches_only_200():
+    """404 responses should not be cached either."""
+    call_count = 0
+
+    class FakeURL:
+        path = '/notfound-test'
+        query = ''
+
+    class FakeRequest:
+        method = 'GET'
+        url = FakeURL()
+
+    class Ctrl:
+        @cache_response(ttl=60)
+        async def maybe_missing(self, request):
+            nonlocal call_count
+            call_count += 1
+            return JSONResponse({'error': 'not found'}, status_code=404)
+
+    ctrl = Ctrl()
+    await ctrl.maybe_missing(FakeRequest())
+    await ctrl.maybe_missing(FakeRequest())
+    assert call_count == 2

@@ -26,11 +26,26 @@ __all__ = ['audit', 'get_client_ip']
 
 
 def get_client_ip(request: Request) -> str | None:
-    """Extract the client IP, respecting X-Forwarded-For behind a proxy."""
-    forwarded = request.headers.get('x-forwarded-for')
-    if forwarded:
-        return forwarded.split(',')[0].strip()
-    return request.client.host if request.client else None
+    """Extract the client IP, respecting X-Forwarded-For only from trusted proxies.
+
+    Set ``TRUSTED_PROXIES`` in ``.env`` (comma-separated IPs) to trust
+    ``X-Forwarded-For`` headers from those addresses.  When the direct
+    client IP is not in the trusted list, ``X-Forwarded-For`` is ignored
+    to prevent IP spoofing.
+    """
+    import settings as _settings
+
+    direct_ip = request.client.host if request.client else None
+    trusted = getattr(_settings, 'TRUSTED_PROXIES', [])
+
+    if trusted and direct_ip in trusted:
+        forwarded = request.headers.get('x-forwarded-for')
+        if forwarded:
+            ip = forwarded.split(',')[0].strip()
+            if ip:
+                return ip
+
+    return direct_ip
 
 
 def audit(
@@ -50,7 +65,8 @@ def audit(
     ``user_id`` is resolved from ``request.session['user_id']`` when not
     provided explicitly.
     """
-    resolved_user_id = user_id if user_id is not None else request.session.get('user_id')
+    raw_uid = user_id if user_id is not None else request.session.get('user_id')
+    resolved_user_id = int(raw_uid) if raw_uid is not None else None
     ip = get_client_ip(request)
     request_id = getattr(request.state, 'request_id', None)
 

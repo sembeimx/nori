@@ -53,15 +53,14 @@ To achieve this, the route explicitly receives both methods (`methods=['GET', 'P
 
 ```python
 from starlette.responses import RedirectResponse
-from core.auth.csrf import csrf_field
 
 async def create(self, request: Request):
     # 1. We render the form when the user arrives at the URL
     if request.method == 'GET':
         return templates.TemplateResponse(request, 'product/form.html', {
-            'csrf_field': csrf_field(request.session),
             'errors': {}
         })
+        # csrf_field is a Jinja2 global — use {{ csrf_field(request.session)|safe }} in the template
 
     # 2. If the user sends a POST, we process the logic here
     form = dict(await request.form())

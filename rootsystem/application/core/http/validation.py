@@ -18,7 +18,9 @@ from __future__ import annotations
 import re
 
 _EMAIL_RE = re.compile(
-    r'^[a-zA-Z0-9][a-zA-Z0-9._%+-]*@'
+    r'^[a-zA-Z0-9][a-zA-Z0-9_%+-]*'      # first char + allowed chars (no leading dot)
+    r'(\.[a-zA-Z0-9][a-zA-Z0-9_%+-]*)*'   # optional groups starting with single dot (no consecutive dots)
+    r'@'
     r'[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?'
     r'(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)*'
     r'\.[a-zA-Z]{2,}$'
@@ -45,13 +47,17 @@ def _parse_size(size_str: str) -> int:
         num = size_str[:-2].strip()
         if not num:
             raise ValueError(f"Invalid size: '{size_str}'")
-        return int(float(num) * 1024 * 1024)
-    if size_str.endswith('kb'):
+        result = int(float(num) * 1024 * 1024)
+    elif size_str.endswith('kb'):
         num = size_str[:-2].strip()
         if not num:
             raise ValueError(f"Invalid size: '{size_str}'")
-        return int(float(num) * 1024)
-    return int(size_str)
+        result = int(float(num) * 1024)
+    else:
+        result = int(size_str)
+    if result <= 0:
+        raise ValueError(f"Size must be positive: '{size_str}'")
+    return result
 
 
 def validate(
@@ -140,7 +146,10 @@ def _check_rule(
     elif rule == 'numeric':
         if value:
             try:
-                float(value)
+                f = float(value)
+                import math
+                if math.isinf(f) or math.isnan(f):
+                    return _msg(field, rule, messages)
             except ValueError:
                 return _msg(field, rule, messages)
 
@@ -160,9 +169,10 @@ def _check_rule(
             return _msg(field, rule, messages)
 
     elif rule == 'file_max':
-        if value_raw is not None and hasattr(value_raw, 'size'):
+        if value_raw is not None and hasattr(value_raw, 'filename'):
             max_bytes = _parse_size(param)
-            if value_raw.size > max_bytes:
+            file_size = getattr(value_raw, 'size', None)
+            if file_size is not None and file_size > max_bytes:
                 return _msg(field, rule, messages, size=param)
 
     elif rule == 'file_types':

@@ -125,3 +125,15 @@ def test_inject_invalid_type_falls_back_to_default():
     body = resp.json()
     # Should fall back to default (0) since int('abc') fails
     assert body['num'] == 0
+
+
+# ---------------------------------------------------------------------------
+# Malformed body returns 400
+# ---------------------------------------------------------------------------
+
+def test_inject_malformed_json_returns_400():
+    """Invalid JSON body returns 400 instead of silently proceeding."""
+    resp = client.post('/form', content=b'{not valid json}',
+                       headers={'Content-Type': 'application/json'})
+    assert resp.status_code == 400
+    assert 'error' in resp.json()

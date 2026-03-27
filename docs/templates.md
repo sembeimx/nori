@@ -56,7 +56,7 @@ Jinja2 provides minimal logic for rendering dynamic variables transferred by you
 {% endif %}
 ```
 
-*(Important: You might notice that the global Starlette Request variable always travels pre-injected by Nori. It is not necessary to re-export it from the controller and can be used immediately, e.g. `request.url.path` or `request.session`).*
+*(Important: The `request` object is automatically available in templates because Starlette's `TemplateResponse(request, ...)` injects it into the template context. You do not need to pass it manually in the context dictionary — just pass it as the first argument to `TemplateResponse`. This means `request.url.path`, `request.session`, and `request.url_for(...)` are always accessible in your Jinja2 templates).*
 
 ### For Loops (Collection Cycles or Querysets)
 ```html

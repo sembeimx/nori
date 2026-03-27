@@ -72,7 +72,9 @@ class NoriSoftDeletes(Model):
         await self.save(update_fields=['deleted_at'], using_db=using_db)
 
     async def restore(self) -> None:
-        """Restores a soft-deleted record."""
+        """Restores a soft-deleted record. No-op if already active."""
+        if self.deleted_at is None:
+            return
         self.deleted_at = None
         await self.save(update_fields=['deleted_at'])
 

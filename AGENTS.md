@@ -10,14 +10,14 @@ When modifying or extending this project, AI agents MUST follow these rules:
 3. **Explicit Routes**: Always define routes in `rootsystem/application/routes.py` with explicit `methods=` and `name=` for reverse routing.
 4. **Security First**: 
    - State-changing actions (like `/logout` or `/delete`) MUST be `POST` requests to prevent CSRF via links.
-   - Any response rendering a form that makes a POST request MUST include `csrf_field(request.session)` in the template context.
+   - Forms that make POST requests MUST include `{{ csrf_field(request.session)|safe }}` in the template (`csrf_field` is a Jinja2 global — no need to pass it from the controller).
 5. **Testing**: Fast E2E tests are located in `tests/` using in-memory SQLite and `httpx`. Unit tests for the core are in `tests/test_core/`. Ensure all new logic is tested.
 
 ## Core Features & Conventions
 
 ### 1. Database & Models (`rootsystem/application/models/`)
 - Models inherit from `Tortoise.Model` and `NoriModelMixin` (which provides `.to_dict()`).
-- Use `NoriSoftDeletes` for soft deletion (sets `deleted_at`) and `NoriTreeMixin` for hierarchical data.
+- Use `NoriSoftDeletes` for soft deletion (sets `deleted_at`) — it already inherits from `Model`, so do not also inherit from `Model`. Use `NoriTreeMixin` for hierarchical data.
 - **`protected_fields`**: Define a `protected_fields` class attribute on your model to list sensitive fields (e.g. `password_hash`, `remember_token`) that are **automatically excluded** from `to_dict()`. This prevents accidental data leaks when a developer forgets to pass `exclude=`. Use `to_dict(include_protected=True)` to force-include them when explicitly needed (e.g. internal admin operations).
 - Register new models in `models/__init__.py` and configure them in `settings.TORTOISE_ORM`.
 
@@ -36,17 +36,18 @@ When modifying or extending this project, AI agents MUST follow these rules:
 - Sessions are managed via `request.session`.
 - Passwords should be hashed using `core.auth.security.Security`. Native JWT is supported via `core.auth.jwt`.
 - **JWT_SECRET** must be set independently from `SECRET_KEY` in production and must be at least 32 characters long (enforced by `validate_settings()`). Generate one with: `python3 -c "import secrets; print(secrets.token_urlsafe(32))"`.
-- Rate limiting (`@throttle`) supports pluggable backends (Memory or Redis) configured via the `THROTTLE_BACKEND` env var.
+- Rate limiting (`@throttle`) supports pluggable backends (Memory or Redis) configured via the `THROTTLE_BACKEND` env var. IP address is resolved via `get_client_ip()` which only trusts `X-Forwarded-For` from IPs listed in `TRUSTED_PROXIES` env var.
 
 ### 5. WebSockets (`core.ws`)
-- Use `WebSocketHandler` or `JsonWebSocketHandler` by subclassing them for real-time endpoints.
+- Use `WebSocketHandler` or `JsonWebSocketHandler` (inherits from `WebSocketHandler`) by subclassing them for real-time endpoints.
+- Both handlers enforce an idle timeout (default: 5 minutes). Override `receive_timeout` on the subclass to customize.
 - Define routes directly using `WebSocketRoute('/ws/...', Handler())` in `routes.py`.
 
 ### 6. Uploads & Storage (`core.http.upload`)
 - Multi-driver storage configured via `STORAGE_DRIVER` env var (default: `local`).
 - Built-in driver: `local` (saves to disk under `UPLOAD_DIR`).
-- `save_upload(file, allowed_types=, max_size=, upload_dir=, driver=)` — applies three validation layers before storing: **(1)** extension check, **(2)** MIME type check (client-declared Content-Type), **(3)** magic byte verification (inspects actual file content for known signatures like JPEG `\xff\xd8\xff`, PNG `\x89PNG`, etc.). This prevents attackers from uploading disguised files by renaming them and spoofing headers. The `driver` kwarg overrides `STORAGE_DRIVER` per-call.
-- Magic byte verification is pure Python (no `python-magic`/`libmagic` dependency). Covers JPEG, PNG, GIF, PDF, WebP. Extensions without known signatures (e.g. SVG, CSV) are skipped gracefully.
+- `save_upload(file, allowed_types=, max_size=, upload_dir=, driver=)` — applies validation layers before storing: **(1)** extension check, **(2)** MIME type check (strips charset parameters before comparing), **(3)** empty file rejection, **(4)** magic byte verification (inspects actual file content for known signatures like JPEG `\xff\xd8\xff`, PNG `\x89PNG`, WebP `RIFF+WEBP` at offset 8, etc.). The `driver` kwarg overrides `STORAGE_DRIVER` per-call.
+- Magic byte verification is pure Python (no `python-magic`/`libmagic` dependency). Covers JPEG, PNG, GIF, PDF, WebP (with full RIFF structure validation). Extensions without known signatures (e.g. SVG, CSV) are skipped gracefully.
 - `register_storage_driver(name, handler)` — register custom storage drivers from application code (e.g. S3, R2). Driver contract: `async def(filename: str, content: bytes, upload_dir: str) -> tuple[str, str]` returning `(path, url)`.
 - `get_storage_drivers()` — returns the set of registered driver names.
 - See `services/storage_s3.py` for an example S3-compatible driver (works with AWS S3, R2, Spaces, MinIO).

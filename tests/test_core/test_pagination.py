@@ -100,3 +100,12 @@ async def test_paginate_returns_nori_collection():
     qs = _FakeQuerySet(list(range(5)))
     result = await paginate(qs, page=1, per_page=10)
     assert isinstance(result['data'], NoriCollection)
+
+
+@pytest.mark.asyncio
+async def test_paginate_caps_per_page_at_500():
+    """per_page values above 500 are clamped to 500."""
+    qs = _FakeQuerySet(list(range(1000)))
+    result = await paginate(qs, page=1, per_page=9999)
+    assert result['per_page'] == 500
+    assert len(result['data']) == 500

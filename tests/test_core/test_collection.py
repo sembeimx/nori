@@ -169,7 +169,7 @@ def test_avg():
 
 
 def test_avg_empty():
-    assert collect([]).avg('x') == 0
+    assert collect([]).avg('x') is None
 
 
 def test_min():
@@ -206,3 +206,21 @@ def test_to_dict():
     result = collect(items).to_dict('id')
     assert result[1].name == 'a'
     assert result[2].name == 'b'
+
+
+# --- sort_by with None values ---
+
+def test_sort_by_with_none_values():
+    """None values should be sorted to the end."""
+    items = [Obj(name=None), Obj(name='a'), Obj(name='c'), Obj(name=None), Obj(name='b')]
+    result = collect(items).sort_by('name')
+    names = [getattr(i, 'name') for i in result]
+    # Non-None values first in order, then Nones at the end
+    assert names == ['a', 'b', 'c', None, None]
+
+
+def test_sort_by_all_none():
+    """Sorting when all values are None should not error."""
+    items = [Obj(name=None), Obj(name=None)]
+    result = collect(items).sort_by('name')
+    assert len(result) == 2

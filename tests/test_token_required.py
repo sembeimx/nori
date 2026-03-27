@@ -65,7 +65,45 @@ async def test_valid_token_passes():
 async def test_expired_token_returns_401():
     """Expired JWT returns 401."""
     ctrl = FakeController()
-    token = create_token({'user_id': 1}, expires_in=-1)
+    token = create_token({'user_id': 1}, expires_in=-30)
     req = FakeRequest(auth_header=f'Bearer {token}')
+    resp = await ctrl.protected(req)
+    assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_bearer_with_extra_spaces():
+    """Bearer token with extra whitespace is handled correctly."""
+    ctrl = FakeController()
+    token = create_token({'user_id': 7}, expires_in=3600)
+    req = FakeRequest(auth_header=f'  Bearer   {token}  ')
+    resp = await ctrl.protected(req)
+    assert resp.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_bearer_case_insensitive():
+    """'BEARER' (uppercase) is accepted."""
+    ctrl = FakeController()
+    token = create_token({'user_id': 7}, expires_in=3600)
+    req = FakeRequest(auth_header=f'BEARER {token}')
+    resp = await ctrl.protected(req)
+    assert resp.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_oversized_token_rejected():
+    """Token exceeding 4096 characters is rejected."""
+    ctrl = FakeController()
+    req = FakeRequest(auth_header='Bearer ' + 'x' * 5000)
+    resp = await ctrl.protected(req)
+    assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_bearer_only_no_token():
+    """'Bearer ' with no actual token is rejected."""
+    ctrl = FakeController()
+    req = FakeRequest(auth_header='Bearer ')
     resp = await ctrl.protected(req)
     assert resp.status_code == 401

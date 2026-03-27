@@ -4,7 +4,7 @@ Nori offers a native, object-oriented implementation for WebSockets, built on St
 
 ## WebSocket Handlers
 
-Handlers must inherit from `WebSocketHandler` or its convenience variant `JsonWebSocketHandler` (located in `core.ws`).
+Handlers must inherit from `WebSocketHandler` or its convenience variant `JsonWebSocketHandler` (located in `core.ws`). `JsonWebSocketHandler` inherits from `WebSocketHandler`, so both share the same lifecycle and configuration.
 
 ### Creating a Basic Handler (JSON)
 
@@ -22,10 +22,10 @@ class ChatHandler(JsonWebSocketHandler):
         print(f"New client connected. Sending welcome message.")
         await websocket.send_json({"event": "welcome", "message": "Connected to the Nori server"})
 
-    async def on_receive(self, websocket, data: dict):
+    async def on_receive_json(self, websocket, data: dict):
         """Triggered when the server receives a JSON message from the client."""
         print(f"Message received: {data}")
-        
+
         # Echoing the message back to the client
         await websocket.send_json({
             "event": "echo",
@@ -38,9 +38,54 @@ class ChatHandler(JsonWebSocketHandler):
 ```
 
 ### The Handler Lifecycle
-1. **`on_connect(websocket)`**: Here you can validate session cookies (`websocket.session`), verify tokens, or interact with the DB before accepting the client. If you do not wish to accept the connection due to permissions, you can close it by raising an exception or calling `await websocket.close()`.
-2. **`on_receive(websocket, data)`**: The heart of communication. Because it is `JsonWebSocketHandler`, the `data` parameter already comes parsed and validated as a Python Dictionary.
-3. **`on_disconnect(websocket, close_code)`**: Ideal for clearing memory, removing the user from active "chat rooms" in global dictionaries, or updating their status in the database.
+1. **`on_connect(websocket)`**: Runs after the connection is accepted. Validate session cookies, verify tokens, or query the DB. To reject a connection, call `await websocket.close(code)`.
+2. **`on_receive(websocket, data)` / `on_receive_json(websocket, data)`**: The heart of communication. In `WebSocketHandler`, `data` is a raw string. In `JsonWebSocketHandler`, `data` is already parsed as a Python dictionary (override `on_receive_json` instead of `on_receive`).
+3. **`on_disconnect(websocket, close_code)`**: Ideal for clearing memory, removing the user from active rooms, or updating status in the database.
+
+### Idle Timeout
+
+Both handlers enforce an idle timeout (default: **5 minutes**). If no message is received within the timeout window, the connection is gracefully closed with code `1000`. Override `receive_timeout` on your subclass to customize:
+
+```python
+class LongPollHandler(JsonWebSocketHandler):
+    receive_timeout = 600  # 10 minutes
+```
+
+### Authentication in WebSockets
+
+Since `SessionMiddleware` populates `websocket.session` (WebSocket shares Starlette's `HTTPConnection`), you can check the session in `on_connect` to reject unauthenticated clients:
+
+```python
+class ProtectedChatHandler(JsonWebSocketHandler):
+
+    async def on_connect(self, websocket):
+        user_id = websocket.session.get('user_id')
+        if not user_id:
+            await websocket.close(code=4001)  # Custom close code
+            return
+
+        # Store user info for later use in on_receive
+        websocket.state.user_id = user_id
+        await websocket.send_json({"event": "welcome", "user_id": user_id})
+
+    async def on_receive(self, websocket, data: dict):
+        user_id = websocket.state.user_id
+        await websocket.send_json({"from": user_id, "message": data.get("message")})
+```
+
+For JWT-based authentication, read the token from a query parameter (`/ws/chat?token=...`) since browsers cannot set custom headers on WebSocket connections:
+
+```python
+from core.auth.jwt import verify_token
+
+async def on_connect(self, websocket):
+    token = websocket.query_params.get('token')
+    payload = verify_token(token) if token else None
+    if not payload:
+        await websocket.close(code=4001)
+        return
+    websocket.state.user_id = payload['user_id']
+```
 
 ## Routing WebSockets
 

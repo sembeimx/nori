@@ -97,3 +97,19 @@ Route('/logout', endpoint=auth.logout, methods=['POST'], name='logout')
 # INCORRECT - Exposed to CSRF via image tags or links
 Route('/logout', endpoint=auth.logout, methods=['GET'], name='logout')
 ```
+
+## WebSocket Routes
+
+For real-time endpoints, use `WebSocketRoute` instead of `Route`:
+
+```python
+from starlette.routing import WebSocketRoute
+from modules.chat_ws import ChatHandler
+
+routes = [
+    # ... HTTP routes ...
+    WebSocketRoute('/ws/chat', ChatHandler()),
+]
+```
+
+WebSocket routes do not use `methods=` or `name=`. For full details on WebSocket handlers, see [WebSockets](websockets.md).

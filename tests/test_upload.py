@@ -264,3 +264,41 @@ def test_get_storage_drivers():
     """Built-in local driver is always present."""
     drivers = get_storage_drivers()
     assert 'local' in drivers
+
+
+# ---------------------------------------------------------------------------
+# Edge cases for recent fixes
+# ---------------------------------------------------------------------------
+
+@pytest.mark.anyio
+async def test_save_upload_empty_file_rejected():
+    """Empty files (0 bytes) are rejected."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        f = FakeUploadFile(filename='empty.jpg', content_type='image/jpeg', content=b'')
+        with pytest.raises(UploadError, match='empty'):
+            await save_upload(f, allowed_types=['jpg'], upload_dir=tmpdir)
+
+
+@pytest.mark.anyio
+async def test_save_upload_mime_with_charset_accepted():
+    """MIME type with charset parameter should not cause false rejection."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        f = FakeUploadFile(filename='photo.jpg', content_type='image/jpeg; charset=utf-8',
+                           content=b'\xff\xd8\xff' * 10)
+        result = await save_upload(f, allowed_types=['jpg'], upload_dir=tmpdir)
+        assert result.original_name == 'photo.jpg'
+
+
+def test_magic_bytes_webp_rejects_non_webp_riff():
+    """A RIFF file that is not WebP (e.g. WAV) is rejected for .webp extension."""
+    wav_header = b'RIFF\x00\x00\x00\x00WAVE' + b'\x00' * 100
+    with pytest.raises(UploadError, match='not WebP'):
+        _validate_magic_bytes(wav_header, 'webp')
+
+
+def test_magic_bytes_webp_too_short():
+    """A file too short for RIFF+WEBP check passes the RIFF prefix but fails WEBP."""
+    short = b'RIFF\x00\x00'
+    # Only 6 bytes, can't check offset 8-12, but starts with RIFF so passes magic
+    # bytes. The WebP extra check requires len >= 12, so short files skip it.
+    _validate_magic_bytes(short, 'webp')  # should not raise

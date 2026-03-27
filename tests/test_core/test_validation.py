@@ -162,3 +162,59 @@ def test_custom_message_only_affects_target_field():
     assert errors['email'][0] == 'Email is mandatory'
     assert 'is required' in errors['name'][0]
     assert errors['name'][0] != 'Email is mandatory'
+
+
+# --- numeric edge cases ---
+
+def test_numeric_rejects_infinity():
+    errors = validate({'n': 'inf'}, {'n': 'required|numeric'})
+    assert 'n' in errors
+
+
+def test_numeric_rejects_nan():
+    errors = validate({'n': 'nan'}, {'n': 'required|numeric'})
+    assert 'n' in errors
+
+
+def test_numeric_rejects_negative_infinity():
+    errors = validate({'n': '-Infinity'}, {'n': 'required|numeric'})
+    assert 'n' in errors
+
+
+def test_numeric_accepts_negative():
+    errors = validate({'n': '-42.5'}, {'n': 'required|numeric'})
+    assert errors == {}
+
+
+# --- email edge cases ---
+
+def test_email_rejects_consecutive_dots():
+    errors = validate({'email': 'user..name@example.com'}, {'email': 'required|email'})
+    assert 'email' in errors
+
+
+def test_email_rejects_leading_dot():
+    errors = validate({'email': '.user@example.com'}, {'email': 'required|email'})
+    assert 'email' in errors
+
+
+def test_email_accepts_plus_tag():
+    errors = validate({'email': 'user+tag@example.com'}, {'email': 'required|email'})
+    assert errors == {}
+
+
+# --- file_max edge cases ---
+
+def test_file_max_rejects_negative_size():
+    """Negative size in file_max rule raises ValueError."""
+    from core.http.validation import _parse_size
+    import pytest as pt
+    with pt.raises(ValueError, match='positive'):
+        _parse_size('-5mb')
+
+
+def test_file_max_rejects_zero_size():
+    from core.http.validation import _parse_size
+    import pytest as pt
+    with pt.raises(ValueError, match='positive'):
+        _parse_size('0')

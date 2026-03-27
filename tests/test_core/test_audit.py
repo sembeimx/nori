@@ -46,9 +46,17 @@ def test_get_client_ip_from_client():
     assert get_client_ip(req) == '10.0.0.1'
 
 
-def test_get_client_ip_from_forwarded_for():
+def test_get_client_ip_from_forwarded_for(monkeypatch):
+    import settings
+    monkeypatch.setattr(settings, 'TRUSTED_PROXIES', ['10.0.0.1'])
     req = FakeRequest(ip='10.0.0.1', forwarded_for='203.0.113.5, 10.0.0.1')
     assert get_client_ip(req) == '203.0.113.5'
+
+
+def test_get_client_ip_ignores_forwarded_for_from_untrusted():
+    """X-Forwarded-For is ignored when direct IP is not in TRUSTED_PROXIES."""
+    req = FakeRequest(ip='10.0.0.1', forwarded_for='203.0.113.5, 10.0.0.1')
+    assert get_client_ip(req) == '10.0.0.1'
 
 
 def test_get_client_ip_no_client():
@@ -120,3 +128,25 @@ async def test_audit_nullable_fields():
     assert log.model_name is None
     assert log.record_id is None
     assert log.changes is None
+
+
+def test_get_client_ip_trusted_proxy_empty_forwarded(monkeypatch):
+    """Empty X-Forwarded-For from trusted proxy falls back to direct IP."""
+    import settings
+    monkeypatch.setattr(settings, 'TRUSTED_PROXIES', ['10.0.0.1'])
+    req = FakeRequest(ip='10.0.0.1', forwarded_for='')
+    assert get_client_ip(req) == '10.0.0.1'
+
+
+@pytest.mark.asyncio
+async def test_audit_casts_string_user_id():
+    """user_id stored as string in session is cast to int."""
+    req = FakeRequest(user_id='42')
+    task = audit(req, 'cast_test')
+    await task()
+
+    from models.audit_log import AuditLog
+    log = await AuditLog.filter(action='cast_test').first()
+    assert log is not None
+    assert log.user_id == 42
+    assert isinstance(log.user_id, int)

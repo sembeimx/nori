@@ -25,8 +25,8 @@ def test_payload_contains_iat_exp():
 
 
 def test_expired_token():
-    """Expired token returns None."""
-    token = create_token({'user_id': 1}, expires_in=-1)
+    """Expired token (beyond leeway) returns None."""
+    token = create_token({'user_id': 1}, expires_in=-30)
     assert verify_token(token) is None
 
 
@@ -52,3 +52,28 @@ def test_base64url_roundtrip():
     encoded = _base64url_encode(data)
     decoded = _base64url_decode(encoded)
     assert decoded == data
+
+
+def test_token_within_leeway_accepted():
+    """Token expired within the 10s leeway is still accepted."""
+    token = create_token({'user_id': 1}, expires_in=-5)
+    assert verify_token(token) is not None
+
+
+def test_wrong_algorithm_rejected():
+    """Token with alg != HS256 is rejected."""
+    import json
+    header = _base64url_encode(json.dumps({'alg': 'none', 'typ': 'JWT'}, separators=(',', ':')).encode())
+    payload = _base64url_encode(json.dumps({'user_id': 1, 'iat': 0, 'exp': 9999999999}, separators=(',', ':')).encode())
+    fake_token = f"{header}.{payload}.fakesig"
+    assert verify_token(fake_token) is None
+
+
+def test_invalid_header_encoding():
+    """Token with garbage header returns None."""
+    assert verify_token('!!!.payload.sig') is None
+
+
+def test_empty_bearer_token():
+    """Empty string token returns None."""
+    assert verify_token('') is None

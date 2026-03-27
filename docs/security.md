@@ -43,13 +43,18 @@ Optional `Content-Security-Policy` (CSP) can be configured if needed.
 
 ### Usage in Templates
 
+`csrf_field` and `csrf_token` are registered as Jinja2 globals — you can call them directly in any template without passing them from the controller:
+
 ```html
 <form method="POST" action="/articles">
-    {{ csrf_field(request.session) }}
+    {{ csrf_field(request.session)|safe }}
     <input type="text" name="title" />
     <button type="submit">Create</button>
 </form>
 ```
+
+- `csrf_field(request.session)` returns a full `<input type="hidden" ...>` tag — use `|safe` to render the HTML.
+- `csrf_token(request.session)` returns the raw token string (useful for AJAX headers).
 
 For AJAX requests:
 
@@ -99,6 +104,18 @@ class AuthController:
 ```
 
 Returns **429 Too Many Requests** when the limit is exceeded (JSON or HTML based on `Accept` header).
+
+### Trusted Proxies (IP Spoofing Protection)
+
+Rate limiting uses the client IP address as part of the key. When running behind a reverse proxy (Nginx, Cloudflare, ALB), the real client IP is in the `X-Forwarded-For` header. However, this header is **only trusted from known proxies** to prevent IP spoofing.
+
+Configure trusted proxies in `.env`:
+
+```text
+TRUSTED_PROXIES=127.0.0.1,10.0.0.1
+```
+
+If `TRUSTED_PROXIES` is empty (default), `X-Forwarded-For` is ignored and the direct connection IP is used. This also affects the IP address recorded by the [audit logger](services.md#audit-logging-coreaudit).
 
 ### Backends
 
@@ -175,7 +192,7 @@ Only extensions in `allowed_types` are accepted. A `.exe` file is rejected befor
 
 ### Layer 2: MIME Type Check
 
-The client-declared `Content-Type` header must match the expected MIME for the extension. This catches simple mismatches (e.g. uploading a PNG with `Content-Type: image/jpeg`).
+The client-declared `Content-Type` header must match the expected MIME for the extension. The base MIME type is extracted before comparison (e.g. `image/jpeg; charset=utf-8` is treated as `image/jpeg`), so charset parameters don't cause false rejections. Empty files (0 bytes) are also rejected at this stage.
 
 ### Layer 3: Magic Byte Verification
 
@@ -187,7 +204,7 @@ The **actual file content** is inspected for known file signatures:
 | `png` | `\x89PNG\r\n\x1a\n` | PNG signature |
 | `gif` | `GIF87a` or `GIF89a` | GIF versions |
 | `pdf` | `%PDF` | PDF header |
-| `webp` | `RIFF` | WebP container |
+| `webp` | `RIFF` + `WEBP` at offset 8 | WebP container (full RIFF structure validated) |
 
 ### Why Magic Bytes Matter
 
@@ -207,9 +224,17 @@ Magic byte verification is implemented in **pure Python** (~15 lines) without ex
 
 ## JWT Security
 
-Nori implements JWT with HMAC-SHA256 in `core.auth.jwt`. Three safeguards protect token integrity:
+Nori implements JWT with HMAC-SHA256 in `core.auth.jwt`. Five safeguards protect token integrity:
 
-### 1. Independent Secret
+### 1. Algorithm Validation
+
+`verify_token()` explicitly decodes the JWT header and rejects any token where `alg` is not `HS256`. This defends against algorithm confusion attacks (e.g. `alg: none`).
+
+### 2. Clock Skew Tolerance
+
+Token expiration includes a **10-second leeway** to account for clock differences in distributed systems. A token expired 5 seconds ago will still be accepted; one expired 15 seconds ago will not.
+
+### 3. Independent Secret
 
 `JWT_SECRET` must be set separately from `SECRET_KEY` in production. If `JWT_SECRET` falls back to `SECRET_KEY`, a warning is logged and `validate_settings()` reports an error.
 
@@ -218,7 +243,7 @@ Nori implements JWT with HMAC-SHA256 in `core.auth.jwt`. Three safeguards protec
 JWT_SECRET=your-independent-jwt-secret-here-minimum-32-chars
 ```
 
-### 2. Minimum Length Enforcement
+### 4. Minimum Length Enforcement
 
 `validate_settings()` enforces a minimum of **32 characters** for `JWT_SECRET` in production. Shorter secrets are rejected at startup:
 
@@ -228,7 +253,7 @@ Settings validation failed:
     Use: python3 -c "import secrets; print(secrets.token_urlsafe(32))"
 ```
 
-### 3. Constant-Time Comparison
+### 5. Constant-Time Comparison
 
 Token signatures are verified using `hmac.compare_digest()`, which prevents timing attacks that could otherwise be used to forge valid signatures byte by byte.
 
@@ -275,3 +300,4 @@ When building with Nori, ensure:
 - [ ] Models with sensitive fields define `protected_fields`
 - [ ] File upload `allowed_types` is restrictive (don't allow `*`)
 - [ ] Rate limiting is applied to authentication and expensive endpoints
+- [ ] `TRUSTED_PROXIES` is configured if running behind a reverse proxy

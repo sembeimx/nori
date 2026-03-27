@@ -124,7 +124,7 @@ If a parameter has a type annotation (e.g. `product_id: int`), `@inject` attempt
 - `application/json` → `await request.json()`
 - Everything else → `await request.form()` → converted to `dict`
 
-If parsing fails, the form data defaults to an empty dict and a warning is logged.
+If parsing fails (e.g. malformed JSON), the decorator returns a **400 Bad Request** response with `{"error": "Invalid request body"}` instead of silently proceeding with empty data. Type coercion failures on path and query parameters are logged as warnings and fall back to the parameter's default value.
 
 ---
 

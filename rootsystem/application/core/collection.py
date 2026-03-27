@@ -52,7 +52,12 @@ class NoriCollection(list[T]):
         return NoriCollection(i for i in self if fn(_get_val(i), value))
 
     def sort_by(self, key: str, reverse: bool = False) -> NoriCollection[T]:
-        return NoriCollection(sorted(self, key=lambda i: getattr(i, key, None) or '', reverse=reverse))
+        """Sort by field. None values are sorted to the end."""
+        return NoriCollection(sorted(
+            self,
+            key=lambda i: (getattr(i, key, None) is None, getattr(i, key, None)),
+            reverse=reverse,
+        ))
 
     def group_by(self, key: str) -> dict[Any, NoriCollection[T]]:
         groups: dict[Any, NoriCollection[T]] = {}
@@ -87,9 +92,10 @@ class NoriCollection(list[T]):
     def sum(self, key: str) -> float:
         return sum(getattr(i, key, 0) or 0 for i in self)
 
-    def avg(self, key: str) -> float:
+    def avg(self, key: str) -> float | None:
+        """Average of field values. Returns None for empty collections."""
         if not self:
-            return 0
+            return None
         vals = [getattr(i, key, 0) or 0 for i in self]
         return sum(vals) / len(self)
 

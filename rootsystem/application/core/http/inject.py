@@ -42,7 +42,11 @@ def inject():
                         form_data = dict(await request.form())
                 except (ValueError, TypeError) as exc:
                     _log.warning("Failed to parse request body: %s", exc)
-                    form_data = {}
+                    from starlette.responses import JSONResponse
+                    return JSONResponse(
+                        {'error': 'Invalid request body'},
+                        status_code=400,
+                    )
 
             # Analyze signature and populate arguments
             for name, param in sig.parameters.items():
@@ -61,6 +65,7 @@ def inject():
                         try:
                             val = param.annotation(val)
                         except (ValueError, TypeError):
+                            _log.warning("Type coercion failed for path param '%s': %r", name, val)
                             val = param.default if param.default != inspect.Parameter.empty else None
                     injected_kwargs[name] = val
 
@@ -71,6 +76,7 @@ def inject():
                         try:
                             val = param.annotation(val)
                         except (ValueError, TypeError):
+                            _log.warning("Type coercion failed for query param '%s': %r", name, val)
                             val = param.default if param.default != inspect.Parameter.empty else None
                     injected_kwargs[name] = val
 

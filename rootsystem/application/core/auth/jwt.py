@@ -100,6 +100,16 @@ def verify_token(token: str) -> dict | None:
     if len(parts) != 3:
         return None
 
+    # Validate header algorithm (defensive: reject alg != HS256)
+    try:
+        header = json.loads(_base64url_decode(parts[0]))
+    except (json.JSONDecodeError, ValueError):
+        _log.debug("Invalid JWT header encoding")
+        return None
+    if header.get('alg') != 'HS256':
+        _log.debug("Unsupported JWT algorithm: %s", header.get('alg'))
+        return None
+
     header_payload = f"{parts[0]}.{parts[1]}"
     expected_sig = _sign(header_payload, secret)
 
@@ -112,7 +122,9 @@ def verify_token(token: str) -> dict | None:
         _log.debug("Invalid JWT payload encoding")
         return None
 
-    if 'exp' in payload and payload['exp'] < int(time.time()):
+    # Clock skew tolerance (seconds) for distributed systems
+    _LEEWAY = 10
+    if 'exp' in payload and payload['exp'] < (int(time.time()) - _LEEWAY):
         return None
 
     return payload

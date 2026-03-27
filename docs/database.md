@@ -174,21 +174,30 @@ Groups permissions via a Many-to-Many relationship through the `role_permission`
 Nori includes pre-built abstracted layers in the form of Python mixins for solving repetitive modern tasks.
 
 ### NoriSoftDeletes (Logical Deletion)
-Protects transactional entropy by preventing hard `DROP` or `DELETE` SQL operations. Requires the model to have a `deleted_at (TIMESTAMP NULL)` column in the database.
+Protects transactional entropy by preventing hard `DROP` or `DELETE` SQL operations. `NoriSoftDeletes` already inherits from Tortoise's `Model`, so you do **not** need to inherit from both — just replace `Model` with `NoriSoftDeletes`. The mixin adds a `deleted_at` DatetimeField automatically.
 
 ```python
 from core.mixins.soft_deletes import NoriSoftDeletes
+from core.mixins.model import NoriModelMixin
 
-class Post(NoriSoftDeletes):  # <--- Replace "Model" with "NoriSoftDeletes"
-    title = fields.CharField()
+class Post(NoriModelMixin, NoriSoftDeletes):  # NoriSoftDeletes replaces Model
+    title = fields.CharField(max_length=200)
 ```
 
-Available functions:
-* `await post.delete()` -> Silently sets the status and updates *deleted_at* with `NOW()`. When running `filter()` via the `objects` manager, soft-deleted records are automatically excluded.
-* `await post.restore()` -> Sets *deleted_at* back to Null, returning it to the active filter.
-* `await post.force_delete()` -> Bypasses the override, issuing a real DELETE to the DB.
-* `await Post.with_trashed().all()` -> Retrieves all records including deleted.
-* `await Post.only_trashed().all()` -> Excludes active records, showing only soft-deleted ones.
+**Managers:**
+* `Post.objects` (default) — automatically excludes soft-deleted records from all queries.
+* `Post.all_objects` — includes everything (active + deleted).
+* `Post.trashed` — only soft-deleted records.
+
+**Instance methods:**
+* `await post.delete()` — sets `deleted_at` to `NOW()`. Queries via `objects` manager will exclude this record.
+* `await post.restore()` — clears `deleted_at`, returning the record to the active filter. Idempotent — no-op if the record is already active.
+* `await post.force_delete()` — bypasses the soft-delete override and issues a real `DELETE` to the DB.
+* `post.is_trashed` — property, returns `True` if the record is soft-deleted.
+
+**Class methods:**
+* `await Post.with_trashed().all()` — retrieves all records including deleted.
+* `await Post.only_trashed().all()` — retrieves only soft-deleted records.
 
 ### NoriTreeMixin (Advanced Recursive Adjacency CTE)
 Converts a table into a self-referential recursive ecosystem. Useful for infinite categories, nested permissions, or corporate hierarchies. Explicitly requires a Foreign Key field named `"parent"`.

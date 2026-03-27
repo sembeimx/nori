@@ -122,7 +122,18 @@ class RedisCacheBackend(CacheBackend):
 
     async def set(self, key: str, value: Any, ttl: int = 0) -> None:
         rkey = f"{self._prefix}{key}"
-        serialized = json.dumps(value, default=str)
+        def _json_default(obj: object) -> str:
+            from datetime import datetime, date
+            from decimal import Decimal
+            from uuid import UUID
+            if isinstance(obj, (datetime, date)):
+                return obj.isoformat()
+            if isinstance(obj, Decimal):
+                return str(obj)
+            if isinstance(obj, UUID):
+                return str(obj)
+            raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
+        serialized = json.dumps(value, default=_json_default)
         if ttl > 0:
             await self._redis.setex(rkey, ttl, serialized)
         else:
@@ -223,12 +234,14 @@ def cache_response(ttl: int = 60, key_prefix: str = 'view') -> Callable:
 
             response = await func(self, request, *args, **kwargs)
 
-            body = response.body
-            await cache_set(cache_key, {
-                'body': body.decode('utf-8') if isinstance(body, bytes) else body,
-                'status_code': response.status_code,
-                'media_type': response.media_type,
-            }, ttl)
+            # Only cache successful responses (2xx)
+            if 200 <= response.status_code < 300:
+                body = response.body
+                await cache_set(cache_key, {
+                    'body': body.decode('utf-8') if isinstance(body, bytes) else body,
+                    'status_code': response.status_code,
+                    'media_type': response.media_type,
+                }, ttl)
 
             return response
         return wrapper

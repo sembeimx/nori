@@ -23,6 +23,8 @@ async def paginate(queryset: Any, page: int = 1, per_page: int = 20) -> dict[str
         page = 1
     if per_page < 1:
         per_page = 20
+    if per_page > 500:
+        per_page = 500
 
     total = await queryset.count()
     last_page = max(1, math.ceil(total / per_page))

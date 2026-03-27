@@ -387,8 +387,8 @@ task = audit(
 
 ### What Gets Captured Automatically
 
-- **user_id**: Resolved from `request.session['user_id']` (can be overridden with the `user_id=` parameter)
-- **ip_address**: Extracted via `get_client_ip(request)`, which respects `X-Forwarded-For` behind reverse proxies
+- **user_id**: Resolved from `request.session['user_id']` (can be overridden with the `user_id=` parameter). Cast to `int` before storing.
+- **ip_address**: Extracted via `get_client_ip(request)`, which respects `X-Forwarded-For` only from trusted proxies (see [Security — Trusted Proxies](security.md#trusted-proxies-ip-spoofing-protection))
 - **request_id**: From `request.state.request_id` (set by `RequestIdMiddleware`)
 - **Structured log**: Every audit call also emits a log line via `nori.audit` logger
 
@@ -397,8 +397,10 @@ task = audit(
 ```python
 from core.audit import get_client_ip
 
-ip = get_client_ip(request)  # Respects X-Forwarded-For
+ip = get_client_ip(request)  # Respects X-Forwarded-For from TRUSTED_PROXIES only
 ```
+
+`get_client_ip()` only reads `X-Forwarded-For` when the direct connection IP is in `TRUSTED_PROXIES` (configured in `.env`). This prevents IP spoofing by untrusted clients.
 
 ---
 

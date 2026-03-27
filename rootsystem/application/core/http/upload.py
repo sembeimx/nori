@@ -79,7 +79,7 @@ _MAGIC_BYTES: dict[str, tuple[bytes, ...]] = {
     'png':  (b'\x89PNG\r\n\x1a\n',),
     'gif':  (b'GIF87a', b'GIF89a'),
     'pdf':  (b'%PDF',),
-    'webp': (b'RIFF',),  # WebP starts with RIFF....WEBP; RIFF prefix is sufficient
+    'webp': (b'RIFF',),  # Full check: bytes 8-12 must be WEBP (see _validate_magic_bytes)
 }
 
 
@@ -125,10 +125,13 @@ def _validate_mime_type(content_type: str | None, ext: str) -> None:
     in ``_validate_magic_bytes()``.
     """
     expected = _MIME_MAP.get(ext)
-    if expected and content_type and content_type != expected:
-        raise UploadError(
-            f"MIME type '{content_type}' does not match extension '.{ext}' (expected '{expected}')"
-        )
+    # Strip charset/parameters from Content-Type before comparison
+    if expected and content_type:
+        base_type = content_type.split(';')[0].strip()
+        if base_type != expected:
+            raise UploadError(
+                f"MIME type '{base_type}' does not match extension '.{ext}' (expected '{expected}')"
+            )
 
 
 def _validate_magic_bytes(content: bytes, ext: str) -> None:
@@ -157,6 +160,12 @@ def _validate_magic_bytes(content: bytes, ext: str) -> None:
         raise UploadError(
             f"File content does not match expected format for '.{ext}' "
             f"(magic byte verification failed)"
+        )
+    # WebP: RIFF container must have WEBP identifier at bytes 8-12
+    if ext == 'webp' and len(content) >= 12 and content[8:12] != b'WEBP':
+        raise UploadError(
+            "File content does not match expected format for '.webp' "
+            "(RIFF container is not WebP)"
         )
 
 
@@ -276,6 +285,8 @@ async def save_upload(
 
     # Read content and validate size
     content = await file.read()
+    if len(content) == 0:
+        raise UploadError("File is empty")
     if len(content) > max_size:
         raise UploadError(
             f"File size ({len(content)} bytes) exceeds max ({max_size} bytes)"

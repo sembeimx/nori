@@ -87,13 +87,25 @@ def require_any_role(*roles: str) -> Callable[..., Any]:
 async def load_permissions(session: dict, user_id: int) -> list[str]:
     """Query Role→Permission M2M and cache permission names in the session.
 
-    Call this at login time::
+    Call this at login time after setting ``session['role_ids']``::
 
         await load_permissions(request.session, user.id)
+
+    If ``role_ids`` is missing or empty the session will have an empty
+    permissions list and a warning is logged.
     """
+    from core.logger import get_logger
+    _perm_log = get_logger('auth')
+
     from models.role import Role
+    role_ids = session.get('role_ids', [])
+    if not role_ids:
+        _perm_log.warning("load_permissions called but role_ids is empty for user %s", user_id)
+        session['permissions'] = []
+        return []
+
     roles = await Role.filter(
-        id__in=session.get('role_ids', [])
+        id__in=role_ids,
     ).prefetch_related('permissions')
     perms: list[str] = []
     for role in roles:
@@ -148,11 +160,13 @@ def token_required(func: Callable[..., Any]) -> Callable[..., Any]:
     """
     @wraps(func)
     async def wrapper(self: Any, request: Request, *args: Any, **kwargs: Any) -> Response:
-        auth_header = request.headers.get('authorization', '')
-        if not auth_header[:7].lower() == 'bearer ':
+        auth_header = request.headers.get('authorization', '').strip()
+        if not auth_header.lower().startswith('bearer '):
             return JSONResponse({'error': 'Unauthorized'}, status_code=401)
 
-        token = auth_header[7:]
+        token = auth_header[7:].strip()
+        if not token or len(token) > 4096:
+            return JSONResponse({'error': 'Unauthorized'}, status_code=401)
         payload = _verify_token(token)
         if payload is None:
             return JSONResponse({'error': 'Unauthorized'}, status_code=401)
