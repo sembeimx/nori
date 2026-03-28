@@ -1,6 +1,6 @@
 # Forms, CSRF and Validation
 
-Nori features an aggressive declarative validation engine (100% inspired by Laravel's Pipe-Separated system) and a native ecosystem against CSRF vulnerabilities in State submissions.
+Nori features a declarative validation engine using pipe-separated rules and a native CSRF protection system for form submissions.
 
 ## Mandatory CSRF Protection
 

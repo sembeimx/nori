@@ -1,6 +1,6 @@
 # Collections and Listings
 
-In Nori, iterating over the Database is simple. However, to manipulate complex business logic in multivariable lists, `NoriCollection` provides an ergonomic superpowers wrapper heavily based on Laravel Collection.
+In Nori, iterating over the database is simple. For advanced list manipulation, `NoriCollection` provides a chainable wrapper with filtering, sorting, grouping, and aggregation methods.
 
 ## Collections
 

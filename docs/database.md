@@ -1,6 +1,6 @@
 # Database (Tortoise ORM)
 
-In Nori, asynchronous database mapping (ORM) is handled by **Tortoise ORM**. It is highly inspired by Django's ORM but is 100% non-blocking (`async/await`).
+In Nori, asynchronous database mapping (ORM) is handled by **Tortoise ORM** — a fully async ORM for Python (`async/await` native).
 
 ## Connection and Configuration
 

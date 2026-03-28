@@ -20,7 +20,7 @@ rootsystem/templates/
 
 ## Inheritance and Blocks 
 
-Like Blade (Laravel) or Twig (Symfony), Jinja2 files recommend operating on `base.html` inheritance and iterating child variables `{% extends %}`.
+Jinja2 templates use `base.html` inheritance via `{% extends %}`, letting child templates override specific blocks.
 
 **`base.html` (Base Layout)**:
 Builds the portal wrapper, with titled *placeholders* called `{% block %}`:

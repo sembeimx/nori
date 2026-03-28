@@ -2,28 +2,15 @@
 
 ## In one sentence
 
-Nori is an **opinionated async web framework for Python** — Laravel's ergonomics on top of Starlette's performance.
+Nori is an **opinionated async web framework for Python** — structured, secure, and lightweight.
 
 ---
 
-## The niche
+## Why Nori exists
 
-There's a gap in the Python web ecosystem:
+Most Python web tools fall into two extremes: massive full-stack frameworks with steep learning curves, or minimal toolkits that leave every architectural decision to you.
 
-- **Django** is full-stack but synchronous-first, heavy, and opinionated in ways that fight async workloads.
-- **FastAPI** is async and fast but unopinionated — it gives you Pydantic and OpenAPI, then leaves structure, auth, uploads, and everything else to you.
-- **Flask/Quart** are minimal by design. You assemble everything yourself.
-
-Nori sits where **AdonisJS sits in Node** or **Laravel sits in PHP**: a framework that makes decisions for you (project structure, auth, validation, controllers, CLI generators) while staying async-native and lightweight.
-
-| | Django | FastAPI | Nori |
-|---|--------|---------|------|
-| Async-native | No (bolt-on) | Yes | Yes |
-| Opinionated structure | Yes | No | Yes |
-| Built-in auth + ACL | Yes | No | Yes |
-| ORM included | Yes (own) | No | Yes (Tortoise) |
-| CLI generators | No (manual) | No | Yes |
-| Core size | ~250k LOC | ~15k LOC | ~3.4k LOC |
+Nori takes a different path: it makes decisions for you (project structure, auth, validation, controllers, CLI generators) while staying async-native and small enough to read end-to-end.
 
 ---
 
@@ -52,10 +39,9 @@ The entire framework is ~3,400 lines. Every line is tested. Adding features is w
 
 ## What Nori is not
 
-- **Not a Django replacement.** Django has a mature ORM, admin panel, ecosystem of packages, and 20 years of battle-testing. Nori doesn't compete with that. If you need Django's ecosystem, use Django.
-- **Not a microframework.** Unlike Flask or Starlette raw, Nori has opinions about how your project should be structured. If you want freedom to architect from scratch, use Starlette directly.
+- **Not a monolith.** Nori includes what you need for most web projects, but it's not trying to be everything. It stays focused and auditable.
+- **Not a microframework.** Nori has opinions about how your project should be structured. If you want total freedom to architect from scratch, use a lower-level toolkit.
 - **Not an API-only framework.** Nori supports templates, flash messages, and server-rendered HTML alongside JSON APIs. It's for building full websites, not just REST endpoints.
-- **Not production-complete yet.** The core is solid, but persistent job queues, OAuth, admin tooling, and i18n are still on the roadmap. See `roadmap.md` for the current state.
 
 ---
 
@@ -63,19 +49,7 @@ The entire framework is ~3,400 lines. Every line is tested. Adding features is w
 
 Nori is for developers who:
 
-- Want Laravel/Adonis ergonomics in Python
-- Need async I/O without assembling 15 packages
+- Want a structured, opinionated Python web framework
+- Need async I/O without assembling dozens of packages
 - Prefer a small, auditable codebase over a massive framework
-- Are building server-rendered websites or hybrid apps (HTML + API), not pure SPAs with a separate backend
-
----
-
-## Comparable frameworks
-
-| Framework | Language | Relationship to Nori |
-|-----------|----------|---------------------|
-| **Laravel** | PHP | Primary inspiration — controller pattern, validation syntax, multi-driver services, CLI generators, soft deletes |
-| **AdonisJS** | Node | Closest sibling — opinionated, async-native, Laravel-inspired, similar maturity stage |
-| **Litestar** | Python | Similar ambition (async, class-based, opinionated) but heavier on type system and OpenAPI |
-| **Sanic** | Python | Async Python peer, more batteries-included but less structured |
-| **FastAPI** | Python | Same foundation (Starlette) but opposite philosophy — FastAPI is unopinionated, Nori is opinionated |
+- Are building server-rendered websites or hybrid apps (HTML + API)

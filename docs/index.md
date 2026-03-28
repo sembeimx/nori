@@ -1,21 +1,18 @@
 # Nori Framework
 
-**Opinionated async web framework for Python** — Laravel's ergonomics on Starlette's performance.
+**Opinionated async web framework for Python** — structured, secure, and lightweight.
 
 ---
 
 ## What is Nori?
 
-Nori sits where **AdonisJS sits in Node** or **Laravel sits in PHP**: a framework that makes decisions for you (project structure, auth, validation, controllers, CLI generators) while staying async-native and lightweight.
+Nori is a full-stack async web framework that makes decisions for you: project structure, authentication, validation, controllers, and CLI generators — all built-in, all async-native.
 
-| | Django | FastAPI | Nori |
-|---|--------|---------|------|
-| Async-native | No (bolt-on) | Yes | Yes |
-| Opinionated structure | Yes | No | Yes |
-| Built-in auth + ACL | Yes | No | Yes |
-| ORM included | Yes (own) | No | Yes (Tortoise) |
-| CLI generators | No | No | Yes |
-| Core size | ~250k LOC | ~15k LOC | ~3.4k LOC |
+- **~3,400 lines of core** — small enough to read, big enough to ship
+- **Built-in auth + ACL** — sessions, JWT, OAuth2, roles, granular permissions
+- **Tortoise ORM** — async database layer with migrations
+- **CLI generators** — scaffold controllers, models, seeders
+- **Convention over configuration** — a right place for everything
 
 ---
 
@@ -64,7 +61,7 @@ pytest tests/
 
 - **Session Auth + JWT** — Login, roles, granular permissions (ACL), brute-force protection
 - **OAuth2** — Google (OpenID Connect + PKCE) and GitHub drivers included
-- **Declarative Validation** — Laravel-style pipe syntax: `'required|email|max:255'`
+- **Declarative Validation** — Pipe-separated syntax: `'required|email|max:255'`
 - **Multi-Driver Services** — Storage, Email, Search, Cache with pluggable backends
 - **Background Tasks** — Volatile (`background()`) and persistent job queues (`push()`)
 - **WebSockets** — Handler base classes with session/JWT auth

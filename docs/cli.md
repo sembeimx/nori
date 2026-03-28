@@ -1,6 +1,6 @@
 # Nori CLI
 
-The Nori CLI (`nori.py`) is the primary tool for development workflows — scaffolding code, managing database migrations, seeding data, and running the dev server. It follows **Laravel Artisan-style naming** with colon-separated commands.
+The Nori CLI (`nori.py`) is the primary tool for development workflows — scaffolding code, managing database migrations, seeding data, and running the dev server. Commands use colon-separated naming (e.g., `make:model`, `migrate:upgrade`).
 
 ```bash
 python3 nori.py <command> [arguments]
