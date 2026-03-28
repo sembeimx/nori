@@ -18,7 +18,7 @@ Current state of Nori and the pieces needed to support production-grade applicat
 | **JWT / API Tokens** | Manual HMAC-SHA256 (`create_token`, `verify_token`), `@token_required` decorator for APIs, minimum secret length enforcement (32 chars) |
 | **Rate Limiting** | Pluggable backends: `MemoryBackend` (default) and `RedisBackend` (sorted sets). Config via `THROTTLE_BACKEND` |
 | **Caching** | Pluggable backends: `MemoryCacheBackend` (default) and `RedisCacheBackend`. `cache_get`, `cache_set`, `cache_delete`, `cache_flush`, `@cache_response` decorator |
-| **Background Tasks** | `background()`, `background_tasks()`, `run_in_background()` wrapping Starlette's `BackgroundTask` with error logging |
+| **Background Tasks** | `background()` (volatile) and `push()` (persistent) with multi-driver support (Memory, Database). Error logging and retries included |
 | **WebSockets** | `WebSocketHandler` and `JsonWebSocketHandler` base classes, `/ws/echo` demo route |
 | **Utilities** | NoriCollection (17 methods), async pagination, flash messages |
 | **Templates** | Jinja2 with globals (`csrf_field`, `get_flashed_messages`), email base template |
@@ -36,6 +36,7 @@ Current state of Nori and the pieces needed to support production-grade applicat
 
 | Feature | Description |
 |---------|-------------|
+| **Job Queue (Persistent)** | `push()` dispatcher with Database/Memory drivers. Features: **Atomic locking**, **Exponential backoff**, **Dead letters** (`failed_at`), **Graceful shutdown**, and `queue:work` CLI |
 | **Granular permissions (ACL)** | `require_permission('articles.edit')` decorator, `Permission` + `Role` models with M2M, `load_permissions()` for session caching |
 | **Audit logging** | `AuditLog` model + `audit()` background task with structured logging, IP tracking, and request ID tracing |
 | **Multi-driver Email** | `send_mail()` refactored with driver registry. Built-in: `smtp` (production), `log` (development). Custom drivers via `register_mail_driver()` |
@@ -68,23 +69,9 @@ These are not new features — they are gaps in existing subsystems that must be
 
 ## What's next — Priority order
 
-### 1. Job Queue (persistent, with retries)
+### 1. Social Auth (OAuth2)
 
-**Why it's #1**: `background()` runs in-process — if the server restarts, tasks are lost. Every production app eventually needs reliable async work: bulk emails, PDF generation, image processing, search re-indexing. A queue system unblocks all of these.
-
-**Design**:
-- `core/queue.py` — dispatcher with the same driver pattern as mail/storage/search
-- Built-in driver: `database` (uses the existing DB, zero new dependencies)
-- External driver: `services/queue_redis.py` (for high-throughput)
-- CLI: `python3 nori.py queue:work` to run a worker process
-- Features: serialized tasks, automatic retries with backoff, dead letter tracking, `@job` decorator
-- Config: `QUEUE_DRIVER=database` (default) or `QUEUE_DRIVER=redis`
-
-**Filosofía**: The `database` driver keeps it native (no Redis required to start). Redis is opt-in for scale.
-
-### 2. Social Auth (OAuth2)
-
-**Why it's #2**: Almost every modern app needs "Login with Google/GitHub". It's HTTP-based (fits Nori's async nature) and has a clear, bounded scope.
+**Why it's #1**: Almost every modern app needs "Login with Google/GitHub". It's HTTP-based (fits Nori's async nature) and has a clear, bounded scope.
 
 **Design**:
 - Lives in `services/`, not in core — each provider has different flows (Google uses OpenID Connect, GitHub doesn't, Apple requires server-side JWT)
@@ -95,68 +82,10 @@ These are not new features — they are gaps in existing subsystems that must be
 
 **Filosofía**: No abstraction layer in core. Each provider is a standalone service file. The programmer calls 3 functions explicitly.
 
-### 3. OpenAPI / Swagger
+### 2. OpenAPI / Swagger
 
-**Why it's #3**: The most valuable feature Nori lacks for public APIs. Auto-generated docs from route definitions.
+**Why it's #2**: The most valuable feature Nori lacks for public APIs. Auto-generated docs from route definitions.
 
 **Concerns**: Pipe-separated validation (`'required|email|max:255'`) doesn't map cleanly to OpenAPI schemas. May require adding optional type metadata to routes.
 
-### 4. Admin panel
-
-Auto-generated CRUD interface from models. Useful but not blocking — most teams build custom admin UIs.
-
-### 5. i18n
-
-Internationalization of messages and templates. Important for global apps, but can be added later without breaking changes.
-
-### 6. 2FA (TOTP)
-
-Two-factor authentication. Security enhancement, bounded scope, no external dependencies (HMAC-based).
-
----
-
-## Under evaluation
-
-The following features have been identified through architectural analysis and framework comparisons (Litestar, Laravel, FastAPI). They are documented here to keep them visible, but **none are committed to**.
-
-### Infrastructure
-
-| Feature | What it would solve | Status |
-|---------|---------------------|--------|
-| **Events / Listeners** | Decouple side effects from controllers (e.g. "on user created → send email + write audit log") | **Deferred** — Nori's simplicity comes from explicit code in controllers. Implicit event chains make debugging harder. Not needed yet. |
-| **Scheduler** | Run periodic tasks from code instead of system crontab | **Deferred** — Requires a long-running process. Adds operational complexity for something cron already solves. |
-| **Notifications system** | Unified multi-channel notifications (mail, SMS, webhook) via a single API | **Deferred** — `send_mail()` + explicit driver calls cover the primary cases. A full notification system with channel classes would break Nori's function-based ergonomics. Revisit when there's real demand. |
-| **Media Library** | Image thumbnails, optimization, WebP conversion on upload | **Rejected** — Requires Pillow (10MB+ C dependency), violates "Keep it Native". Image processing should happen in a queue worker or external service (imgproxy, Cloudflare Images), not in the web process. |
-
-### API & Data
-
-| Feature | What it would solve | Status |
-|---------|---------------------|--------|
-| **API Resources** | Consistent JSON transformation layer for models | **Deferred** — `to_dict(exclude=[...])` convention is enough for now |
-| **Database Transactions** | Ergonomic wrapper for `async with in_transaction()` | **Deferred** — Small feature, needs careful design |
-| **API versioning** | Convention for `/api/v1/`, `/api/v2/` | **Not needed** — Solved with `Mount('/api/v1', routes=[...])`, no framework code required |
-
-### Developer Experience
-
-| Feature | What it would solve | Status |
-|---------|---------------------|--------|
-| **Testing helpers** | `acting_as(user)`, `assert_database_has()` shortcuts | **Deferred** — pytest + httpx works fine |
-| **Log context propagation** | Auto-attach `request_id` to all log messages via `ContextVar` | **Deferred** — Small improvement, current manual approach works |
-
-### Distribution
-
-| Feature | What it would solve | Status |
-|---------|---------------------|--------|
-| **`nori init` command** | Generate a clean project scaffold | **Planned** — Useful intermediate step before pip packaging |
-| **Nori as pip package** | `pip install nori-framework` — separates core from user code | **Future (v2.0)** — Biggest architectural change. Requires restructuring the project. |
-
----
-
-## Evaluation criteria
-
-Before implementing any feature, ask:
-
-1. **Does it stay native?** Nori avoids heavy external dependencies. If a feature requires Redis, Celery, or a new runtime, it needs strong justification.
-2. **Does it break simplicity?** A developer should be able to read any Nori controller and understand exactly what happens. Implicit magic (events, middleware chains, auto-serialization) can erode that.
-3. **Is it needed now?** If no real project is blocked by the absence of this feature, it can wait.
-4. **Can it be a convention instead of code?** Some "features" (API versioning, transaction helpers) might be better solved with documentation and patterns rather than new framework code.
+...

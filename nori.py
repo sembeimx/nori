@@ -132,6 +132,26 @@ def db_seed():
     subprocess.run([sys.executable, '-c', script], cwd=_APP_DIR)
 
 
+def queue_work(name):
+    """Run the queue worker."""
+    print(f"Starting queue worker for: {name}...")
+    script = (
+        "import asyncio, sys\n"
+        "sys.path.insert(0, '.')\n"
+        "import settings\n"
+        "from tortoise import Tortoise\n"
+        "from core.queue_worker import work\n"
+        "async def run_worker():\n"
+        "    await Tortoise.init(config=settings.TORTOISE_ORM)\n"
+        f"    await work(queue_name='{name}')\n"
+        "asyncio.run(run_worker())\n"
+    )
+    try:
+        subprocess.run([sys.executable, '-c', script], cwd=_APP_DIR)
+    except KeyboardInterrupt:
+        pass
+
+
 def make_seeder(name):
     """Generate a seeder boilerplate."""
     filename = name.lower() + '_seeder.py'
@@ -194,6 +214,10 @@ def main():
     # Command: db:seed
     subparsers.add_parser("db:seed", help="Run database seeders")
 
+    # Command: queue:work
+    parser_work = subparsers.add_parser("queue:work", help="Run the queue worker")
+    parser_work.add_argument("--name", default="default", help="Queue name")
+
     args = parser.parse_args()
 
     if args.command == "serve":
@@ -214,6 +238,8 @@ def main():
         migrate_downgrade(steps=args.steps, delete=args.delete)
     elif args.command == "db:seed":
         db_seed()
+    elif args.command == "queue:work":
+        queue_work(args.name)
     else:
         parser.print_help()
 

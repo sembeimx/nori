@@ -1,103 +1,96 @@
-# Background Tasks
+# Background Tasks & Queues
 
-Nori wraps Starlette's `BackgroundTask` with automatic error logging, so a failing background task never crashes the response — errors are logged and the user is unaffected.
+Nori provides two ways to handle background operations:
+1.  **Starlette BackgroundTasks** (Volatile, in-process)
+2.  **Persistent Job Queues** (Database-backed, survives restarts)
 
 ---
 
-## Creating a Task
+## 1. Volatile Background Tasks (`background`)
+
+Uses Starlette's `BackgroundTask`. Ideal for quick, non-critical tasks like audit logging or sending a simple notification where losing the task on a server restart is acceptable.
 
 ```python
 from core.tasks import background
 
-# Create a background task
+# Create a task
 task = background(send_welcome_email, user.email, user.name)
 
-# Pass it to a response — the task runs after the response is sent
+# Pass it to a response
 return JSONResponse({'ok': True}, background=task)
 ```
 
-`background(func, *args, **kwargs)` accepts both sync and async callables.
-
 ---
 
-## Attaching to an Existing Response
+## 2. Persistent Queues (`push`)
 
-If you already have a response object and want to add a background task to it:
+Nori features a robust, multi-driver persistent queue system. Jobs are stored in a database (or Redis) and processed by a background worker. **Use this for critical tasks like bulk emails, PDF generation, or heavy processing.**
+
+### Key Robustness Features
+- **Atomic Locking**: Only one worker can process a single job at a time (race-condition free).
+- **Exponential Backoff**: If a job fails, Nori automatically delays the next attempt (15s, 4m, 20m, 1h, etc.) to allow external services to recover.
+- **Dead Letters**: After **5 failed attempts**, the job is marked with `failed_at` and stopped for manual inspection.
+- **Graceful Shutdown**: The worker finishes the current job before exiting on `SIGINT`/`SIGTERM`.
+
+### Configuration (.env)
+
+| Variable | Values | Description |
+| :--- | :--- | :--- |
+| `QUEUE_DRIVER` | `memory`, `database`, `redis` | `database` is recommended for production. |
+| `REDIS_URL` | Redis URL | Required if using the `redis` driver. |
+
+### Sending a Job to the Queue
 
 ```python
-from core.tasks import run_in_background
+from core import push
 
-response = JSONResponse({'ok': True})
-run_in_background(response, send_welcome_email, user.email)
-return response
+async def store(self, request):
+    # Syntax: await push('module.path:function_name', *args, delay=0, **kwargs)
+    
+    # Simple push
+    await push('modules.mail:send_welcome', email=user.email)
+    
+    # Delayed push (send in 1 hour)
+    await push('modules.reminder:notify', user.id, delay=3600)
+    
+    return JSONResponse({'status': 'Job queued'})
 ```
 
----
+### Running the Worker
 
-## Multiple Tasks
+To process the queued jobs, run the Nori worker in a separate process (ideal for a sidecar container or systemd service):
 
-To run multiple background tasks on a single response:
-
-```python
-from core.tasks import background_tasks
-
-tasks = background_tasks(
-    (send_welcome_email, user.email),
-    (index_document, 'users', user.id, user.to_dict()),
-    (audit_login, request, user.id),
-)
-return JSONResponse({'ok': True}, background=tasks)
+```bash
+python3 nori.py queue:work
 ```
 
-Each tuple is `(func, *args)`. Tasks execute sequentially in order.
+You can specify a custom queue name (default is `default`):
+```bash
+python3 nori.py queue:work --name high_priority
+```
 
 ---
 
 ## Error Handling
 
-If a background callable raises an exception:
+### In Volatile Tasks (`background`)
+- The error is **logged** via `nori.tasks` logger.
+- The exception is **not re-raised**.
 
-- The error is **logged** with full traceback via `nori.tasks` logger.
-- The exception is **not re-raised** — the HTTP response has already been sent.
-- Other tasks in the chain continue to execute.
-
-This makes background tasks safe for non-critical operations like email sending, indexing, and audit logging.
-
----
-
-## Common Patterns
-
-### Audit logging
-
-```python
-from core.audit import audit
-
-task = audit(request, 'create', model_name='Article', record_id=article.id)
-return JSONResponse({'id': article.id}, background=task)
-```
-
-### Search indexing
-
-```python
-from core.tasks import background
-from core.search import index_document
-
-task = background(index_document, 'articles', article.id, article.to_dict())
-return JSONResponse({'id': article.id}, background=task)
-```
-
-### Email after registration
-
-```python
-from core.tasks import background
-from core.mail import send_mail
-
-task = background(send_mail, to=user.email, subject='Welcome', template='mails/welcome.html', context={'name': user.name})
-return RedirectResponse(url='/dashboard', status_code=302, background=task)
-```
+### In Persistent Queues (`push`)
+- The error is **logged** via `nori.queue` logger.
+- The `attempts` counter is incremented.
+- The next retry is scheduled with **exponential backoff**.
+- After **5 failures**, it is marked as **failed** (Dead Letter).
 
 ---
 
-## Limitations
+## When to use which?
 
-Background tasks run **in-process** — if the server restarts or crashes, pending tasks are lost. For reliable async work that must survive restarts (bulk emails, PDF generation, image processing), a persistent job queue is needed. See the [Roadmap](roadmap.md) for the planned queue system.
+| Feature | `background()` | `push()` |
+| :--- | :--- | :--- |
+| **Persistence** | No (Lost on restart) | **Yes** (Stored in DB/Redis) |
+| **Retries** | No | **Yes** (Exponential backoff) |
+| **Worker process** | Not needed | **Required** (`queue:work`) |
+| **Atomic** | No | **Yes** (One worker per job) |
+| **Best for** | Logs, fast notifications | Emails, PDFs, Heavy Syncing |

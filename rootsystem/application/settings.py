@@ -85,6 +85,9 @@ CACHE_BACKEND = os.environ.get('CACHE_BACKEND', 'memory')  # memory | redis
 # Search (external drivers registered in services/)
 SEARCH_DRIVER = os.environ.get('SEARCH_DRIVER', '')  # meilisearch | (custom drivers)
 
+# Queue
+QUEUE_DRIVER = os.environ.get('QUEUE_DRIVER', 'memory')  # memory | database
+
 _model_modules = ['models']
 try:
     import aerich  # noqa: F401
