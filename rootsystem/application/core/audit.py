@@ -1,24 +1,27 @@
 """
 Audit logging utility.
 
+Fire-and-forget: ``audit()`` schedules the database write immediately
+via ``asyncio`` — no need to capture the return value or attach it to
+a response.
+
 Usage::
 
     from core.audit import audit
 
     async def create(self, request):
         article = await Article.create(...)
-        task = audit(request, 'create', model_name='Article', record_id=article.id)
-        return JSONResponse({'ok': True}, background=task)
+        audit(request, 'create', model_name='Article', record_id=article.id)
+        return JSONResponse({'ok': True})
 """
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
-from starlette.background import BackgroundTask
 from starlette.requests import Request
 
 from core.logger import get_logger
-from core.tasks import background
 
 _log = get_logger('audit')
 
@@ -56,11 +59,12 @@ def audit(
     record_id: Any = None,
     changes: dict[str, Any] | None = None,
     user_id: int | None = None,
-) -> BackgroundTask:
-    """Create a BackgroundTask that writes an audit log entry.
+) -> asyncio.Task | None:
+    """Write an audit log entry as a fire-and-forget async task.
 
-    Returns a ``BackgroundTask`` suitable for passing to a response's
-    ``background=`` parameter.
+    The database write is scheduled immediately via ``asyncio`` — there
+    is no need to attach it to a response.  The returned
+    ``asyncio.Task`` can be awaited in tests or ignored in production.
 
     ``user_id`` is resolved from ``request.session['user_id']`` when not
     provided explicitly.
@@ -76,15 +80,23 @@ def audit(
     )
 
     async def _write() -> None:
-        from models.audit_log import AuditLog
-        await AuditLog.create(
-            user_id=resolved_user_id,
-            action=action,
-            model_name=model_name,
-            record_id=str(record_id) if record_id is not None else None,
-            changes=changes,
-            ip_address=ip,
-            request_id=request_id,
-        )
+        try:
+            from models.audit_log import AuditLog
+            await AuditLog.create(
+                user_id=resolved_user_id,
+                action=action,
+                model_name=model_name,
+                record_id=str(record_id) if record_id is not None else None,
+                changes=changes,
+                ip_address=ip,
+                request_id=request_id,
+            )
+        except Exception:
+            _log.exception("Failed to write audit log entry")
 
-    return background(_write)
+    try:
+        loop = asyncio.get_running_loop()
+        return loop.create_task(_write())
+    except RuntimeError:
+        _log.warning("No running event loop — audit entry for '%s' was not persisted", action)
+        return None

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from starlette.routing import Route, WebSocketRoute
 from modules.page import PageController
 from modules.echo import EchoHandler
@@ -10,11 +12,11 @@ health = HealthController()
 
 routes = [
     # Health
-    Route('/health', endpoint=health.check, methods=['GET'], name='health'),
+    Route('/health', endpoint=health.check, methods=['GET'], name='health.check'),
 
     # Pages
-    Route('/', endpoint=page.home, methods=['GET'], name='home'),
+    Route('/', endpoint=page.home, methods=['GET'], name='page.home'),
 
     # WebSockets
-    WebSocketRoute('/ws/echo', endpoint=echo, name='ws_echo'),
+    WebSocketRoute('/ws/echo', endpoint=echo, name='ws.echo'),
 ]

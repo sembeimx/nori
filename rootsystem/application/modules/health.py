@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 Health check endpoint for monitoring and orchestration (k8s, load balancers).
 

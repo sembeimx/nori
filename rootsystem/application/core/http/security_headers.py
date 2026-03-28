@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 Security Headers Middleware for Starlette.
 Adds standard security headers to all HTTP responses.

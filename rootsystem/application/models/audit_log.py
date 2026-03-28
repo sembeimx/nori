@@ -1,9 +1,15 @@
+from __future__ import annotations
+
 from tortoise.models import Model
 from tortoise import fields
 
+from core.mixins.model import NoriModelMixin
 
-class AuditLog(Model):
+
+class AuditLog(NoriModelMixin, Model):
     """Tracks who did what and when."""
+
+    protected_fields = ['ip_address']
 
     id = fields.IntField(primary_key=True)
     user_id = fields.IntField(null=True)

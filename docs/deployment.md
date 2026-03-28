@@ -42,10 +42,12 @@ Generate secrets with:
 python3 -c "import secrets; print(secrets.token_urlsafe(48))"
 ```
 
-Nori validates critical settings at startup when `DEBUG=false`. It will refuse to start if:
-- `DB_USER` or `DB_PASSWORD` are missing (non-SQLite)
+Nori validates critical settings at startup when `DEBUG=false` (`validate_settings()` in `settings.py`). It will refuse to start if:
+- `SECRET_KEY` is still the default `'change-me'`
+- `DB_USER` or `DB_PASSWORD` are missing (non-SQLite engines)
 - `JWT_SECRET` equals `SECRET_KEY`
 - `JWT_SECRET` is shorter than 32 characters
+- `TEMPLATE_DIR` or `STATIC_DIR` do not exist on disk
 
 ---
 

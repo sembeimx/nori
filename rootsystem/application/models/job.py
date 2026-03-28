@@ -1,7 +1,16 @@
+from __future__ import annotations
+
 from tortoise.models import Model
 from tortoise import fields
 
-class Job(Model):
+from core.mixins.model import NoriModelMixin
+
+
+class Job(NoriModelMixin, Model):
+    """Persistent queue job entry."""
+
+    protected_fields = ['payload']
+
     id = fields.BigIntField(primary_key=True)
     queue = fields.CharField(max_length=50, default='default', index=True)
     payload = fields.JSONField()

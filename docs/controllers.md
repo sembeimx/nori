@@ -2,20 +2,28 @@
 
 Controllers in Nori are the bridge between your Models (Database) and your Views (Templates/JSON). They are written as classes inside `rootsystem/application/modules/` to keep business rules encapsulated and intuitive.
 
+## Naming Conventions
+
+- **Class names**: `PascalCase` with `Controller` suffix (e.g., `ProductController`, `AuthController`). WebSocket handlers use `Handler` suffix instead (e.g., `ChatHandler`).
+- **Methods**: `async def snake_case` (e.g., `async def show_detail`).
+- **Type hints**: Mandatory on all function signatures. Use `from __future__ import annotations` at the top of every file.
+
 ## Basic Structure
 
 A controller consists of asynchronous methods (`async def`). All methods in a controller receive exactly two arguments: `self` and `request`, where request is a `Request` object injected by Starlette.
 
 ```python
+from __future__ import annotations
+
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 from core.jinja import templates
 from core.auth.decorators import login_required
 
 class ProductController:
-    
+
     @login_required
-    async def list(self, request: Request):
+    async def list(self, request: Request) -> TemplateResponse:
         return templates.TemplateResponse(request, 'product/list.html', {
             'title': 'My Products'
         })
@@ -44,6 +52,65 @@ async def store(self, request: Request):
     # Reading the client IP
     ip = request.client.host
 ```
+
+## Dependency Injection (`@inject`)
+
+The `@inject()` decorator automatically resolves controller method parameters from the request — form data, JSON body, path parameters, and query parameters — with type coercion.
+
+```python
+from core.http.inject import inject
+from core.http.validation import validate
+
+class ArticleController:
+
+    @inject()
+    async def store(self, request: Request, title: str, category_id: int, draft: bool = False) -> Response:
+        errors = validate({'title': title}, {'title': 'required|min:3'})
+        if errors:
+            return templates.TemplateResponse(request, 'articles/create.html', {'errors': errors})
+        # title, category_id, and draft are resolved from form/JSON/query automatically
+        ...
+```
+
+### Resolution order
+
+For each parameter in the method signature (after `self` and `request`):
+
+1. **Form data / JSON body** — checked first (POST/PUT/PATCH requests)
+2. **Path parameters** — from the URL (e.g., `{id:int}`)
+3. **Query parameters** — from the query string (e.g., `?page=2`)
+
+If the parameter has a type annotation (e.g., `int`, `float`), `@inject()` attempts to cast the value. If casting fails, the parameter receives its default value or `None`.
+
+> **Limitation**: Type coercion works with simple types (`int`, `float`, `str`, `bool`). Complex generic types like `list[int]` or `dict[str, Any]` are not supported — the raw string value will be passed or the default will be used. Parse these manually from `request.json()` or `request.form()`.
+
+## Security Decorators
+
+Nori provides decorators in `core.auth.decorators` to protect controller methods:
+
+```python
+from core.auth.decorators import login_required, require_role, require_any_role, require_permission
+
+class AdminController:
+
+    @login_required
+    async def dashboard(self, request: Request) -> Response:
+        ...  # Any authenticated user
+
+    @require_role('admin')
+    async def settings(self, request: Request) -> Response:
+        ...  # Only users with the 'admin' role
+
+    @require_any_role('admin', 'editor')
+    async def moderate(self, request: Request) -> Response:
+        ...  # Users with either role
+
+    @require_permission('reports.export')
+    async def export(self, request: Request) -> Response:
+        ...  # Users with the specific permission
+```
+
+All decorators return `401 Unauthorized` (JSON) or redirect to `/login` (HTML) if the check fails. The `admin` role bypasses all role and permission checks.
 
 ## Integrated Handling (GET/POST)
 

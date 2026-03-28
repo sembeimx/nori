@@ -5,7 +5,7 @@ This document defines the coding standards, architectural patterns, and implemen
 ---
 
 ## 1. Core Philosophy
-1. **Keep it Native**: Use `core.*` modules. Avoid external libraries for Auth, JWT, Validation, Mail, Storage, or Tasks.
+1. **Keep it Native**: The core (`core.*`) must use no external libraries for Auth, JWT, Validation, Mail dispatch, Storage dispatch, or Tasks. Optional service drivers (`services/*`) may use external libraries for backend integrations (e.g., S3, Resend, Meilisearch).
 2. **Security by Default**: CSRF is mandatory, passwords are hashed with PBKDF2, and sensitive fields are protected in models.
 3. **Convention over Configuration**: Follow the established directory structure and naming patterns without "magic" auto-discovery.
 
@@ -64,7 +64,7 @@ class User(NoriModelMixin, Model):
 - `file`, `file_max:2mb`, `file_types:jpg,png`.
 
 ### Database Mixins
-- **`NoriSoftDeletes`**: Use INSTEAD of `Model` for logical deletion (`deleted_at`).
+- **`NoriSoftDeletes`**: Inherit from this instead of `Model` for logical deletion (`deleted_at`). It already extends `Model` — do not inherit both.
 - **`NoriTreeMixin`**: For recursive hierarchies (requires `parent` ForeignKey).
 
 ### Background Logic

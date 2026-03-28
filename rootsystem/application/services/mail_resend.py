@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 Resend mail driver for Nori.
 
@@ -9,7 +11,6 @@ Then set MAIL_DRIVER=resend in your .env (or pass driver='resend' per-call).
 
 Requires: RESEND_API_KEY and MAIL_FROM in settings/.env
 """
-from __future__ import annotations
 
 import httpx
 

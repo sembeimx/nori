@@ -10,34 +10,62 @@ Make sure to document and register your Models inside `settings.py` (in the `TOR
 
 ## Defining a Model
 
-Models are located in the `rootsystem/application/models/` directory. They must inherit from `Model` and optionally from any Nori Mixins you wish to use.
+Models are located in the `rootsystem/application/models/` directory. They must inherit from `NoriModelMixin` and `Model`. Class names are `PascalCase`; table names are **plural** (e.g., class `User` → table `users`).
 
 ```python
+from __future__ import annotations
+
 from tortoise.models import Model
 from tortoise import fields
 from core.mixins.model import NoriModelMixin
 
 class User(NoriModelMixin, Model):
+    protected_fields = ['password_hash', 'remember_token']  # Excluded from to_dict()
+
     id = fields.IntField(primary_key=True)
     slug = fields.CharField(max_length=50, unique=True)
     name = fields.CharField(max_length=100)
+    email = fields.CharField(max_length=255)
+    password_hash = fields.CharField(max_length=255)
+    remember_token = fields.CharField(max_length=255, default='')
     level = fields.IntField(default=0)
     status = fields.BooleanField(default=True)
     created_at = fields.DatetimeField(auto_now_add=True)
     updated_at = fields.DatetimeField(auto_now=True)
 
     class Meta:
-        table = 'user'  # Recommended: explicitly specify the SQL table name
+        table = 'users'  # Always plural, explicitly specified
 ```
 
-### NoriModelMixin (`to_dict`)
-Inheriting this mixin alongside the Tortoise Model adds vital functionality for dispatching pure JSON responses. It exclusively injects the `.to_dict(self, exclude=[])` method, stripping away ORM metadata and internal instances, automatically resolving everything into primitive variables.
+### Registering a Model
+
+After creating a model, **import it** in `rootsystem/application/models/__init__.py` so Tortoise ORM discovers it for migrations and relationships:
+
+```python
+# models/__init__.py
+from models.user import User  # ← add your model here
+```
+
+Forgetting this step causes silent migration failures — Aerich won't detect the new model.
+
+### NoriModelMixin (`to_dict` + `protected_fields`)
+Inheriting this mixin alongside `Model` adds the `.to_dict()` method and `protected_fields` security. It strips ORM metadata and resolves everything into JSON-serializable primitives.
 
 ```python
 user = await User.get(id=1)
-# Quick JSON dump omitting sensitive fields:
-data = user.to_dict(exclude=['id', 'level'])
+
+user.to_dict()
+# → {'id': 1, 'slug': 'alice', 'name': 'Alice', 'email': '...', ...}
+# password_hash and remember_token are auto-excluded via protected_fields
+
+user.to_dict(exclude=['email'])
+# → protected_fields AND explicit exclude are merged
+
+user.to_dict(include_protected=True)
+# → force-include for internal/admin operations
 ```
+
+Always use `.to_dict()` when serializing models to JSON responses — this ensures `protected_fields` safety. See [Security — protected_fields](security.md#orm-protected_fields) for details.
 
 ## Queries, Insertion and Basic Modification
 
@@ -89,6 +117,8 @@ This generates a migration file in `migrations/models/`.
 python3 nori.py migrate:upgrade
 ```
 
+> **Important**: In production (`DEBUG=false`), Nori relies exclusively on Aerich migrations to manage the database schema. `generate_schemas()` is only called in development mode as a convenience. Always run `migrate:upgrade` before deploying or seeding in production.
+
 ### Rolling back
 
 ```bash
@@ -136,7 +166,7 @@ Nori ships with three models for audit logging and granular permissions (ACL). T
 
 ### AuditLog (`models/audit_log.py`)
 
-Tracks who did what and when. Entries are created as background tasks via `audit()` from `core.audit`.
+Tracks who did what and when. Entries are created via the fire-and-forget `audit()` function from `core.audit`.
 
 | Field | Type | Description |
 |-------|------|-------------|

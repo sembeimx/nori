@@ -1,8 +1,12 @@
+from __future__ import annotations
+
 from tortoise.models import Model
 from tortoise import fields
 
+from core.mixins.model import NoriModelMixin
 
-class Role(Model):
+
+class Role(NoriModelMixin, Model):
     """A role that groups permissions."""
 
     id = fields.IntField(primary_key=True)

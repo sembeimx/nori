@@ -8,7 +8,7 @@ Nori provides two ways to handle background operations:
 
 ## 1. Volatile Background Tasks (`background`)
 
-Uses Starlette's `BackgroundTask`. Ideal for quick, non-critical tasks like audit logging or sending a simple notification where losing the task on a server restart is acceptable.
+Uses Starlette's `BackgroundTask`. Ideal for quick, non-critical tasks like sending a notification or indexing a search document where losing the task on a server restart is acceptable.
 
 ```python
 from core.tasks import background
@@ -28,7 +28,7 @@ Nori features a robust, multi-driver persistent queue system. Jobs are stored in
 
 ### Key Robustness Features
 - **Atomic Locking**: Only one worker can process a single job at a time (race-condition free).
-- **Exponential Backoff**: If a job fails, Nori automatically delays the next attempt (15s, 4m, 20m, 1h, etc.) to allow external services to recover.
+- **Exponential Backoff**: If a job fails, the next attempt is delayed by `(attempts⁴) × 15` seconds: ~15s → ~4m → ~20m → ~1h → ~3h. This gives external services time to recover.
 - **Dead Letters**: After **5 failed attempts**, the job is marked with `failed_at` and stopped for manual inspection.
 - **Graceful Shutdown**: The worker finishes the current job before exiting on `SIGINT`/`SIGTERM`.
 

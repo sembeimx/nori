@@ -359,22 +359,18 @@ class ArticleController:
     async def create(self, request):
         article = await Article.create(title='New Post', body='...')
 
-        task = audit(
-            request, 'create',
-            model_name='Article',
-            record_id=article.id,
-        )
-        return JSONResponse({'ok': True}, background=task)
+        audit(request, 'create', model_name='Article', record_id=article.id)
+        return JSONResponse({'ok': True})
 ```
 
-The `audit()` function returns a `BackgroundTask` (via `core.tasks.background()`). Pass it to any Starlette response's `background=` parameter — the log entry is written to the database after the response is sent.
+`audit()` is **fire-and-forget** — it schedules the database write immediately via `asyncio`. There is no need to capture the return value or attach it to a response. If the write fails, the error is logged to `nori.audit` but never raised.
 
 ### Tracking Changes
 
 For update operations, pass a `changes` dictionary with before/after values:
 
 ```python
-task = audit(
+audit(
     request, 'update',
     model_name='Article',
     record_id=article.id,

@@ -2,7 +2,21 @@
 
 Nori uses the industry-standard **Jinja2** template system. Each route can respond by rendering an HTML file with variable contextual dictionaries served from the controller.
 
-The base hierarchy resides in the general framework folder `/rootsystem/templates/`.
+The base hierarchy resides in `/rootsystem/templates/`. Templates must be organized in **folders matching the module name**:
+
+```
+rootsystem/templates/
+    base.html
+    auth/
+        login.html
+        register.html
+    product/
+        list.html
+        form.html
+        show.html
+    404.html
+    500.html
+```
 
 ## Inheritance and Blocks 
 
@@ -75,6 +89,33 @@ Calling `url_for` on the Request component.
 ```html
 <a href="{{ request.url_for('edit_client', client_id=123) }}">Click to Edit</a>
 ```
+
+## CSRF Protection in Forms
+
+Every `POST` form **must** include a CSRF token. `csrf_field` is a Jinja2 global — call it directly without passing it from the controller:
+
+```html
+<form method="POST" action="/articles">
+    {{ csrf_field(request.session)|safe }}
+    <input type="text" name="title" />
+    <button type="submit">Create</button>
+</form>
+```
+
+For AJAX requests, use the raw token via `csrf_token(request.session)` in the `X-CSRF-Token` header. See [Forms & Validation](forms_validation.md) for full details.
+
+## Flash Messages
+
+`flash()` and `get_flashed_messages()` are available for one-time session notifications. `get_flashed_messages` is registered as a Jinja2 global:
+
+```html
+{# In base.html — renders flash messages and clears them from the session #}
+{% for msg in get_flashed_messages(request.session) %}
+    <div class="alert alert-{{ msg.category }}">{{ msg.message }}</div>
+{% endfor %}
+```
+
+See [Flash Messages](flash_messages.md) for controller-side usage.
 
 ## Native Static Files (StaticFiles)
 

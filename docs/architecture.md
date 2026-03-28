@@ -72,7 +72,7 @@ from starlette.routing import Route, Mount
 article = ArticleController()
 
 routes = [
-    Route('/', homepage, methods=['GET'], name='home'),
+    Route('/', homepage, methods=['GET'], name='page.home'),
     Mount('/articles', routes=[
         Route('/', article.index, methods=['GET'], name='articles.index'),
         Route('/{id:int}', article.show, methods=['GET'], name='articles.show'),
@@ -116,7 +116,9 @@ class ProductController:
 
 ### Type Casting
 
-If a parameter has a type annotation (e.g. `product_id: int`), `@inject` attempts to cast the raw string value using the annotation as a callable. If casting fails (e.g. `int('abc')`), the parameter falls back to its default value or `None`.
+Type coercion is applied only for simple types: `int`, `float`, `str`, `bool`. If a parameter has one of these annotations (e.g. `product_id: int`), `@inject` casts the raw string value. If casting fails (e.g. `int('abc')`), the parameter falls back to its default value or `None`.
+
+Complex generic types (`list[int]`, `dict[str, Any]`, etc.) are **not** coerced — the raw value is passed as-is. Parse these manually from `request.json()` or `request.form()`.
 
 ### Form Data Source
 

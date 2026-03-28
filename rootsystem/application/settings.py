@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import os
 from os.path import abspath, dirname, isabs, join
 from dotenv import load_dotenv

@@ -13,16 +13,16 @@ from modules.page import PageController
 page = PageController()
 
 routes = [
-    Route('/', endpoint=page.home, methods=['GET'], name='home'),
-    Route('/about', endpoint=page.about, methods=['GET'], name='about'),
+    Route('/', endpoint=page.home, methods=['GET'], name='page.home'),
+    Route('/about', endpoint=page.about, methods=['GET'], name='page.about'),
 ]
 ```
 
 ### Components of a `Route`:
 1. **Path (`'/'`)**: The URL.
 2. **Endpoint (`endpoint=page.home`)**: The asynchronous method in your controller that will handle the request.
-3. **Methods (`methods=['GET']`)**: An explicit list of accepted HTTP verbs.
-4. **Name (`name='home'`)**: The unique identifier to generate reverse links (URL Building).
+3. **Methods (`methods=['GET']`)**: An explicit list of accepted HTTP verbs. Always required.
+4. **Name (`name='page.home'`)**: A unique identifier using **dot-notation** (`module.action`) to generate reverse links. Examples: `articles.show`, `auth.login`, `page.home`.
 
 ## Route Grouping (Mount)
 
@@ -36,11 +36,11 @@ product = ProductController()
 
 routes = [
     Mount('/products', routes=[
-        Route('/', endpoint=product.list, methods=['GET'], name='product_list'),
-        Route('/create', endpoint=product.create, methods=['GET', 'POST'], name='product_create'),
-        Route('/{product_id:int}', endpoint=product.show, methods=['GET'], name='product_show'),
-        Route('/{product_id:int}/edit', endpoint=product.edit, methods=['GET', 'POST'], name='product_edit'),
-        Route('/{product_id:int}/delete', endpoint=product.delete, methods=['POST'], name='product_delete'),
+        Route('/', endpoint=product.list, methods=['GET'], name='products.list'),
+        Route('/create', endpoint=product.create, methods=['GET', 'POST'], name='products.create'),
+        Route('/{product_id:int}', endpoint=product.show, methods=['GET'], name='products.show'),
+        Route('/{product_id:int}/edit', endpoint=product.edit, methods=['GET', 'POST'], name='products.edit'),
+        Route('/{product_id:int}/delete', endpoint=product.delete, methods=['POST'], name='products.delete'),
     ]),
 ]
 ```
@@ -75,13 +75,13 @@ Instead of hardcoding URLs like `/products/5/edit` into your code, you can (and 
 
 **In a controller:**
 ```python
-url = request.url_for('product_edit', product_id=5)
+url = request.url_for('products.edit', product_id=5)
 # url = RequestURL('http://yourdomain.com/products/5/edit')
 ```
 
 **In your Jinja Templates:**
 ```html
-<a href="{{ request.url_for('product_edit', product_id=p.id) }}">Edit Product</a>
+<a href="{{ request.url_for('products.edit', product_id=p.id) }}">Edit Product</a>
 ```
 
 ## Best Security Practices in Routes
@@ -108,8 +108,8 @@ from modules.chat_ws import ChatHandler
 
 routes = [
     # ... HTTP routes ...
-    WebSocketRoute('/ws/chat', ChatHandler()),
+    WebSocketRoute('/ws/chat', ChatHandler(), name='ws.chat'),
 ]
 ```
 
-WebSocket routes do not use `methods=` or `name=`. For full details on WebSocket handlers, see [WebSockets](websockets.md).
+WebSocket routes do not use `methods=` but should include a `name=` using dot-notation (prefix with `ws.`). For full details on WebSocket handlers, see [WebSockets](websockets.md).

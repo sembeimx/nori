@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from starlette.templating import Jinja2Templates
 import settings
 from core.auth.csrf import csrf_field

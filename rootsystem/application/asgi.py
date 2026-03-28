@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 Nori - ASGI Entry Point
 Start with: uvicorn asgi:app --reload --host 0.0.0.0 --port 8000
@@ -34,7 +36,8 @@ async def lifespan(app):
 
     if settings.DB_ENABLED:
         await Tortoise.init(config=settings.TORTOISE_ORM)
-        await Tortoise.generate_schemas()
+        if settings.DEBUG:
+            await Tortoise.generate_schemas()
         _log.info("Nori started [debug=%s, db=%s]", settings.DEBUG, settings.DB_ENGINE)
     else:
         _log.info("Nori started [debug=%s, db=disabled]", settings.DEBUG)

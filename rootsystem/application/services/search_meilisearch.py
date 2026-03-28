@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 Meilisearch search driver for Nori.
 
@@ -65,7 +67,6 @@ string as a single key::
 
     filters={'_raw': 'status = "published" AND (lang = "en" OR lang = "es")'}
 """
-from __future__ import annotations
 
 from typing import Any
 

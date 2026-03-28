@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 S3-compatible storage driver for Nori.
 
@@ -17,7 +19,6 @@ Requires in settings/.env:
     S3_ENDPOINT      — (optional) custom endpoint for R2/Spaces/MinIO
     S3_URL_PREFIX    — (optional) public URL prefix, defaults to https://{bucket}.s3.{region}.amazonaws.com
 """
-from __future__ import annotations
 
 import httpx
 import hashlib

@@ -1,6 +1,6 @@
 """Tests for core.audit — audit logging utility."""
+import asyncio
 import pytest
-from starlette.background import BackgroundTask
 
 from core.audit import audit, get_client_ip
 
@@ -66,10 +66,12 @@ def test_get_client_ip_no_client():
 
 # -- audit() -----------------------------------------------------------------
 
-def test_audit_returns_background_task():
+@pytest.mark.asyncio
+async def test_audit_returns_asyncio_task():
     req = FakeRequest(user_id=1)
     task = audit(req, 'create', model_name='Article', record_id=42)
-    assert isinstance(task, BackgroundTask)
+    assert isinstance(task, asyncio.Task)
+    await task
 
 
 @pytest.mark.asyncio
@@ -80,7 +82,7 @@ async def test_audit_writes_to_database():
         model_name='Article', record_id=7,
         changes={'title': {'before': 'Old', 'after': 'New'}},
     )
-    await task()
+    await task
 
     from models.audit_log import AuditLog
     log = await AuditLog.filter(request_id='abc-123').first()
@@ -97,7 +99,7 @@ async def test_audit_writes_to_database():
 async def test_audit_resolves_user_from_session():
     req = FakeRequest(user_id=99)
     task = audit(req, 'login')
-    await task()
+    await task
 
     from models.audit_log import AuditLog
     log = await AuditLog.filter(user_id=99, action='login').first()
@@ -108,7 +110,7 @@ async def test_audit_resolves_user_from_session():
 async def test_audit_explicit_user_id_overrides_session():
     req = FakeRequest(user_id=1)
     task = audit(req, 'delete', user_id=42)
-    await task()
+    await task
 
     from models.audit_log import AuditLog
     log = await AuditLog.filter(user_id=42, action='delete').first()
@@ -119,7 +121,7 @@ async def test_audit_explicit_user_id_overrides_session():
 async def test_audit_nullable_fields():
     req = FakeRequest()
     task = audit(req, 'custom_action')
-    await task()
+    await task
 
     from models.audit_log import AuditLog
     log = await AuditLog.filter(action='custom_action').first()
@@ -143,7 +145,7 @@ async def test_audit_casts_string_user_id():
     """user_id stored as string in session is cast to int."""
     req = FakeRequest(user_id='42')
     task = audit(req, 'cast_test')
-    await task()
+    await task
 
     from models.audit_log import AuditLog
     log = await AuditLog.filter(action='cast_test').first()

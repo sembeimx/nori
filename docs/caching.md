@@ -67,6 +67,8 @@ async def monthly(self, request):
 
 In-process dictionary with TTL enforcement on read. Zero configuration, ideal for development and single-process deployments.
 
+> **Production warning**: Expired entries are only evicted when read — unread keys remain in memory indefinitely. In long-running processes this can cause unbounded memory growth. Additionally, each Gunicorn worker maintains its own isolated cache, so state is not shared. **Use `redis` in production.**
+
 ### RedisCacheBackend
 
 Requires `CACHE_BACKEND=redis` and a valid `REDIS_URL`. Uses Redis `SETEX` for atomic TTL. Shared across all workers. The Redis serializer handles common Python types (`datetime`, `date`, `UUID`, `Decimal`) automatically; other non-JSON-serializable types will raise `TypeError` instead of being silently converted.

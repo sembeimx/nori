@@ -123,7 +123,6 @@ def db_seed():
         "from tortoise import Tortoise\n"
         "async def _seed():\n"
         "    await Tortoise.init(config=settings.TORTOISE_ORM)\n"
-        "    await Tortoise.generate_schemas()\n"
         "    from seeders.database_seeder import run\n"
         "    await run()\n"
         "    await Tortoise.close_connections()\n"

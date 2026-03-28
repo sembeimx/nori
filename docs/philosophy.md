@@ -30,7 +30,9 @@ Nori sits where **AdonisJS sits in Node** or **Laravel sits in PHP**: a framewor
 ## Design principles
 
 ### 1. Keep it native
-The framework should do as much as possible with pure Python. External dependencies are accepted only when reimplementing them would be irresponsible (cryptography, database drivers, SMTP). JWT, validation, file verification, collections, and pagination are all implemented in-house with zero extra dependencies.
+The **core framework** (`core/*`) should do as much as possible with pure Python. External dependencies are accepted only when reimplementing them would be irresponsible (cryptography, database drivers, SMTP). JWT, validation, file verification, collections, and pagination are all implemented in-house with zero extra dependencies.
+
+**Optional service drivers** (`services/*`) may use external libraries (e.g., `httpx` for S3/Meilisearch). Drivers are application-level plug-ins — they are never imported by the core, never required to boot the framework, and can be removed without affecting any other feature.
 
 **The test**: if removing a dependency breaks nothing except one feature, it's a good dependency. If removing it breaks the architecture, it shouldn't have been added.
 

@@ -1,9 +1,10 @@
+from __future__ import annotations
+
 """
 Master seeder that orchestrates all individual seeders.
 
     python3 nori.py db:seed
 """
-from __future__ import annotations
 
 import importlib
 

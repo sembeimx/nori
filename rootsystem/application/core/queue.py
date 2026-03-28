@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import settings
 import asyncio
 from datetime import timedelta

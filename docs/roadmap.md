@@ -24,13 +24,13 @@ Current state of Nori and the pieces needed to support production-grade applicat
 | **Templates** | Jinja2 with globals (`csrf_field`, `get_flashed_messages`), email base template |
 | **Config** | `.env` with `python-dotenv`, centralized settings, startup validation |
 | **Logging** | Production-grade `nori.*` logger with JSON/text formatters, rotating file handler, env-based config (`LOG_LEVEL`, `LOG_FORMAT`, `LOG_FILE`) |
-| **Audit Logging** | `AuditLog` model, `audit()` background task, `get_client_ip()`, structured logging with request ID tracing |
+| **Audit Logging** | `AuditLog` model, fire-and-forget `audit()`, `get_client_ip()`, structured logging with request ID tracing |
 | **Deployment** | Multi-stage Dockerfile, docker-compose.yml (app + MySQL), Gunicorn with UvicornWorker |
 | **Error Handling** | Custom handlers for 404 (JSON + HTML) and 500 |
 | **Health Check** | `GET /health` endpoint with DB connectivity check (200/503) |
 | **DB Seeding** | Convention-based seeder system with `db:seed` and `make:seeder` CLI commands |
 | **Test Factories** | `make_article()`, `make_post()`, `make_category()` factory functions with auto-incrementing defaults |
-| **Tests** | pytest + pytest-asyncio, 318 tests (unit + E2E with httpx), `asyncio_mode = auto` |
+| **Tests** | pytest + pytest-asyncio, 358 tests (unit + E2E with httpx), `asyncio_mode = auto` |
 
 ### Recently completed
 
@@ -38,7 +38,7 @@ Current state of Nori and the pieces needed to support production-grade applicat
 |---------|-------------|
 | **Job Queue (Persistent)** | `push()` dispatcher with Database/Memory drivers. Features: **Atomic locking**, **Exponential backoff**, **Dead letters** (`failed_at`), **Graceful shutdown**, and `queue:work` CLI |
 | **Granular permissions (ACL)** | `require_permission('articles.edit')` decorator, `Permission` + `Role` models with M2M, `load_permissions()` for session caching |
-| **Audit logging** | `AuditLog` model + `audit()` background task with structured logging, IP tracking, and request ID tracing |
+| **Audit logging** | `AuditLog` model + fire-and-forget `audit()` with structured logging, IP tracking, and request ID tracing |
 | **Multi-driver Email** | `send_mail()` refactored with driver registry. Built-in: `smtp` (production), `log` (development). Custom drivers via `register_mail_driver()` |
 | **Multi-driver Storage** | `save_upload()` refactored with driver registry. Built-in: `local` (disk). Custom drivers via `register_storage_driver()`. S3 example in `services/` |
 | **Search dispatcher** | `core/search.py` with `search()`, `index_document()`, `remove_document()`. No built-in driver — external engines only. Meilisearch example in `services/` |

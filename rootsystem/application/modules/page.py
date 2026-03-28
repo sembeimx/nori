@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import sys
 from starlette.requests import Request
 from core.jinja import templates

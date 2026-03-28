@@ -21,6 +21,8 @@ Every form that makes a `POST` request must include a CSRF token. Since `csrf_fi
 
 If the CSRF token is missing or invalid on a state-changing request (POST, PUT, DELETE, PATCH), the middleware returns `403 Forbidden`.
 
+> **JSON APIs are exempt**: Requests with `Content-Type: application/json` skip CSRF validation entirely. Browsers enforce CORS for cross-origin JSON requests, so the CSRF vector does not apply. API authentication should use JWT tokens instead (see [Authentication](authentication.md)).
+
 ## Pipe-Separated Declarative Validation (`validate`)
 
 By capturing form dictionaries in `request.form()`, your controller delegates them to the generic validator, passing the rules with strings delimited by Pipes `|`.

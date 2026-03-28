@@ -1,8 +1,12 @@
+from __future__ import annotations
+
 from tortoise.models import Model
 from tortoise import fields
 
+from core.mixins.model import NoriModelMixin
 
-class Permission(Model):
+
+class Permission(NoriModelMixin, Model):
     """A granular permission (e.g. 'articles.edit')."""
 
     id = fields.IntField(primary_key=True)

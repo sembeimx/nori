@@ -1,9 +1,15 @@
+from __future__ import annotations
+
 import functools
 import inspect
 
 from core.logger import get_logger
 
 _log = get_logger('inject')
+
+# Types that can safely be called as constructors for string coercion.
+# Generic types (list[int], dict[str, Any], etc.) are NOT callable this way.
+_SAFE_COERCE_TYPES: set[type] = {int, float, str, bool}
 
 
 def inject():
@@ -61,7 +67,7 @@ def inject():
                 # 2. Requests URL-anchored variable (Path Params)
                 elif name in request.path_params:
                     val = request.path_params[name]
-                    if param.annotation != inspect.Parameter.empty:
+                    if param.annotation != inspect.Parameter.empty and param.annotation in _SAFE_COERCE_TYPES:
                         try:
                             val = param.annotation(val)
                         except (ValueError, TypeError):
@@ -72,7 +78,7 @@ def inject():
                 # 3. Requests HTTP Query Param variables (?q=search)
                 elif name in request.query_params:
                     val = request.query_params.get(name)
-                    if param.annotation != inspect.Parameter.empty:
+                    if param.annotation != inspect.Parameter.empty and param.annotation in _SAFE_COERCE_TYPES:
                         try:
                             val = param.annotation(val)
                         except (ValueError, TypeError):

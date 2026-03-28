@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 Nori Logger -- production-grade logging with rotation and optional JSON output.
 
