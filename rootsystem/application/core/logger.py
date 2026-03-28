@@ -20,6 +20,8 @@ import os
 import sys
 from datetime import datetime, timezone
 
+from core.conf import config
+
 
 class _JsonFormatter(logging.Formatter):
     """Structured JSON log formatter for production/cloud environments."""
@@ -50,14 +52,13 @@ class _TextFormatter(logging.Formatter):
 
 def _setup_logger() -> logging.Logger:
     """Configure the root 'nori' logger once."""
-    from settings import DEBUG
-
     logger = logging.getLogger('nori')
 
     if logger.handlers:
         return logger
 
-    level_name = os.environ.get('LOG_LEVEL', 'DEBUG' if DEBUG else 'INFO').upper()
+    debug = config.get('DEBUG', False)
+    level_name = os.environ.get('LOG_LEVEL', 'DEBUG' if debug else 'INFO').upper()
     level = getattr(logging, level_name, logging.INFO)
     logger.setLevel(level)
 

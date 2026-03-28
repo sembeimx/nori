@@ -21,7 +21,9 @@ from typing import Any
 
 from starlette.requests import Request
 
+from core.conf import config
 from core.logger import get_logger
+from core.registry import get_model
 
 _log = get_logger('audit')
 
@@ -36,10 +38,8 @@ def get_client_ip(request: Request) -> str | None:
     client IP is not in the trusted list, ``X-Forwarded-For`` is ignored
     to prevent IP spoofing.
     """
-    import settings as _settings
-
     direct_ip = request.client.host if request.client else None
-    trusted = getattr(_settings, 'TRUSTED_PROXIES', [])
+    trusted = config.get('TRUSTED_PROXIES', [])
 
     if trusted and direct_ip in trusted:
         forwarded = request.headers.get('x-forwarded-for')
@@ -81,8 +81,8 @@ def audit(
 
     async def _write() -> None:
         try:
-            from models.audit_log import AuditLog
-            await AuditLog.create(
+            _AuditLog = get_model('AuditLog')
+            await _AuditLog.create(
                 user_id=resolved_user_id,
                 action=action,
                 model_name=model_name,

@@ -49,7 +49,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-import settings
+from core.conf import config
 
 _MIME_MAP: dict[str, str] = {
     'jpg': 'image/jpeg',
@@ -271,9 +271,9 @@ async def save_upload(
     if allowed_types is None:
         allowed_types = list(_MIME_MAP.keys())
     if max_size is None:
-        max_size = getattr(settings, 'UPLOAD_MAX_SIZE', 10 * 1024 * 1024)
+        max_size = config.get('UPLOAD_MAX_SIZE', 10 * 1024 * 1024)
     if upload_dir is None:
-        upload_dir = getattr(settings, 'UPLOAD_DIR', os.path.join(settings._app_dir, 'uploads'))
+        upload_dir = config.get('UPLOAD_DIR', 'uploads')
 
     original_name = file.filename or 'unnamed'
 
@@ -298,7 +298,7 @@ async def save_upload(
     # Generate unique name and dispatch to driver
     filename = _generate_filename(ext)
 
-    driver_name = driver or getattr(settings, 'STORAGE_DRIVER', 'local')
+    driver_name = driver or config.get('STORAGE_DRIVER', 'local')
     handler = _DRIVERS.get(driver_name)
     if handler is None:
         available = ', '.join(sorted(_DRIVERS))

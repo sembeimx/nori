@@ -93,8 +93,8 @@ async def test_send_mail_dispatches_to_smtp():
     """Default driver dispatches to the smtp handler."""
     mock_smtp = AsyncMock()
     with patch.dict(_DRIVERS, {'smtp': mock_smtp}), \
-         patch.object(mail_module, 'settings') as mock_settings:
-        mock_settings.MAIL_DRIVER = 'smtp'
+         patch.object(mail_module, 'config') as mock_config:
+        mock_config.get = lambda k, d=None: 'smtp' if k == 'MAIL_DRIVER' else d
         await send_mail(to='a@b.com', subject='Hi', body_html='<p>hi</p>')
         mock_smtp.assert_called_once_with(['a@b.com'], 'Hi', '<p>hi</p>', None)
 
@@ -104,8 +104,8 @@ async def test_send_mail_driver_override():
     """Per-call driver= overrides settings.MAIL_DRIVER."""
     mock_log = AsyncMock()
     with patch.dict(_DRIVERS, {'log': mock_log}), \
-         patch.object(mail_module, 'settings') as mock_settings:
-        mock_settings.MAIL_DRIVER = 'smtp'
+         patch.object(mail_module, 'config') as mock_config:
+        mock_config.get = lambda k, d=None: 'smtp' if k == 'MAIL_DRIVER' else d
         await send_mail(to='a@b.com', subject='Hi', body_html='<p>hi</p>', driver='log')
         mock_log.assert_called_once()
 
@@ -184,8 +184,8 @@ async def test_send_mail_renders_template():
     mock_smtp = AsyncMock()
     with patch.object(mail_module, '_render_template', return_value='<p>rendered</p>') as mock_render, \
          patch.dict(_DRIVERS, {'smtp': mock_smtp}), \
-         patch.object(mail_module, 'settings') as mock_settings:
-        mock_settings.MAIL_DRIVER = 'smtp'
+         patch.object(mail_module, 'config') as mock_config:
+        mock_config.get = lambda k, d=None: 'smtp' if k == 'MAIL_DRIVER' else d
         await send_mail(to='a@b.com', subject='S', template='email/test.html', context={'k': 'v'})
         mock_render.assert_called_once_with('email/test.html', {'k': 'v'})
         mock_smtp.assert_called_once_with(['a@b.com'], 'S', '<p>rendered</p>', None)

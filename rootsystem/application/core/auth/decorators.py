@@ -7,6 +7,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, RedirectResponse, Response
 
 from core.auth.jwt import verify_token as _verify_token
+from core.registry import get_model
 
 
 def login_required(func: Callable[..., Any]) -> Callable[..., Any]:
@@ -97,7 +98,7 @@ async def load_permissions(session: dict, user_id: int) -> list[str]:
     from core.logger import get_logger
     _perm_log = get_logger('auth')
 
-    from models.role import Role
+    Role = get_model('Role')
     role_ids = session.get('role_ids', [])
     if not role_ids:
         _perm_log.warning("load_permissions called but role_ids is empty for user %s", user_id)

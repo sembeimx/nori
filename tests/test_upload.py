@@ -215,12 +215,10 @@ async def test_store_local():
 async def test_save_upload_dispatches_to_local():
     """Default driver dispatches to the local handler."""
     mock_local = AsyncMock(return_value=('/tmp/file.jpg', '/uploads/file.jpg'))
+    _cfg = {'STORAGE_DRIVER': 'local', 'UPLOAD_MAX_SIZE': 10 * 1024 * 1024, 'UPLOAD_DIR': '/tmp'}
     with patch.dict(_DRIVERS, {'local': mock_local}), \
-         patch.object(upload_module, 'settings') as mock_settings:
-        mock_settings.STORAGE_DRIVER = 'local'
-        mock_settings.UPLOAD_MAX_SIZE = 10 * 1024 * 1024
-        mock_settings._app_dir = '/tmp'
-        mock_settings.UPLOAD_DIR = '/tmp'
+         patch.object(upload_module, 'config') as mock_config:
+        mock_config.get = lambda k, d=None: _cfg.get(k, d)
         f = FakeUploadFile(filename='photo.jpg', content_type='image/jpeg')
         result = await save_upload(f, allowed_types=['jpg'])
         mock_local.assert_called_once()

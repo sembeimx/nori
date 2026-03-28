@@ -1,13 +1,30 @@
 from __future__ import annotations
 
 from starlette.templating import Jinja2Templates
-import settings
+
+from core.conf import config
 from core.auth.csrf import csrf_field
 from core.http.flash import get_flashed_messages
 
-templates = Jinja2Templates(directory=settings.TEMPLATE_DIR)
-if settings.DEBUG:
-    templates.env.auto_reload = True
+_templates: Jinja2Templates | None = None
 
-templates.env.globals['csrf_field'] = csrf_field
-templates.env.globals['get_flashed_messages'] = get_flashed_messages
+
+def _get_templates() -> Jinja2Templates:
+    global _templates
+    if _templates is None:
+        _templates = Jinja2Templates(directory=config.TEMPLATE_DIR)
+        if config.get('DEBUG', False):
+            _templates.env.auto_reload = True
+        _templates.env.globals['csrf_field'] = csrf_field
+        _templates.env.globals['get_flashed_messages'] = get_flashed_messages
+    return _templates
+
+
+class _LazyTemplates:
+    """Proxy that defers Jinja2Templates creation until first use."""
+
+    def __getattr__(self, name: str):
+        return getattr(_get_templates(), name)
+
+
+templates = _LazyTemplates()

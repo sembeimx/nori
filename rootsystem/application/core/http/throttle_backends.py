@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 import time
 from abc import ABC, abstractmethod
-import settings
+from core.conf import config
 
 
 class ThrottleBackend(ABC):
@@ -117,10 +117,10 @@ def get_backend() -> ThrottleBackend:
     if _backend is not None:
         return _backend
 
-    backend_type = getattr(settings, 'THROTTLE_BACKEND', 'memory').lower()
+    backend_type = config.get('THROTTLE_BACKEND', 'memory').lower()
 
     if backend_type == 'redis':
-        redis_url = getattr(settings, 'REDIS_URL', 'redis://localhost:6379')
+        redis_url = config.get('REDIS_URL', 'redis://localhost:6379')
         try:
             _backend = RedisBackend(redis_url)
         except Exception:

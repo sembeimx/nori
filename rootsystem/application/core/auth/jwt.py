@@ -16,7 +16,7 @@ import hmac
 import json
 import time
 
-import settings
+from core.conf import config
 from core.logger import get_logger
 
 _log = get_logger('jwt')
@@ -24,10 +24,10 @@ _log = get_logger('jwt')
 
 def _get_secret() -> str:
     """Return JWT secret, warning if it falls back to SECRET_KEY."""
-    secret = getattr(settings, 'JWT_SECRET', None)
-    if not secret or secret == settings.SECRET_KEY:
+    secret = config.get('JWT_SECRET', None)
+    if not secret or secret == config.SECRET_KEY:
         _log.warning("JWT_SECRET not set; falling back to SECRET_KEY")
-        return settings.SECRET_KEY
+        return config.SECRET_KEY
     return secret
 
 
@@ -66,7 +66,7 @@ def create_token(payload: dict, *, expires_in: int | None = None) -> str:
         JWT string (header.payload.signature).
     """
     if expires_in is None:
-        expires_in = getattr(settings, 'JWT_EXPIRATION', 3600)
+        expires_in = config.get('JWT_EXPIRATION', 3600)
 
     secret = _get_secret()
 

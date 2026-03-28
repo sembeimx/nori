@@ -130,8 +130,8 @@ async def test_search_uses_settings_driver():
     mock_search = AsyncMock(return_value=[])
     register_search_driver('test_drv', _make_driver(search_fn=mock_search))
 
-    with patch.object(_search_mod, 'settings') as mock_settings:
-        mock_settings.SEARCH_DRIVER = 'test_drv'
+    with patch.object(_search_mod, 'config') as mock_config:
+        mock_config.get = lambda k, d=None: 'test_drv' if k == 'SEARCH_DRIVER' else d
         await search('idx', 'q')
 
     mock_search.assert_called_once()
@@ -145,8 +145,8 @@ async def test_search_driver_override():
     register_search_driver('test_drv', _make_driver(search_fn=mock_a))
     register_search_driver('alt_drv', _make_driver(search_fn=mock_b))
 
-    with patch.object(_search_mod, 'settings') as mock_settings:
-        mock_settings.SEARCH_DRIVER = 'test_drv'
+    with patch.object(_search_mod, 'config') as mock_config:
+        mock_config.get = lambda k, d=None: 'test_drv' if k == 'SEARCH_DRIVER' else d
         results = await search('idx', 'q', driver='alt_drv')
 
     mock_a.assert_not_called()
@@ -164,8 +164,8 @@ async def test_search_unknown_driver():
 @pytest.mark.anyio
 async def test_search_no_driver_configured():
     """Empty SEARCH_DRIVER in settings raises ValueError."""
-    with patch.object(_search_mod, 'settings') as mock_settings:
-        mock_settings.SEARCH_DRIVER = ''
+    with patch.object(_search_mod, 'config') as mock_config:
+        mock_config.get = lambda k, d=None: '' if k == 'SEARCH_DRIVER' else d
         with pytest.raises(ValueError, match="No search driver configured"):
             await search('idx', 'q')
 

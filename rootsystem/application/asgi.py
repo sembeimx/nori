@@ -16,6 +16,10 @@ from starlette.staticfiles import StaticFiles
 from tortoise import Tortoise
 
 import settings
+from core.conf import configure
+configure(settings)
+import models  # noqa: E402 — registers models in the core registry
+
 from routes import routes
 from core.auth.csrf import CsrfMiddleware
 from core.http.request_id import RequestIdMiddleware

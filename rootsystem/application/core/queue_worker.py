@@ -6,6 +6,7 @@ import signal
 from datetime import timedelta
 from tortoise.timezone import now
 from core.logger import get_logger
+from core.registry import get_model
 
 _log = get_logger('queue')
 MAX_ATTEMPTS = 5
@@ -26,7 +27,7 @@ async def execute_payload(payload: dict):
         func(*payload.get('args', []), **payload.get('kwargs', {}))
 
 async def work(queue_name: str = 'default', sleep: int = 3):
-    from models.job import Job
+    Job = get_model('Job')
     global _should_exit
     
     # Register signals for graceful shutdown

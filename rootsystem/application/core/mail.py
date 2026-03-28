@@ -37,7 +37,7 @@ from typing import Callable
 
 import aiosmtplib
 
-import settings
+from core.conf import config
 from core.jinja import templates
 from core.logger import get_logger
 
@@ -51,7 +51,7 @@ def _build_message(
     """Build a MIME multipart email message."""
     msg = MIMEMultipart('alternative')
     msg['Subject'] = subject
-    msg['From'] = getattr(settings, 'MAIL_FROM', '')
+    msg['From'] = config.get('MAIL_FROM', '')
     msg['To'] = to if isinstance(to, str) else ', '.join(to)
 
     if body_text:
@@ -109,11 +109,11 @@ async def _send_via_smtp(
     """
     msg = _build_message(to, subject, body_html, body_text)
 
-    mail_host = getattr(settings, 'MAIL_HOST', 'localhost')
-    mail_port = getattr(settings, 'MAIL_PORT', 587)
-    mail_user = getattr(settings, 'MAIL_USER', '')
-    mail_password = getattr(settings, 'MAIL_PASSWORD', '')
-    mail_tls = getattr(settings, 'MAIL_TLS', True)
+    mail_host = config.get('MAIL_HOST', 'localhost')
+    mail_port = config.get('MAIL_PORT', 587)
+    mail_user = config.get('MAIL_USER', '')
+    mail_password = config.get('MAIL_PASSWORD', '')
+    mail_tls = config.get('MAIL_TLS', True)
 
     await aiosmtplib.send(
         msg,
@@ -208,7 +208,7 @@ async def send_mail(
     if not body_html:
         raise ValueError("Either body_html or template is required")
 
-    driver_name = driver or getattr(settings, 'MAIL_DRIVER', 'smtp')
+    driver_name = driver or config.get('MAIL_DRIVER', 'smtp')
     handler = _DRIVERS.get(driver_name)
     if handler is None:
         available = ', '.join(sorted(_DRIVERS))

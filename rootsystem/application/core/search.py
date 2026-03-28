@@ -52,7 +52,7 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
-import settings
+from core.conf import config
 from core.logger import get_logger
 
 _log = get_logger('search')
@@ -120,7 +120,7 @@ def _get_driver(driver: str | None = None) -> tuple[str, dict[str, Callable]]:
     Raises:
         ValueError: If the resolved driver name is not registered.
     """
-    driver_name = driver or getattr(settings, 'SEARCH_DRIVER', None) or None
+    driver_name = driver or config.get('SEARCH_DRIVER', None) or None
     if driver_name is None:
         raise ValueError(
             "No search driver configured. Set SEARCH_DRIVER in your .env "

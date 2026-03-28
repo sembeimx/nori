@@ -27,7 +27,7 @@ from abc import ABC, abstractmethod
 from functools import wraps
 from typing import Any, Callable
 
-import settings
+from core.conf import config
 from core.logger import get_logger
 
 _log = get_logger('cache')
@@ -169,10 +169,10 @@ def get_backend() -> CacheBackend:
     if _backend is not None:
         return _backend
 
-    backend_type = getattr(settings, 'CACHE_BACKEND', 'memory').lower()
+    backend_type = config.get('CACHE_BACKEND', 'memory').lower()
 
     if backend_type == 'redis':
-        redis_url = getattr(settings, 'REDIS_URL', 'redis://localhost:6379')
+        redis_url = config.get('REDIS_URL', 'redis://localhost:6379')
         try:
             _backend = RedisCacheBackend(redis_url)
         except Exception:
