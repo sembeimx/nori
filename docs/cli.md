@@ -18,11 +18,11 @@ python3 nori.py <command> [arguments]
 | `make:seeder <Name>` | Generate a database seeder in `seeders/` |
 | `migrate:init` | Initialize the Aerich migration system |
 | `migrate:make <name>` | Create a new migration from model changes |
-| `migrate:upgrade` | Apply all pending migrations |
+| `migrate:upgrade` | Apply all pending migrations (both apps) |
 | `migrate:downgrade` | Roll back migrations |
 | `db:seed` | Run all registered database seeders |
 | `queue:work` | Run the persistent job queue worker |
-| `framework:update` | Update the Nori core from GitHub |
+| `framework:update` | Update the Nori core from GitLab |
 | `framework:version` | Show the current framework version |
 
 ---
@@ -185,21 +185,35 @@ Nori 1.2+ includes commands to manage the framework core independently of your a
 
 ### `framework:update`
 
-Updates the core files in `rootsystem/application/core/` by downloading the latest release from the official GitHub repository.
+Updates all framework-owned directories by downloading the latest release from the official GitLab repository.
 
 ```bash
 python3 nori.py framework:update
+python3 nori.py framework:update --version 1.3.0
+python3 nori.py framework:update --no-backup
 ```
 
 **Options**:
-- `--version <v>`: Update to a specific version (e.g. `1.3.0`).
-- `--no-backup`: Skip the automatic backup of the current `core/` directory.
+- `--version <v>`: Update to a specific version (e.g. `1.3.0`). Defaults to latest release.
+- `--no-backup`: Skip the automatic backup (useful for CI/Docker).
+
+**What gets updated**:
+
+| Directory | Contents |
+|-----------|----------|
+| `core/` | Framework core (auth, cache, mail, queue, etc.) |
+| `models/framework/` | Framework models (AuditLog, Job, Permission, Role) |
+| `migrations/framework/` | Framework migration files |
 
 **Process**:
-1. Verifies the target version on GitHub.
-2. Creates a timestamped backup in `rootsystem/.core_backups/`.
-3. Downloads and extracts the new core files.
-4. Replaces the local `core/` directory.
+1. Reads current version from `core/version.py`.
+2. Queries the GitLab Releases API for the target version.
+3. Creates a timestamped backup in `rootsystem/.framework_backups/`.
+4. Downloads and extracts the release zip.
+5. Replaces all three framework directories.
+6. If new framework migrations are detected, prompts to run `migrate:upgrade --app framework`.
+
+For private repositories, set `GITLAB_TOKEN` in your environment.
 
 ### `framework:version`
 
@@ -207,6 +221,7 @@ Displays the current version of the Nori core installed in the project.
 
 ```bash
 python3 nori.py framework:version
+# Nori v1.2.0
 ```
 
 ---
@@ -294,26 +309,43 @@ After modifying a model (adding fields, changing types, etc.):
 
 ```bash
 python3 nori.py migrate:make add_price_to_products
+python3 nori.py migrate:make add_price_to_products --app models     # same (default)
+python3 nori.py migrate:make add_audit_field --app framework        # framework models only
 ```
 
-This compares your models against the last migration state and generates a migration file in `rootsystem/application/migrations/`.
+This compares your models against the last migration state and generates a migration file in `migrations/models/` (or `migrations/framework/` for framework models).
 
 **Naming convention**: use descriptive names like `add_price_to_products`, `create_orders_table`, `remove_legacy_status_field`.
 
 ### Applying Migrations
 
 ```bash
-python3 nori.py migrate:upgrade
+python3 nori.py migrate:upgrade                   # Both apps (framework + models)
+python3 nori.py migrate:upgrade --app models       # User models only
+python3 nori.py migrate:upgrade --app framework    # Framework models only
 ```
 
-Applies all pending migrations in order.
+When `--app` is omitted, both `framework` and `models` are upgraded in order.
+
+### Migration Directory Structure
+
+Nori uses two separate migration namespaces:
+
+```
+migrations/
+├── framework/    ← Managed by Nori (ships with framework:update)
+└── models/       ← Managed by the developer (your models)
+```
+
+Framework migrations are never mixed with your application migrations. When you run `framework:update`, new framework migrations are downloaded automatically and can be applied with `migrate:upgrade --app framework`.
 
 ### Rolling Back
 
 ```bash
-python3 nori.py migrate:downgrade              # Roll back 1 migration
-python3 nori.py migrate:downgrade --steps 3     # Roll back 3 migrations
-python3 nori.py migrate:downgrade --delete      # Roll back and delete the migration file
+python3 nori.py migrate:downgrade                          # Roll back 1 (user models)
+python3 nori.py migrate:downgrade --steps 3                # Roll back 3
+python3 nori.py migrate:downgrade --app framework          # Roll back framework
+python3 nori.py migrate:downgrade --delete                 # Roll back and delete the file
 ```
 
 ---

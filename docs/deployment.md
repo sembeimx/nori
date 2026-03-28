@@ -360,3 +360,50 @@ Set `CACHE_BACKEND=redis` and `THROTTLE_BACKEND=redis` to share state across all
 These assume a typical mix of cached and dynamic pages. With `@cache_response` on static-ish pages, most read traffic resolves from Redis in <1ms and never reaches your controllers.
 
 For sites above 5M visits/month, consider horizontal scaling (multiple servers behind a load balancer) and a persistent job queue for background work.
+
+---
+
+## Documentation site
+
+Nori includes a [MkDocs Material](https://squidfunk.github.io/mkdocs-material/) configuration for generating a documentation website from the `docs/` directory.
+
+### Build and deploy
+
+```bash
+# Install (one-time)
+pip install mkdocs-material
+
+# Build the static site
+mkdocs build --strict
+
+# Deploy to your server
+rsync -avz --delete site/ yourserver:/srv/websites/nori-docs/
+```
+
+### Local preview
+
+```bash
+mkdocs serve
+# Open http://localhost:8000
+```
+
+### Apache configuration
+
+```apache
+<VirtualHost *:80>
+    ServerName nori.yourdomain.com
+    DocumentRoot /srv/websites/nori-docs
+
+    <Directory /srv/websites/nori-docs>
+        Options -Indexes +FollowSymLinks
+        AllowOverride None
+        Require all granted
+    </Directory>
+</VirtualHost>
+```
+
+Add SSL with Certbot: `sudo certbot --apache -d nori.yourdomain.com`
+
+### GitLab CI (automatic)
+
+The project includes `.gitlab-ci.yml` that builds and publishes the docs to GitLab Pages on every push to `main` that changes `docs/` or `mkdocs.yml`.
