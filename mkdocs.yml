@@ -1,0 +1,94 @@
+site_name: Nori Framework
+site_url: https://nori.sembei.mx
+site_description: Opinionated async web framework for Python — Laravel's ergonomics on Starlette's performance.
+site_author: Sembei
+
+repo_url: https://gitlab.com/sembeimexico/nori
+repo_name: sembeimexico/nori
+
+theme:
+  name: material
+  language: en
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: deep purple
+      accent: amber
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: deep purple
+      accent: amber
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  font:
+    text: Inter
+    code: JetBrains Mono
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.code.annotate
+  icon:
+    repo: fontawesome/brands/gitlab
+
+nav:
+  - Home: index.md
+  - Getting Started:
+      - Philosophy: philosophy.md
+      - Architecture: architecture.md
+      - CLI Reference: cli.md
+  - Core:
+      - Controllers: controllers.md
+      - Routing: routing.md
+      - Templates: templates.md
+      - Forms & Validation: forms_validation.md
+      - Flash Messages: flash_messages.md
+  - Database:
+      - Models & ORM: database.md
+      - Collections: collections.md
+  - Auth & Security:
+      - Authentication: authentication.md
+      - Security: security.md
+  - Services:
+      - Services & Drivers: services.md
+      - Background Tasks: background_tasks.md
+      - Caching: caching.md
+      - WebSockets: websockets.md
+      - Logging: logging.md
+  - Operations:
+      - Deployment: deployment.md
+      - Roadmap: roadmap.md
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.snippets
+  - tables
+  - toc:
+      permalink: true
+
+plugins:
+  - search
+
+extra:
+  social:
+    - icon: fontawesome/brands/gitlab
+      link: https://gitlab.com/sembeimexico/nori
+  generator: false

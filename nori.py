@@ -189,7 +189,8 @@ async def run() -> None:
     print(f"Don't forget to register it in seeders/database_seeder.py")
 
 
-_GITHUB_REPO = 'ellery-nori/nori'  # GitHub owner/repo for framework releases
+_GITLAB_PROJECT = 'sembeimexico%2Fnori'  # URL-encoded GitLab project path
+_GITLAB_URL = 'https://gitlab.com'
 _CORE_DIR = os.path.join(_APP_DIR, 'core')
 _FRAMEWORK_MODELS_DIR = os.path.join(_APP_DIR, 'models', 'framework')
 _FRAMEWORK_MIGRATIONS_DIR = os.path.join(_APP_DIR, 'migrations', 'framework')
@@ -215,16 +216,13 @@ def _get_current_version() -> str:
     return 'unknown'
 
 
-def _github_api(endpoint: str) -> dict:
-    """Make a GET request to the GitHub API."""
-    url = f'https://api.github.com/repos/{_GITHUB_REPO}/{endpoint}'
-    req = Request(url, headers={
-        'Accept': 'application/vnd.github+json',
-        'User-Agent': 'Nori-Framework-Updater',
-    })
-    token = os.environ.get('GITHUB_TOKEN', '')
+def _gitlab_api(endpoint: str) -> dict | list:
+    """Make a GET request to the GitLab API."""
+    url = f'{_GITLAB_URL}/api/v4/projects/{_GITLAB_PROJECT}/{endpoint}'
+    req = Request(url, headers={'User-Agent': 'Nori-Framework-Updater'})
+    token = os.environ.get('GITLAB_TOKEN', '')
     if token:
-        req.add_header('Authorization', f'Bearer {token}')
+        req.add_header('PRIVATE-TOKEN', token)
     with urlopen(req) as resp:
         return json.loads(resp.read())
 
@@ -232,38 +230,43 @@ def _github_api(endpoint: str) -> dict:
 def _download_zip(url: str, dest: str) -> None:
     """Download a file from a URL to a local path."""
     req = Request(url, headers={'User-Agent': 'Nori-Framework-Updater'})
-    token = os.environ.get('GITHUB_TOKEN', '')
+    token = os.environ.get('GITLAB_TOKEN', '')
     if token:
-        req.add_header('Authorization', f'Bearer {token}')
+        req.add_header('PRIVATE-TOKEN', token)
     with urlopen(req) as resp, open(dest, 'wb') as f:
         shutil.copyfileobj(resp, f)
 
 
 def framework_update(target_version: str | None = None, skip_backup: bool = False):
-    """Update the framework core from a GitHub release.
+    """Update the framework core from a GitLab release.
 
-    Downloads the release zip, extracts core/ from it, backs up the
-    current core/, and replaces it with the new version.
+    Downloads the release zip, extracts framework directories, backs up
+    the current ones, and replaces them with the new version.
     """
     current = _get_current_version()
     print(f"Nori framework:update")
     print(f"  Current version: {current}")
 
-    # 1. Resolve target version
+    # 1. Resolve target version via GitLab Releases API
     try:
         if target_version:
-            release = _github_api(f'releases/tags/v{target_version}')
+            release = _gitlab_api(f'releases/v{target_version}')
         else:
-            release = _github_api('releases/latest')
+            releases = _gitlab_api('releases?per_page=1')
+            if not releases:
+                print(f"\n  Error: No releases found.")
+                print(f"  Check {_GITLAB_URL}/sembeimexico/nori/-/releases")
+                return
+            release = releases[0]
     except HTTPError as e:
         if e.code == 404:
             print(f"\n  Error: {'Version v' + target_version + ' not found' if target_version else 'No releases found'}.")
-            print(f"  Check https://github.com/{_GITHUB_REPO}/releases")
+            print(f"  Check {_GITLAB_URL}/sembeimexico/nori/-/releases")
             return
         raise
     except URLError as e:
-        print(f"\n  Error: Could not connect to GitHub — {e.reason}")
-        print("  Check your internet connection or set GITHUB_TOKEN for private repos.")
+        print(f"\n  Error: Could not connect to GitLab — {e.reason}")
+        print("  Check your internet connection or set GITLAB_TOKEN for private repos.")
         return
 
     tag = release['tag_name']
@@ -274,8 +277,8 @@ def framework_update(target_version: str | None = None, skip_backup: bool = Fals
         print(f"\n  Already up to date.")
         return
 
-    # 2. Download the release zip
-    zip_url = release['zipball_url']
+    # 2. Download the release zip (GitLab archive endpoint)
+    zip_url = f'{_GITLAB_URL}/api/v4/projects/{_GITLAB_PROJECT}/repository/archive.zip?sha={tag}'
     print(f"\n  Downloading {tag}...")
 
     with tempfile.TemporaryDirectory() as tmp:
