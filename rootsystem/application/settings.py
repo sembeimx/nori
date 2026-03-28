@@ -90,6 +90,12 @@ SEARCH_DRIVER = os.environ.get('SEARCH_DRIVER', '')  # meilisearch | (custom dri
 # Queue
 QUEUE_DRIVER = os.environ.get('QUEUE_DRIVER', 'memory')  # memory | database
 
+# OAuth — Social login providers (configured per-provider in services/)
+GOOGLE_CLIENT_ID = os.environ.get('GOOGLE_CLIENT_ID', '')
+GOOGLE_CLIENT_SECRET = os.environ.get('GOOGLE_CLIENT_SECRET', '')
+GITHUB_CLIENT_ID = os.environ.get('GITHUB_CLIENT_ID', '')
+GITHUB_CLIENT_SECRET = os.environ.get('GITHUB_CLIENT_SECRET', '')
+
 _model_modules = ['models']
 try:
     import aerich  # noqa: F401

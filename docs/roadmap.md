@@ -43,6 +43,7 @@ Current state of Nori and the pieces needed to support production-grade applicat
 | **Multi-driver Storage** | `save_upload()` refactored with driver registry. Built-in: `local` (disk). Custom drivers via `register_storage_driver()`. S3 example in `services/` |
 | **Search dispatcher** | `core/search.py` with `search()`, `index_document()`, `remove_document()`. No built-in driver — external engines only. Meilisearch example in `services/` |
 | **Security hardening** | `protected_fields` on models to prevent data leaks in `to_dict()`, magic byte verification on uploads (pure Python, no libmagic), JWT secret minimum length (32 chars) enforced at startup |
+| **OAuth2 Social Login** | Google (OpenID Connect + PKCE) and GitHub drivers in `services/`. Core helpers for state CSRF and PKCE in `core/auth/oauth.py`. 3-function interface: `get_auth_url`, `handle_callback`, `get_user_profile` |
 
 ---
 
@@ -69,20 +70,11 @@ These are not new features — they are gaps in existing subsystems that must be
 
 ## What's next — Priority order
 
-### 1. Social Auth (OAuth2)
+### ~~1. Social Auth (OAuth2)~~ — Done
 
-**Why it's #1**: Almost every modern app needs "Login with Google/GitHub". It's HTTP-based (fits Nori's async nature) and has a clear, bounded scope.
+Implemented in `services/oauth_google.py` and `services/oauth_github.py`. Core helpers in `core/auth/oauth.py`. See [Authentication — OAuth2](authentication.md#oauth2-social-login).
 
-**Design**:
-- Lives in `services/`, not in core — each provider has different flows (Google uses OpenID Connect, GitHub doesn't, Apple requires server-side JWT)
-- Example drivers: `services/oauth_google.py`, `services/oauth_github.py`
-- Each driver exposes: `get_auth_url(redirect_uri)`, `handle_callback(code)`, `get_user_profile(token)`
-- Uses `httpx` (already a dependency) for token exchange
-- The programmer handles user creation/association in their controller — Nori doesn't touch models
-
-**Filosofía**: No abstraction layer in core. Each provider is a standalone service file. The programmer calls 3 functions explicitly.
-
-### 2. OpenAPI / Swagger
+### ~~2.~~ 1. OpenAPI / Swagger
 
 **Why it's #2**: The most valuable feature Nori lacks for public APIs. Auto-generated docs from route definitions.
 

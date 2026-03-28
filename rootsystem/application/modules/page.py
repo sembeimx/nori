@@ -17,7 +17,7 @@ class PageController:
 
         return templates.TemplateResponse(request, 'home.html', {
             'user_id': request.session.get('user_id'),
-            'nori_version': '1.0.0',
+            'nori_version': '1.1.0',
             'python_version': python_version,
             'db_engine': DB_ENGINE,
             'debug_mode': DEBUG,

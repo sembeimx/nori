@@ -66,12 +66,12 @@ async def work(queue_name: str = 'default', sleep: int = 3):
             
             if job.attempts >= MAX_ATTEMPTS:
                 job.failed_at = now()
-                _log.error("Job %d failed permanently after %d attempts", job.id, MAX_ATTEMPTS)
+                _log.error("Job %d failed permanently after %d attempts: %s", job.id, MAX_ATTEMPTS, e, exc_info=True)
             else:
                 # Exponential backoff: 15s, 4m, 20m, 1h, 3h...
                 wait_seconds = (job.attempts ** 4) * 15
                 job.available_at = now() + timedelta(seconds=wait_seconds)
-                _log.warning("Job %d failed (attempt %d). Retrying in %ds", job.id, job.attempts, wait_seconds)
+                _log.warning("Job %d failed (attempt %d): %s. Retrying in %ds", job.id, job.attempts, e, wait_seconds, exc_info=True)
             
             await job.save()
             await asyncio.sleep(sleep)

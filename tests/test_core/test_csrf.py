@@ -284,3 +284,19 @@ async def test_post_without_session_returns_403():
     mw = CsrfMiddleware(_passthrough_app)
     await mw(scope, await _make_receive(b'_csrf_token=x'), cap.send)
     assert cap.status == 403
+
+
+# ---------------------------------------------------------------------------
+# Body size limit -> 413
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_large_body_returns_413():
+    # 10MB + 1 byte
+    large_body = b'a' * (10 * 1024 * 1024 + 1)
+    scope = _scope('POST', session={}, content_type='application/x-www-form-urlencoded')
+    cap = _Captured()
+    mw = CsrfMiddleware(_passthrough_app)
+    await mw(scope, await _make_receive(large_body), cap.send)
+    assert cap.status == 413
+    assert b'Too Large' in cap.body

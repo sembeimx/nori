@@ -197,3 +197,140 @@ class ArticleController:
 ```
 
 The `admin` role bypasses all permission checks.
+
+---
+
+## OAuth2 Social Login
+
+Nori provides OAuth2 drivers for **Google** and **GitHub** in `services/`. Each driver exposes three functions — no abstraction layer, no registry. The developer calls them explicitly and handles user creation.
+
+### Flow Overview
+
+```
+1. User clicks "Login with Google"
+2. Controller calls get_auth_url() → redirect to provider
+3. Provider authenticates user → redirects to your callback URL
+4. Controller calls handle_callback(code, state) → gets user profile
+5. Developer creates/links user, populates session, redirects
+```
+
+### Configuration (.env)
+
+```env
+# Google — https://console.cloud.google.com/apis/credentials
+GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=your-client-secret
+
+# GitHub — https://github.com/settings/developers
+GITHUB_CLIENT_ID=your-client-id
+GITHUB_CLIENT_SECRET=your-client-secret
+```
+
+### Google Example
+
+```python
+from starlette.requests import Request
+from starlette.responses import RedirectResponse
+from services.oauth_google import get_auth_url, handle_callback
+from core.auth.decorators import load_permissions
+
+class SocialAuthController:
+
+    async def google_login(self, request: Request):
+        url = get_auth_url(
+            request.session,
+            redirect_uri=str(request.url_for('auth.google.callback')),
+        )
+        return RedirectResponse(url)
+
+    async def google_callback(self, request: Request):
+        code = request.query_params.get('code', '')
+        state = request.query_params.get('state', '')
+        if not code:
+            return RedirectResponse('/login?error=oauth_denied')
+
+        try:
+            profile = await handle_callback(
+                request.session,
+                code=code,
+                redirect_uri=str(request.url_for('auth.google.callback')),
+                state=state,
+            )
+        except (ValueError, Exception):
+            return RedirectResponse('/login?error=oauth_failed')
+
+        # Developer handles user creation/linking
+        user = await User.get_or_none(email=profile['email'])
+        if not user:
+            user = await User.create(
+                email=profile['email'],
+                name=profile['name'],
+                password_hash='',  # No password for OAuth users
+            )
+
+        request.session['user_id'] = str(user.id)
+        request.session['role'] = user.role
+        request.session['role_ids'] = [user.role_id]
+        await load_permissions(request.session, user.id)
+        return RedirectResponse('/', status_code=302)
+```
+
+### GitHub Example
+
+```python
+from services.oauth_github import get_auth_url, handle_callback
+
+class SocialAuthController:
+
+    async def github_login(self, request: Request):
+        url = get_auth_url(
+            request.session,
+            redirect_uri=str(request.url_for('auth.github.callback')),
+        )
+        return RedirectResponse(url)
+
+    async def github_callback(self, request: Request):
+        # Same pattern as Google — handle_callback returns:
+        # {id, email, name, avatar_url, login, raw}
+        ...
+```
+
+### Routes
+
+```python
+routes = [
+    Route('/auth/google', endpoint=social.google_login, methods=['GET'], name='auth.google.login'),
+    Route('/auth/google/callback', endpoint=social.google_callback, methods=['GET'], name='auth.google.callback'),
+    Route('/auth/github', endpoint=social.github_login, methods=['GET'], name='auth.github.login'),
+    Route('/auth/github/callback', endpoint=social.github_callback, methods=['GET'], name='auth.github.callback'),
+]
+```
+
+### Security
+
+- **State parameter (CSRF)**: `get_auth_url()` generates a cryptographic state token stored in the session. `handle_callback()` validates and consumes it (single-use). Invalid state raises `ValueError`.
+- **PKCE (Google only)**: Google uses Proof Key for Code Exchange (S256) to prevent authorization code interception. The code verifier is stored in the session and sent during token exchange.
+- **Private emails (GitHub)**: GitHub may return `null` for `email` when the user has email privacy enabled. The driver automatically fetches `/user/emails` and resolves the primary verified email.
+
+### Driver Interface
+
+Both providers follow the same 3-function interface:
+
+| Function | Args | Returns |
+|----------|------|---------|
+| `get_auth_url(session, redirect_uri, scopes?)` | Session dict, callback URL | Authorization URL string |
+| `handle_callback(session, code, redirect_uri, state)` | Session dict, auth code, callback URL, state | Normalized profile dict |
+| `get_user_profile(access_token)` | OAuth access token | Normalized profile dict |
+
+**Google profile**: `{id, email, name, picture, email_verified, raw}`
+**GitHub profile**: `{id, email, name, avatar_url, login, raw}`
+
+### Adding More Providers
+
+Copy any existing driver as a template. The pattern is always:
+
+1. `get_auth_url()` — builds the provider's authorization URL with `generate_state()` from `core.auth.oauth`
+2. `handle_callback()` — validates state, exchanges code for token, fetches profile
+3. `get_user_profile()` — fetches user info with an access token
+
+The core helpers (`generate_state`, `validate_state`, `generate_pkce_verifier`, `get_pkce_verifier`) are available from `core.auth.oauth` for any new provider.

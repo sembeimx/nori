@@ -35,6 +35,11 @@ class _Controller:
     async def with_invalid_type(self, request: Request, num: int = 0):
         return JSONResponse({'num': num, 'type': type(num).__name__})
 
+    @inject()
+    async def with_generic_type(self, request: Request, items: list[int] = None):
+        # Generic types like list[int] should NOT be coerced (passed as raw string from path/query)
+        return JSONResponse({'items': items, 'type': type(items).__name__})
+
 
 ctrl = _Controller()
 
@@ -44,6 +49,7 @@ app = Starlette(routes=[
     Route('/search', endpoint=ctrl.with_query, methods=['GET']),
     Route('/defaults', endpoint=ctrl.with_defaults, methods=['GET']),
     Route('/invalid/{num}', endpoint=ctrl.with_invalid_type, methods=['GET']),
+    Route('/generic/{items}', endpoint=ctrl.with_generic_type, methods=['GET']),
 ])
 
 client = TestClient(app)
@@ -137,3 +143,40 @@ def test_inject_malformed_json_returns_400():
                        headers={'Content-Type': 'application/json'})
     assert resp.status_code == 400
     assert 'error' in resp.json()
+
+
+# ---------------------------------------------------------------------------
+# Whitelist and Generic types
+# ---------------------------------------------------------------------------
+
+def test_inject_generic_type_not_coerced():
+    """Generic types like list[int] are not coerced; raw value is passed."""
+    # If coerced, it would try list[int]('1,2,3') and fail (assigning None or default)
+    # Our fix ensures it stays as '1,2,3' (str)
+    resp = client.get('/generic/1,2,3')
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body['items'] == '1,2,3'
+    assert body['type'] == 'str'
+
+
+def test_inject_non_whitelisted_primitive_not_coerced():
+    """Complex or non-whitelisted types are not coerced."""
+    class Custom:
+        def __init__(self, val): self.val = val
+
+    class DummyController:
+        @inject()
+        async def custom_ctrl(self, request, val: Custom):
+            # type hint is Custom class, not in whitelist
+            return JSONResponse({'val': str(val), 'type': type(val).__name__})
+
+    d_ctrl = DummyController()
+    app_custom = Starlette(routes=[Route('/{val}', endpoint=d_ctrl.custom_ctrl)])
+    client_custom = TestClient(app_custom)
+
+    resp = client_custom.get('/hello')
+    assert resp.status_code == 200
+    # Should be 'hello' (str), not a Custom object
+    assert resp.json()['val'] == 'hello'
+    assert resp.json()['type'] == 'str'
