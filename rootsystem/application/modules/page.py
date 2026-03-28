@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 from starlette.requests import Request
 from core.jinja import templates
+from core.version import __version__ as nori_version
 from settings import DB_ENGINE, DEBUG, THROTTLE_BACKEND, CACHE_BACKEND
 
 
@@ -17,7 +18,7 @@ class PageController:
 
         return templates.TemplateResponse(request, 'home.html', {
             'user_id': request.session.get('user_id'),
-            'nori_version': '1.1.0',
+            'nori_version': nori_version,
             'python_version': python_version,
             'db_engine': DB_ENGINE,
             'debug_mode': DEBUG,

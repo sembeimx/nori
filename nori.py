@@ -1,8 +1,17 @@
 #!/usr/bin/env python3
+from __future__ import annotations
+
 import sys
 import os
 import subprocess
 import argparse
+import json
+import shutil
+import tempfile
+import zipfile
+from datetime import datetime
+from urllib.request import urlopen, Request
+from urllib.error import URLError, HTTPError
 
 _APP_DIR = os.path.join('rootsystem', 'application')
 
@@ -178,6 +187,143 @@ async def run() -> None:
     print(f"Don't forget to register it in seeders/database_seeder.py")
 
 
+_GITHUB_REPO = 'ellery-nori/nori'  # GitHub owner/repo for framework releases
+_CORE_DIR = os.path.join(_APP_DIR, 'core')
+_BACKUP_DIR = os.path.join('rootsystem', '.core_backups')
+
+
+def _get_current_version() -> str:
+    """Read the current framework version from core/version.py."""
+    version_file = os.path.join(_CORE_DIR, 'version.py')
+    if not os.path.exists(version_file):
+        return 'unknown'
+    with open(version_file) as f:
+        for line in f:
+            if line.startswith('__version__'):
+                return line.split('=')[1].strip().strip("'\"")
+    return 'unknown'
+
+
+def _github_api(endpoint: str) -> dict:
+    """Make a GET request to the GitHub API."""
+    url = f'https://api.github.com/repos/{_GITHUB_REPO}/{endpoint}'
+    req = Request(url, headers={
+        'Accept': 'application/vnd.github+json',
+        'User-Agent': 'Nori-Framework-Updater',
+    })
+    token = os.environ.get('GITHUB_TOKEN', '')
+    if token:
+        req.add_header('Authorization', f'Bearer {token}')
+    with urlopen(req) as resp:
+        return json.loads(resp.read())
+
+
+def _download_zip(url: str, dest: str) -> None:
+    """Download a file from a URL to a local path."""
+    req = Request(url, headers={'User-Agent': 'Nori-Framework-Updater'})
+    token = os.environ.get('GITHUB_TOKEN', '')
+    if token:
+        req.add_header('Authorization', f'Bearer {token}')
+    with urlopen(req) as resp, open(dest, 'wb') as f:
+        shutil.copyfileobj(resp, f)
+
+
+def framework_update(target_version: str | None = None, skip_backup: bool = False):
+    """Update the framework core from a GitHub release.
+
+    Downloads the release zip, extracts core/ from it, backs up the
+    current core/, and replaces it with the new version.
+    """
+    current = _get_current_version()
+    print(f"Nori framework:update")
+    print(f"  Current version: {current}")
+
+    # 1. Resolve target version
+    try:
+        if target_version:
+            release = _github_api(f'releases/tags/v{target_version}')
+        else:
+            release = _github_api('releases/latest')
+    except HTTPError as e:
+        if e.code == 404:
+            print(f"\n  Error: {'Version v' + target_version + ' not found' if target_version else 'No releases found'}.")
+            print(f"  Check https://github.com/{_GITHUB_REPO}/releases")
+            return
+        raise
+    except URLError as e:
+        print(f"\n  Error: Could not connect to GitHub — {e.reason}")
+        print("  Check your internet connection or set GITHUB_TOKEN for private repos.")
+        return
+
+    tag = release['tag_name']
+    version = tag.lstrip('v')
+    print(f"  Target version:  {version} ({tag})")
+
+    if version == current:
+        print(f"\n  Already up to date.")
+        return
+
+    # 2. Download the release zip
+    zip_url = release['zipball_url']
+    print(f"\n  Downloading {tag}...")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        zip_path = os.path.join(tmp, 'release.zip')
+        try:
+            _download_zip(zip_url, zip_path)
+        except (URLError, HTTPError) as e:
+            print(f"  Error: Download failed — {e}")
+            return
+
+        # 3. Extract and locate core/ in the zip
+        with zipfile.ZipFile(zip_path) as zf:
+            # GitHub zips have a root folder like "owner-repo-sha/"
+            root_prefix = zf.namelist()[0].split('/')[0] + '/'
+            core_prefix = None
+            for name in zf.namelist():
+                relative = name[len(root_prefix):]
+                if relative.startswith('rootsystem/application/core/'):
+                    core_prefix = root_prefix + 'rootsystem/application/core/'
+                    break
+
+            if not core_prefix:
+                print("  Error: Release zip does not contain rootsystem/application/core/")
+                print("  This release may not be compatible with your project structure.")
+                return
+
+            # Extract core/ to a temp location
+            extract_dir = os.path.join(tmp, 'extracted_core')
+            for member in zf.namelist():
+                if member.startswith(core_prefix) and not member.endswith('/'):
+                    relative_path = member[len(core_prefix):]
+                    dest_path = os.path.join(extract_dir, relative_path)
+                    os.makedirs(os.path.dirname(dest_path), exist_ok=True)
+                    with zf.open(member) as src, open(dest_path, 'wb') as dst:
+                        shutil.copyfileobj(src, dst)
+
+        # 4. Backup current core/
+        if not skip_backup:
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            backup_name = f'core_{current}_{timestamp}'
+            backup_path = os.path.join(_BACKUP_DIR, backup_name)
+            os.makedirs(_BACKUP_DIR, exist_ok=True)
+            print(f"  Backing up current core/ → {backup_path}")
+            shutil.copytree(_CORE_DIR, backup_path)
+
+        # 5. Replace core/
+        print(f"  Replacing core/ with {tag}...")
+        shutil.rmtree(_CORE_DIR)
+        shutil.copytree(extract_dir, _CORE_DIR)
+
+    print(f"\n  Updated: {current} → {version}")
+    print(f"  Run 'python3 nori.py migrate:upgrade' if the new version includes migration changes.")
+
+
+def framework_version():
+    """Show the current framework version."""
+    print(f"Nori v{_get_current_version()}")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Nori CLI")
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
@@ -221,6 +367,14 @@ def main():
     parser_work = subparsers.add_parser("queue:work", help="Run the queue worker")
     parser_work.add_argument("--name", default="default", help="Queue name")
 
+    # Command: framework:update
+    parser_update = subparsers.add_parser("framework:update", help="Update the Nori core from GitHub")
+    parser_update.add_argument("--version", default=None, help="Target version (e.g. 1.3.0). Defaults to latest.")
+    parser_update.add_argument("--no-backup", action="store_true", help="Skip backing up the current core/")
+
+    # Command: framework:version
+    subparsers.add_parser("framework:version", help="Show the current framework version")
+
     args = parser.parse_args()
 
     if args.command == "serve":
@@ -243,6 +397,10 @@ def main():
         db_seed()
     elif args.command == "queue:work":
         queue_work(args.name)
+    elif args.command == "framework:update":
+        framework_update(target_version=args.version, skip_backup=args.no_backup)
+    elif args.command == "framework:version":
+        framework_version()
     else:
         parser.print_help()
 
