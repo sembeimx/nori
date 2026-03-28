@@ -102,8 +102,8 @@ async def test_no_permissions_key_returns_403():
 
 @pytest.mark.asyncio
 async def test_load_permissions_from_db():
-    from models.permission import Permission
-    from models.role import Role
+    from models.framework.permission import Permission
+    from models.framework.role import Role
 
     perm1, _ = await Permission.get_or_create(name='test.read', defaults={'description': 'Read test'})
     perm2, _ = await Permission.get_or_create(name='test.write', defaults={'description': 'Write test'})

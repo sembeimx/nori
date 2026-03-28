@@ -75,6 +75,63 @@ async def test_memory_cache_flush():
     assert await backend.get('b') is None
 
 
+# --- LRU eviction ---
+
+@pytest.mark.asyncio
+async def test_lru_evicts_oldest_when_full():
+    backend = MemoryCacheBackend(max_keys=3)
+    await backend.set('a', 1, ttl=60)
+    await backend.set('b', 2, ttl=60)
+    await backend.set('c', 3, ttl=60)
+    await backend.set('d', 4, ttl=60)  # Evicts 'a'
+    assert await backend.get('a') is None
+    assert await backend.get('b') == 2
+    assert await backend.get('d') == 4
+
+
+@pytest.mark.asyncio
+async def test_lru_get_refreshes_key():
+    backend = MemoryCacheBackend(max_keys=3)
+    await backend.set('a', 1, ttl=60)
+    await backend.set('b', 2, ttl=60)
+    await backend.set('c', 3, ttl=60)
+    await backend.get('a')  # Refresh 'a' — now 'b' is LRU
+    await backend.set('d', 4, ttl=60)  # Evicts 'b', not 'a'
+    assert await backend.get('a') == 1
+    assert await backend.get('b') is None
+
+
+@pytest.mark.asyncio
+async def test_lru_set_existing_refreshes_key():
+    backend = MemoryCacheBackend(max_keys=3)
+    await backend.set('a', 1, ttl=60)
+    await backend.set('b', 2, ttl=60)
+    await backend.set('c', 3, ttl=60)
+    await backend.set('a', 10, ttl=60)  # Update 'a' — now 'b' is LRU
+    await backend.set('d', 4, ttl=60)   # Evicts 'b'
+    assert await backend.get('a') == 10
+    assert await backend.get('b') is None
+
+
+@pytest.mark.asyncio
+async def test_lru_respects_max_keys():
+    backend = MemoryCacheBackend(max_keys=5)
+    for i in range(20):
+        await backend.set(f'key{i}', i, ttl=60)
+    assert len(backend._store) == 5
+    # Only the last 5 should survive
+    for i in range(15):
+        assert await backend.get(f'key{i}') is None
+    for i in range(15, 20):
+        assert await backend.get(f'key{i}') == i
+
+
+@pytest.mark.asyncio
+async def test_lru_default_max_keys():
+    backend = MemoryCacheBackend()
+    assert backend._max_keys == 10_000
+
+
 # --- Convenience functions ---
 
 @pytest.mark.asyncio

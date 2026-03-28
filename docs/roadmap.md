@@ -44,6 +44,9 @@ Current state of Nori and the pieces needed to support production-grade applicat
 | **Search dispatcher** | `core/search.py` with `search()`, `index_document()`, `remove_document()`. No built-in driver — external engines only. Meilisearch example in `services/` |
 | **Security hardening** | `protected_fields` on models to prevent data leaks in `to_dict()`, magic byte verification on uploads (pure Python, no libmagic), JWT secret minimum length (32 chars) enforced at startup |
 | **OAuth2 Social Login** | Google (OpenID Connect + PKCE) and GitHub drivers in `services/`. Core helpers for state CSRF and PKCE in `core/auth/oauth.py`. 3-function interface: `get_auth_url`, `handle_callback`, `get_user_profile` |
+| **Framework Decoupling** | Introduced `core.registry` and `core.conf` to make the core application-agnostic. Models are registered at startup and settings are accessed via a provider. |
+| **Automatic Updates** | `nori.py framework:update` command to pull the latest framework core from GitHub, with automatic backups. |
+| **Core Hardening** | Standardized `from __future__ import annotations` across core. Robust `@inject` with whitelisted type coercion. |
 
 ---
 
@@ -55,7 +58,7 @@ These are not new features — they are gaps in existing subsystems that must be
 
 | Gap | Problem | Fix |
 |-----|---------|-----|
-| **Memory cache unbounded growth** | `MemoryCacheBackend` has no max key limit. Under sustained load, the cache grows until the process runs out of memory (OOM kill). | Add a `max_keys` parameter with LRU eviction. Default to a sensible limit (e.g. 10,000 keys). Document that Redis is strongly recommended for production. |
+| ~~**Memory cache unbounded growth**~~ | ~~`MemoryCacheBackend` has no max key limit.~~ | **Done** — LRU eviction with `max_keys` (default 10,000). Configurable via `CACHE_MAX_KEYS`. Least-recently-used entries evicted on insert. |
 | **Memory backends unsuitable for production** | Both `MemoryCacheBackend` and `MemoryThrottleBackend` lose all state on restart or deploy. Rate limit counters reset, cached data vanishes. With multiple workers (Gunicorn), each process has its own isolated store — rate limits become ineffective. | Add a startup warning when `DEBUG=False` and memory backends are active. Document Redis as the production requirement for cache and rate limiting. |
 
 ### P1 — Fix before real users have accounts

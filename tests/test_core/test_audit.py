@@ -84,7 +84,7 @@ async def test_audit_writes_to_database():
     )
     await task
 
-    from models.audit_log import AuditLog
+    from models.framework.audit_log import AuditLog
     log = await AuditLog.filter(request_id='abc-123').first()
     assert log is not None
     assert log.user_id == 5
@@ -101,7 +101,7 @@ async def test_audit_resolves_user_from_session():
     task = audit(req, 'login')
     await task
 
-    from models.audit_log import AuditLog
+    from models.framework.audit_log import AuditLog
     log = await AuditLog.filter(user_id=99, action='login').first()
     assert log is not None
 
@@ -112,7 +112,7 @@ async def test_audit_explicit_user_id_overrides_session():
     task = audit(req, 'delete', user_id=42)
     await task
 
-    from models.audit_log import AuditLog
+    from models.framework.audit_log import AuditLog
     log = await AuditLog.filter(user_id=42, action='delete').first()
     assert log is not None
 
@@ -123,7 +123,7 @@ async def test_audit_nullable_fields():
     task = audit(req, 'custom_action')
     await task
 
-    from models.audit_log import AuditLog
+    from models.framework.audit_log import AuditLog
     log = await AuditLog.filter(action='custom_action').first()
     assert log is not None
     assert log.user_id is None
@@ -147,7 +147,7 @@ async def test_audit_casts_string_user_id():
     task = audit(req, 'cast_test')
     await task
 
-    from models.audit_log import AuditLog
+    from models.framework.audit_log import AuditLog
     log = await AuditLog.filter(action='cast_test').first()
     assert log is not None
     assert log.user_id == 42
@@ -157,7 +157,7 @@ async def test_audit_casts_string_user_id():
 @pytest.mark.asyncio
 async def test_audit_handles_db_failure(monkeypatch):
     """Exception in _write background task is logged and doesn't crash."""
-    from models.audit_log import AuditLog
+    from models.framework.audit_log import AuditLog
     import core.audit
 
     async def _fail(*args, **kwargs):

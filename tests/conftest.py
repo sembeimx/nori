@@ -24,10 +24,14 @@ async def initialize_tests():
     config = {
         'connections': settings.TORTOISE_ORM['connections'],
         'apps': {
+            'framework': {
+                'models': ['models.framework'],
+                'default_connection': 'default',
+            },
             'models': {
                 'models': ['models', 'test_models'],
                 'default_connection': 'default',
-            }
+            },
         },
     }
     await Tortoise.init(config=config)

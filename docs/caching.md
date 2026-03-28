@@ -9,9 +9,10 @@ Nori provides a pluggable caching layer with TTL (time-to-live) support. Use it 
 | Var | Values | Default |
 |-----|--------|---------|
 | `CACHE_BACKEND` | `memory`, `redis` | `memory` |
+| `CACHE_MAX_KEYS` | Integer (for memory backend) | `10000` |
 | `REDIS_URL` | Redis connection string | `redis://localhost:6379` |
 
-The `memory` backend stores values in-process (fast, but not shared across workers). The `redis` backend shares cache across Gunicorn workers and Docker replicas.
+The `memory` backend stores values in-process using a **Least Recently Used (LRU)** eviction strategy. When the `CACHE_MAX_KEYS` limit is reached, the oldest/least used entries are automatically removed to prevent memory exhaustion.
 
 ---
 
@@ -65,9 +66,13 @@ async def monthly(self, request):
 
 ### MemoryCacheBackend (default)
 
-In-process dictionary with TTL enforcement on read. Zero configuration, ideal for development and single-process deployments.
+In-process LRU cache with TTL enforcement on read. Zero configuration, ideal for development and single-process deployments.
 
-> **Production warning**: Expired entries are only evicted when read — unread keys remain in memory indefinitely. In long-running processes this can cause unbounded memory growth. Additionally, each Gunicorn worker maintains its own isolated cache, so state is not shared. **Use `redis` in production.**
+- **LRU eviction**: When the store reaches `max_keys` (default: 10,000), the least-recently-used entry is evicted on insert. Reads and updates refresh an entry's position.
+- **Configurable limit**: Set `CACHE_MAX_KEYS` in `.env` to override the default (e.g., `CACHE_MAX_KEYS=50000`).
+- **TTL expiry**: Expired entries are evicted lazily on read.
+
+> **Production note**: Each Gunicorn worker maintains its own isolated cache, so state is not shared across workers. **Use `redis` in production** for shared cache and rate limiting.
 
 ### RedisCacheBackend
 

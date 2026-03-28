@@ -1,8 +1,9 @@
-# Register your models here — import AND register in the core registry
-from models.audit_log import AuditLog
-from models.permission import Permission
-from models.role import Role
-from models.job import Job
+# Register your models here — import AND register in the core registry.
+#
+# Framework models (AuditLog, Job, Permission, Role) live in models/framework/
+# and are registered automatically below. Add your own application models after.
+
+from models.framework import AuditLog, Permission, Role, Job
 
 from core.registry import register_model
 

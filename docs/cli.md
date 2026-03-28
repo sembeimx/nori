@@ -21,6 +21,9 @@ python3 nori.py <command> [arguments]
 | `migrate:upgrade` | Apply all pending migrations |
 | `migrate:downgrade` | Roll back migrations |
 | `db:seed` | Run all registered database seeders |
+| `queue:work` | Run the persistent job queue worker |
+| `framework:update` | Update the Nori core from GitHub |
+| `framework:version` | Show the current framework version |
 
 ---
 
@@ -172,6 +175,38 @@ SEEDERS: list[str] = [
 
 ```bash
 python3 nori.py db:seed
+```
+
+---
+
+## Framework Management
+
+Nori 1.2+ includes commands to manage the framework core independently of your application code.
+
+### `framework:update`
+
+Updates the core files in `rootsystem/application/core/` by downloading the latest release from the official GitHub repository.
+
+```bash
+python3 nori.py framework:update
+```
+
+**Options**:
+- `--version <v>`: Update to a specific version (e.g. `1.3.0`).
+- `--no-backup`: Skip the automatic backup of the current `core/` directory.
+
+**Process**:
+1. Verifies the target version on GitHub.
+2. Creates a timestamped backup in `rootsystem/.core_backups/`.
+3. Downloads and extracts the new core files.
+4. Replaces the local `core/` directory.
+
+### `framework:version`
+
+Displays the current version of the Nori core installed in the project.
+
+```bash
+python3 nori.py framework:version
 ```
 
 ---

@@ -30,6 +30,18 @@ The process is the same for all three modules:
 
 Each driver contract is documented below. The core never imports or knows about your custom drivers — registration is explicit and happens at runtime.
 
+### Driver Configuration Access
+
+Custom drivers should access settings via `core.conf.config` to stay consistent with the framework's decoupled architecture:
+
+```python
+from core.conf import config
+
+async def my_handler(...):
+    api_key = config.get('MY_SERVICE_API_KEY')
+    ...
+```
+
 ---
 
 ## File Uploads & Storage (`core.http.upload`)
@@ -474,10 +486,11 @@ Copy any example driver as a starting point. The pattern is always:
 ```python
 # services/mail_my_provider.py
 
-import settings
+from core.conf import config
 from core.mail import register_mail_driver
 
 async def _send(to, subject, body_html, body_text):
+    api_key = config.MY_PROVIDER_API_KEY
     # Your implementation here
     ...
 

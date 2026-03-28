@@ -21,6 +21,7 @@ Usage::
 from __future__ import annotations
 
 import asyncio
+import collections
 import json
 import time
 from abc import ABC, abstractmethod
@@ -64,11 +65,17 @@ class CacheBackend(ABC):
 # ---------------------------------------------------------------------------
 
 class MemoryCacheBackend(CacheBackend):
-    """In-memory cache with TTL (single process)."""
+    """In-memory LRU cache with TTL (single process).
 
-    def __init__(self) -> None:
-        self._store: dict[str, tuple[Any, float]] = {}
+    ``max_keys`` limits the number of stored entries (default: 10,000).
+    When the limit is reached, the least-recently-used entry is evicted.
+    Expired entries are evicted on read (lazy expiration).
+    """
+
+    def __init__(self, max_keys: int = 10_000) -> None:
+        self._store: collections.OrderedDict[str, tuple[Any, float]] = collections.OrderedDict()
         self._lock = asyncio.Lock()
+        self._max_keys = max_keys
 
     async def get(self, key: str) -> Any | None:
         async with self._lock:
@@ -79,12 +86,17 @@ class MemoryCacheBackend(CacheBackend):
             if expires_at and time.time() > expires_at:
                 del self._store[key]
                 return None
+            self._store.move_to_end(key)  # Mark as recently used
             return value
 
     async def set(self, key: str, value: Any, ttl: int = 0) -> None:
         async with self._lock:
             expires_at = (time.time() + ttl) if ttl > 0 else 0.0
+            if key in self._store:
+                self._store.move_to_end(key)
             self._store[key] = (value, expires_at)
+            while len(self._store) > self._max_keys:
+                self._store.popitem(last=False)  # Evict LRU entry
 
     async def delete(self, key: str) -> None:
         async with self._lock:
@@ -179,7 +191,8 @@ def get_backend() -> CacheBackend:
             _log.warning("Redis cache unavailable, falling back to memory")
             _backend = MemoryCacheBackend()
     else:
-        _backend = MemoryCacheBackend()
+        max_keys = int(config.get('CACHE_MAX_KEYS', 10_000))
+        _backend = MemoryCacheBackend(max_keys=max_keys)
 
     return _backend
 

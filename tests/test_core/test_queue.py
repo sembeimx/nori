@@ -15,7 +15,7 @@ from datetime import timedelta
 from tortoise.timezone import now
 from core.queue import push
 from core.queue_worker import work, MAX_ATTEMPTS
-from models.job import Job
+from models.framework.job import Job
 
 
 @pytest.fixture(autouse=True)

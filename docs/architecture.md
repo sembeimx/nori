@@ -14,22 +14,10 @@ Client → Uvicorn (ASGI) → Middleware Stack → Router → Controller Method 
 
 ### Middleware Stack
 
-Middleware is registered in `asgi.py`. Starlette wraps middleware in LIFO order, so the **last registered middleware runs first** during the request phase. Here is the execution order as the request enters:
+Middleware is registered in `asgi.py`. Starlette wraps middleware in order, so the **first registered middleware runs first** during the request phase. Here is the execution order as the request enters:
 
 ```
-Request ──→ CSRF
-              ↓
-           Session
-              ↓
-          CORS (if enabled)
-              ↓
-        Security Headers
-              ↓
-         Request ID
-              ↓
-          Application (Router → Controller)
-              ↓
-         Request ID
+Request ──→ Request ID
               ↓
         Security Headers
               ↓
@@ -38,6 +26,18 @@ Request ──→ CSRF
            Session
               ↓
             CSRF
+              ↓
+          Application (Router → Controller)
+              ↓
+            CSRF
+              ↓
+           Session
+              ↓
+          CORS (if enabled)
+              ↓
+        Security Headers
+              ↓
+         Request ID
               ↓
 Response ←──┘
 ```
@@ -48,17 +48,17 @@ Response ←──┘
 |-----------|--------|---------|
 | **RequestIdMiddleware** | `core.http.request_id` | Generates a UUID per request (or propagates incoming `X-Request-ID`). Stored in `request.state.request_id`. Added to every response as `X-Request-ID` header. Enables end-to-end tracing across logs and services. |
 | **SecurityHeadersMiddleware** | `core.http.security_headers` | Injects security headers on every response: `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `X-XSS-Protection: 1; mode=block`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy: camera=(), microphone=(), geolocation=()`, `Strict-Transport-Security` (HSTS, 1 year). Optional CSP if configured. |
-| **CORSMiddleware** | `starlette.middleware.cors` | Only added if `CORS_ORIGINS` is set in `.env`. Handles `OPTIONS` preflight and adds `Access-Control-*` headers. Allows methods: GET, POST, PUT, PATCH, DELETE, OPTIONS. Allows headers: Content-Type, Authorization, X-CSRF-Token. Credentials: enabled. |
+| **CORSMiddleware** | `starlette.middleware.cors` | Only added if `CORS_ORIGINS` is set in `.env`. Handles `OPTIONS` preflight and adds `Access-Control-*` headers. |
 | **SessionMiddleware** | `starlette.middleware.sessions` | Creates and validates signed session cookies using `SECRET_KEY`. Populates `request.session` as a dict-like object. Required by CSRF, auth decorators, and flash messages. |
 | **CsrfMiddleware** | `core.auth.csrf` | Validates CSRF tokens on state-changing methods (POST, PUT, DELETE, PATCH). Skips safe methods (GET, HEAD, OPTIONS) and JSON requests (`application/json`). Checks `X-CSRF-Token` header first, then `_csrf_token` form field. Auto-generates token if missing. Returns 403 on mismatch, 413 on oversized body (DoS protection, 10 MB limit). |
 
 ### Why This Order Matters
 
-- **Request ID first** (outermost): ensures every log message — including middleware errors — has a trace ID.
+- **Request ID first**: ensures every log message — including middleware errors — has a trace ID.
 - **Security headers early**: guarantees all responses get security headers, even on middleware failures.
 - **CORS before session**: preflight `OPTIONS` requests must be handled before session cookie processing.
 - **Session before CSRF**: CSRF middleware reads `scope['session']` to get/set the CSRF token, so the session must be populated first.
-- **CSRF last** (innermost): processes the request body after all other middleware can read from the request.
+- **CSRF last**: processes the request body after all other middleware can read from the request.
 
 ---
 
@@ -165,6 +165,54 @@ These decorators wrap controller methods and run **before** the method body:
 - `admin` role bypasses all role and permission checks.
 - Permissions must be loaded at login with `await load_permissions(request.session, user.id)`.
 - `@token_required` stores the decoded payload in `request.state.token_payload`.
+
+---
+
+## Decoupling: Registry & Config
+
+Nori 1.2.0 introduced a decoupled architecture to ensure the core remains agnostic to the application structure, facilitating seamless framework updates.
+
+### 1. Model Registry (`core.registry`)
+
+The core never imports models directly from the `models/` directory. Instead, models are registered at application startup and retrieved by name.
+
+**Registration (`models/__init__.py`)**:
+```python
+from core.registry import register_model
+from models.audit_log import AuditLog
+from models.job import Job
+
+register_model('AuditLog', AuditLog)
+register_model('Job', Job)
+```
+
+**Retrieval (`core/audit.py`)**:
+```python
+from core.registry import get_model
+
+AuditLog = get_model('AuditLog')
+await AuditLog.create(...)
+```
+
+This prevents circular dependencies and allows the framework core to be replaced or updated without breaking the application logic.
+
+### 2. Configuration Provider (`core.conf`)
+
+Core modules access settings through a configuration provider instead of importing `settings.py` directly. This allows the core to be distributed as a standalone library.
+
+**Initialization (`asgi.py`)**:
+```python
+import settings
+from core.conf import configure
+configure(settings)
+```
+
+**Usage (`core/auth/jwt.py`)**:
+```python
+from core.conf import config
+
+secret = config.JWT_SECRET
+```
 
 ---
 

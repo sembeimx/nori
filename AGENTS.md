@@ -6,8 +6,9 @@ This document defines the coding standards, architectural patterns, and implemen
 
 ## 1. Core Philosophy
 1. **Keep it Native**: The core (`core.*`) must use no external libraries for Auth, JWT, Validation, Mail dispatch, Storage dispatch, or Tasks. Optional service drivers (`services/*`) may use external libraries for backend integrations (e.g., S3, Resend, Meilisearch).
-2. **Security by Default**: CSRF is mandatory, passwords are hashed with PBKDF2, and sensitive fields are protected in models.
-3. **Convention over Configuration**: Follow the established directory structure and naming patterns without "magic" auto-discovery.
+2. **Decoupled by Design**: The core is agnostic to the application. Use `core.registry` for model access and `core.conf` for configuration. Never import `settings.py` or application models within `core/`.
+3. **Security by Default**: CSRF is mandatory, passwords are hashed with PBKDF2, and sensitive fields are protected in models.
+4. **Convention over Configuration**: Follow the established directory structure and naming patterns without "magic" auto-discovery.
 
 ---
 
@@ -20,11 +21,11 @@ This document defines the coding standards, architectural patterns, and implemen
 
 ---
 
-## 3. Implementation Workflow (The 7-Step Protocol)
+## 3. Implementation Workflow (Nori 1.2+)
 When adding a new feature or module, follow these steps IN ORDER:
 
 1. **Model**: Define fields in `models/name.py`. Inherit from `NoriModelMixin`.
-2. **Register**: Import the model in `rootsystem/application/models/__init__.py`.
+2. **Register**: Import the model in `rootsystem/application/models/__init__.py` AND call `register_model('Name', Name)`.
 3. **Migrate**: `python3 nori.py migrate:make desc` -> `python3 nori.py migrate:upgrade`.
 4. **Controller**: Create class in `modules/name.py`. Use `@inject()` and `validate()`.
 5. **Routes**: Define explicit `Route` or `Mount` in `routes.py` with a unique `name`.

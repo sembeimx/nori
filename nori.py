@@ -95,28 +95,30 @@ def migrate_init():
     )
 
 
-def migrate_make(name):
-    """Create a new migration."""
-    print(f"Creating migration: {name}...")
+def migrate_make(name: str, app: str = 'models'):
+    """Create a new migration for the specified app."""
+    print(f"Creating migration: {name} (app: {app})...")
     subprocess.run(
-        [sys.executable, '-m', 'aerich', 'migrate', '--name', name],
+        [sys.executable, '-m', 'aerich', '--app', app, 'migrate', '--name', name],
         cwd=_APP_DIR,
     )
 
 
-def migrate_upgrade():
-    """Run pending migrations."""
-    print("Running migrations (upgrade)...")
-    subprocess.run(
-        [sys.executable, '-m', 'aerich', 'upgrade'],
-        cwd=_APP_DIR,
-    )
+def migrate_upgrade(app: str | None = None):
+    """Run pending migrations. If app is None, upgrade all apps."""
+    apps = [app] if app else ['framework', 'models']
+    for a in apps:
+        print(f"Running migrations (upgrade) for app: {a}...")
+        subprocess.run(
+            [sys.executable, '-m', 'aerich', '--app', a, 'upgrade'],
+            cwd=_APP_DIR,
+        )
 
 
-def migrate_downgrade(steps=1, delete=False):
-    """Rollback migrations."""
-    print(f"Rolling back {steps} migration(s)...")
-    cmd = [sys.executable, '-m', 'aerich', 'downgrade', '-v', str(steps)]
+def migrate_downgrade(steps: int = 1, delete: bool = False, app: str = 'models'):
+    """Rollback migrations for the specified app."""
+    print(f"Rolling back {steps} migration(s) for app: {app}...")
+    cmd = [sys.executable, '-m', 'aerich', '--app', app, 'downgrade', '-v', str(steps)]
     if delete:
         cmd.append('-d')
     subprocess.run(cmd, cwd=_APP_DIR)
@@ -189,7 +191,16 @@ async def run() -> None:
 
 _GITHUB_REPO = 'ellery-nori/nori'  # GitHub owner/repo for framework releases
 _CORE_DIR = os.path.join(_APP_DIR, 'core')
-_BACKUP_DIR = os.path.join('rootsystem', '.core_backups')
+_FRAMEWORK_MODELS_DIR = os.path.join(_APP_DIR, 'models', 'framework')
+_FRAMEWORK_MIGRATIONS_DIR = os.path.join(_APP_DIR, 'migrations', 'framework')
+_BACKUP_DIR = os.path.join('rootsystem', '.framework_backups')
+
+# Directories owned by the framework — synced on update
+_FRAMEWORK_DIRS = {
+    'rootsystem/application/core/': _CORE_DIR,
+    'rootsystem/application/models/framework/': _FRAMEWORK_MODELS_DIR,
+    'rootsystem/application/migrations/framework/': _FRAMEWORK_MIGRATIONS_DIR,
+}
 
 
 def _get_current_version() -> str:
@@ -275,48 +286,57 @@ def framework_update(target_version: str | None = None, skip_backup: bool = Fals
             print(f"  Error: Download failed — {e}")
             return
 
-        # 3. Extract and locate core/ in the zip
+        # 3. Extract framework directories from the zip
         with zipfile.ZipFile(zip_path) as zf:
             # GitHub zips have a root folder like "owner-repo-sha/"
             root_prefix = zf.namelist()[0].split('/')[0] + '/'
-            core_prefix = None
-            for name in zf.namelist():
-                relative = name[len(root_prefix):]
-                if relative.startswith('rootsystem/application/core/'):
-                    core_prefix = root_prefix + 'rootsystem/application/core/'
-                    break
 
-            if not core_prefix:
+            # Locate each framework directory in the zip
+            extracted: dict[str, str] = {}
+            for zip_rel_path, local_dir in _FRAMEWORK_DIRS.items():
+                full_prefix = root_prefix + zip_rel_path
+                extract_dir = os.path.join(tmp, zip_rel_path.replace('/', '_'))
+                found = False
+                for member in zf.namelist():
+                    if member.startswith(full_prefix) and not member.endswith('/'):
+                        found = True
+                        relative_path = member[len(full_prefix):]
+                        dest_path = os.path.join(extract_dir, relative_path)
+                        os.makedirs(os.path.dirname(dest_path), exist_ok=True)
+                        with zf.open(member) as src, open(dest_path, 'wb') as dst:
+                            shutil.copyfileobj(src, dst)
+                if found:
+                    extracted[local_dir] = extract_dir
+
+            if _CORE_DIR not in extracted:
                 print("  Error: Release zip does not contain rootsystem/application/core/")
                 print("  This release may not be compatible with your project structure.")
                 return
 
-            # Extract core/ to a temp location
-            extract_dir = os.path.join(tmp, 'extracted_core')
-            for member in zf.namelist():
-                if member.startswith(core_prefix) and not member.endswith('/'):
-                    relative_path = member[len(core_prefix):]
-                    dest_path = os.path.join(extract_dir, relative_path)
-                    os.makedirs(os.path.dirname(dest_path), exist_ok=True)
-                    with zf.open(member) as src, open(dest_path, 'wb') as dst:
-                        shutil.copyfileobj(src, dst)
-
-        # 4. Backup current core/
+        # 4. Backup current framework directories
         if not skip_backup:
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            backup_name = f'core_{current}_{timestamp}'
-            backup_path = os.path.join(_BACKUP_DIR, backup_name)
-            os.makedirs(_BACKUP_DIR, exist_ok=True)
-            print(f"  Backing up current core/ → {backup_path}")
-            shutil.copytree(_CORE_DIR, backup_path)
+            backup_root = os.path.join(_BACKUP_DIR, f'v{current}_{timestamp}')
+            os.makedirs(backup_root, exist_ok=True)
+            for local_dir in extracted:
+                if os.path.exists(local_dir):
+                    dir_name = os.path.basename(local_dir)
+                    print(f"  Backing up {local_dir} → {backup_root}/{dir_name}")
+                    shutil.copytree(local_dir, os.path.join(backup_root, dir_name))
 
-        # 5. Replace core/
-        print(f"  Replacing core/ with {tag}...")
-        shutil.rmtree(_CORE_DIR)
-        shutil.copytree(extract_dir, _CORE_DIR)
+        # 5. Replace framework directories
+        for local_dir, extract_dir in extracted.items():
+            label = os.path.relpath(local_dir, _APP_DIR)
+            print(f"  Replacing {label}/ ...")
+            if os.path.exists(local_dir):
+                shutil.rmtree(local_dir)
+            shutil.copytree(extract_dir, local_dir)
 
     print(f"\n  Updated: {current} → {version}")
-    print(f"  Run 'python3 nori.py migrate:upgrade' if the new version includes migration changes.")
+    has_migrations = _FRAMEWORK_MIGRATIONS_DIR in extracted
+    if has_migrations:
+        print(f"  New framework migrations detected.")
+        print(f"  Run: python3 nori.py migrate:upgrade --app framework")
 
 
 def framework_version():
@@ -351,14 +371,17 @@ def main():
     # Command: migrate:make
     p_migrate = subparsers.add_parser("migrate:make", help="Create a new migration")
     p_migrate.add_argument("name", type=str, help="Migration name (e.g. add_users_table)")
+    p_migrate.add_argument("--app", default="models", help="App label: models (default) or framework")
 
     # Command: migrate:upgrade
-    subparsers.add_parser("migrate:upgrade", help="Run pending migrations")
+    p_upgrade = subparsers.add_parser("migrate:upgrade", help="Run pending migrations")
+    p_upgrade.add_argument("--app", default=None, help="App label: models, framework, or omit for both")
 
     # Command: migrate:downgrade
     p_down = subparsers.add_parser("migrate:downgrade", help="Rollback migrations")
     p_down.add_argument("--steps", type=int, default=1, help="Number of migrations to roll back")
     p_down.add_argument("--delete", action="store_true", help="Delete migration files on downgrade")
+    p_down.add_argument("--app", default="models", help="App label: models (default) or framework")
 
     # Command: db:seed
     subparsers.add_parser("db:seed", help="Run database seeders")
@@ -388,11 +411,11 @@ def main():
     elif args.command == "migrate:init":
         migrate_init()
     elif args.command == "migrate:make":
-        migrate_make(args.name)
+        migrate_make(args.name, app=args.app)
     elif args.command == "migrate:upgrade":
-        migrate_upgrade()
+        migrate_upgrade(app=args.app)
     elif args.command == "migrate:downgrade":
-        migrate_downgrade(steps=args.steps, delete=args.delete)
+        migrate_downgrade(steps=args.steps, delete=args.delete, app=args.app)
     elif args.command == "db:seed":
         db_seed()
     elif args.command == "queue:work":

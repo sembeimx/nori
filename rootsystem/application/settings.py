@@ -96,10 +96,13 @@ GOOGLE_CLIENT_SECRET = os.environ.get('GOOGLE_CLIENT_SECRET', '')
 GITHUB_CLIENT_ID = os.environ.get('GITHUB_CLIENT_ID', '')
 GITHUB_CLIENT_SECRET = os.environ.get('GITHUB_CLIENT_SECRET', '')
 
-_model_modules = ['models']
+_framework_models = ['models.framework']
+_app_models = ['models']
+
+_has_aerich = False
 try:
     import aerich  # noqa: F401
-    _model_modules.append('aerich.models')
+    _has_aerich = True
 except ImportError:
     pass
 
@@ -108,10 +111,14 @@ TORTOISE_ORM = {
         'default': _connection,
     },
     'apps': {
-        'models': {
-            'models': _model_modules,
+        'framework': {
+            'models': _framework_models,
             'default_connection': 'default',
-        }
+        },
+        'models': {
+            'models': _app_models + (['aerich.models'] if _has_aerich else []),
+            'default_connection': 'default',
+        },
     },
 }
 
