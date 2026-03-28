@@ -1,6 +1,6 @@
 # Nori Developer Standards & AI Protocol
 
-This document defines the coding standards, architectural patterns, and implementation protocols for the Nori framework. Developers and AI agents MUST adhere to these rules to ensure consistency, security, and maintainability.
+This document defines the coding standards, architectural patterns, and implementation protocols for the Nori framework. Developers and automated workflows MUST adhere to these rules to ensure consistency, security, and maintainability.
 
 ---
 
