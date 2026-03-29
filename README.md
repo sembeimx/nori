@@ -232,28 +232,34 @@ nori/
         ├── asgi.py                  ← ASGI entry point, middleware stack, error handler
         ├── settings.py              ← Configuration (DB, debug, template paths)
         ├── routes.py                ← Named routes, grouped with Mount
-        ├── models/                  ← Tortoise ORM Models
-        │   └── __init__.py          ← Central Model registry
+        ├── models/                  ← Application models
+        │   ├── __init__.py          ← Model registration (App + Framework)
+        │   └── framework/           ← Nori internal models (AuditLog, Job, etc.)
         ├── modules/                 ← Controllers (classes with methods per action)
         │   ├── echo.py              ← WebSockets demo
         │   └── page.py              ← Static pages (home)
-        └── core/                    ← Framework engine
+        └── core/                    ← Framework engine (Independent)
+            ├── conf.py              ← Config provider (Lazy Proxy)
+            ├── registry.py          ← Model registry (Inversion of Control)
             ├── jinja.py             ← Jinja2Templates instance + globals
             ├── logger.py            ← Centralized logger (nori.*)
             ├── collection.py        ← NoriCollection: lists with superpowers
             ├── pagination.py        ← Async paginator for QuerySets
+            ├── queue.py / worker.py ← Persistent Job Queue system
             ├── auth/
             │   ├── security.py      ← PBKDF2 password hashing, tokens
             │   ├── csrf.py          ← CSRF Middleware + helpers
-            │   └── decorators.py    ← @login_required, @require_role, @require_permission
-            ├── audit.py             ← Audit logging (audit(), get_client_ip)
+            │   ├── jwt.py           ← JWT manual implementation
+            │   ├── oauth.py         ← OAuth2 security helpers (PKCE/State)
+            │   └── decorators.py    ← @login_required, @require_role, etc.
+            ├── audit.py             ← Fire-and-forget audit logging
             ├── http/
-            │   ├── inject.py        ← @inject decorator for Dependency Injection
+            │   ├── inject.py        ← @inject decorator for DI
             │   └── validation.py    ← Declarative pipe-separated validation
             └── mixins/
                 ├── model.py         ← NoriModelMixin (to_dict)
-                ├── soft_deletes.py  ← NoriSoftDeletes (delete/restore/force_delete)
-                └── tree.py          ← NoriTreeMixin (trees with recursive CTE)
+                ├── soft_deletes.py  ← NoriSoftDeletes
+                └── tree.py          ← NoriTreeMixin (recursive CTE)
 ```
 
 ---
@@ -313,6 +319,9 @@ Nori includes its own command-line manager at the root to streamline your progra
 | `python3 nori.py migrate:upgrade` | Run pending migrations |
 | `python3 nori.py migrate:downgrade` | Roll back the last migration |
 | `python3 nori.py db:seed` | Run all registered database seeders |
+| `python3 nori.py queue:work` | Run the persistent job queue worker |
+| `python3 nori.py framework:update` | Update Nori core from GitLab |
+| `python3 nori.py framework:version` | Show current framework version |
 4. **Dependency Injection (@inject)**: Forget about manually extracting dictionaries from the request. Use `@inject()` above your controller method and define parameters with native *Type Hints*:
    ```python
    from core.http.inject import inject

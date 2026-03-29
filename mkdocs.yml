@@ -1,6 +1,6 @@
 site_name: Nori Framework
 site_url: https://nori.sembei.mx
-site_description: Opinionated async web framework for Python — Laravel's ergonomics on Starlette's performance.
+site_description: Opinionated async web framework for Python — structured, secure, and lightweight.
 site_author: Sembei
 
 repo_url: https://gitlab.com/sembeimexico/nori
@@ -9,18 +9,16 @@ repo_name: sembeimexico/nori
 theme:
   name: material
   language: en
+  logo: assets/logo.svg
+  favicon: assets/logo.svg
   palette:
     - media: "(prefers-color-scheme: light)"
       scheme: default
-      primary: deep purple
-      accent: amber
       toggle:
         icon: material/brightness-7
         name: Switch to dark mode
     - media: "(prefers-color-scheme: dark)"
       scheme: slate
-      primary: deep purple
-      accent: amber
       toggle:
         icon: material/brightness-4
         name: Switch to light mode
@@ -86,6 +84,9 @@ markdown_extensions:
 
 plugins:
   - search
+
+extra_css:
+  - stylesheets/custom.css
 
 extra:
   social:
