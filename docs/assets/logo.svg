@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120">
+  <!-- Nori: bold wrap around a core — white on colored header -->
+
+  <!-- Wrap ring (nori sheet) with two gaps suggesting motion -->
+  <!-- Top arc -->
+  <path fill="#ffffff" d="
+    M 38 20
+    A 42 42 0 0 1 104 60
+    A 42 42 0 0 1 82 100
+    L 74 88
+    A 28 28 0 0 0 88 60
+    A 28 28 0 0 0 46 32
+    Z
+  "/>
+  <!-- Bottom arc -->
+  <path fill="#ffffff" d="
+    M 82 100
+    A 42 42 0 0 1 16 60
+    A 42 42 0 0 1 38 20
+    L 46 32
+    A 28 28 0 0 0 32 60
+    A 28 28 0 0 0 74 88
+    Z
+  "/>
+
+  <!-- Core circle -->
+  <circle fill="#ffffff" cx="60" cy="60" r="12"/>
+</svg>

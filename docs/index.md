@@ -59,12 +59,13 @@ pytest tests/
 
 ## Key Features
 
-- **Session Auth + JWT** — Login, roles, granular permissions (ACL), brute-force protection
+- **Session Auth + JWT** — Login, roles, granular permissions (ACL), brute-force protection, JWT revocation, session permissions TTL
 - **OAuth2** — Google (OpenID Connect + PKCE) and GitHub drivers included
 - **Declarative Validation** — Pipe-separated syntax: `'required|email|max:255'`
-- **Multi-Driver Services** — Storage, Email, Search, Cache with pluggable backends
+- **Multi-Driver Services** — Storage, Email, Search, Cache with pluggable backends and memory backend guards
 - **Background Tasks** — Volatile (`background()`) and persistent job queues (`push()`)
 - **WebSockets** — Handler base classes with session/JWT auth
+- **Collections** — Chainable `NoriCollection` with filtering, sorting, grouping, and aggregation
 - **Security by Default** — CSRF, security headers, magic byte upload verification, protected fields
 - **CLI Generators** — Scaffold controllers, models, seeders, and migrations
 - **Framework Updates** — `python3 nori.py framework:update` pulls the latest core from GitLab
@@ -78,11 +79,22 @@ pytest tests/
 | **[Architecture](architecture.md)** | Request lifecycle, middleware stack, dependency injection |
 | **[Authentication](authentication.md)** | Sessions, JWT, OAuth2, ACL, brute-force protection |
 | **[Controllers](controllers.md)** | Request handling, `@inject()`, security decorators |
+| **[Routing](routing.md)** | Route definitions, mounts, dot-notation names |
 | **[Database](database.md)** | Tortoise ORM, migrations, soft deletes, tree structures |
+| **[Templates](templates.md)** | Jinja2 views, layouts, CSRF fields |
+| **[Forms & Validation](forms_validation.md)** | Declarative rules, file validation, error handling |
+| **[Collections](collections.md)** | Chainable filtering, sorting, grouping, aggregation |
 | **[Security](security.md)** | CSRF, headers, rate limiting, upload verification, JWT |
 | **[Services](services.md)** | Storage, email, search, audit logging with driver pattern |
+| **[Caching](caching.md)** | Cache drivers and usage patterns |
+| **[Background Tasks](background_tasks.md)** | Volatile tasks and persistent job queues |
+| **[WebSockets](websockets.md)** | Handler base classes with session/JWT auth |
+| **[Flash Messages](flash_messages.md)** | Session-based flash notifications |
+| **[Logging](logging.md)** | Request ID tracing and structured logging |
 | **[Deployment](deployment.md)** | Gunicorn, Apache/Nginx, Docker, sizing guide |
 | **[CLI Reference](cli.md)** | All commands: serve, make:\*, migrate:\*, framework:\* |
+| **[Philosophy](philosophy.md)** | Design principles and framework goals |
+| **[Roadmap](roadmap.md)** | Planned features and development direction |
 
 ---
 
