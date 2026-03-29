@@ -18,3 +18,4 @@ venv/
 .DS_Store
 :memory:
 :memory:-*
+site/
