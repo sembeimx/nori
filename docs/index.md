@@ -73,18 +73,16 @@ pytest tests/
 
 ## Documentation
 
-<div class="grid cards" markdown>
-
--   **[Architecture](architecture.md)** — Request lifecycle, middleware stack, dependency injection
--   **[Authentication](authentication.md)** — Sessions, JWT, OAuth2, ACL, brute-force protection
--   **[Controllers](controllers.md)** — Request handling, `@inject()`, security decorators
--   **[Database](database.md)** — Tortoise ORM, migrations, soft deletes, tree structures
--   **[Security](security.md)** — CSRF, headers, rate limiting, upload verification, JWT
--   **[Services](services.md)** — Storage, email, search, audit logging with driver pattern
--   **[Deployment](deployment.md)** — Gunicorn, Apache/Nginx, Docker, sizing guide
--   **[CLI Reference](cli.md)** — All commands: serve, make:*, migrate:*, framework:*
-
-</div>
+| Section | Description |
+|---------|-------------|
+| **[Architecture](architecture.md)** | Request lifecycle, middleware stack, dependency injection |
+| **[Authentication](authentication.md)** | Sessions, JWT, OAuth2, ACL, brute-force protection |
+| **[Controllers](controllers.md)** | Request handling, `@inject()`, security decorators |
+| **[Database](database.md)** | Tortoise ORM, migrations, soft deletes, tree structures |
+| **[Security](security.md)** | CSRF, headers, rate limiting, upload verification, JWT |
+| **[Services](services.md)** | Storage, email, search, audit logging with driver pattern |
+| **[Deployment](deployment.md)** | Gunicorn, Apache/Nginx, Docker, sizing guide |
+| **[CLI Reference](cli.md)** | All commands: serve, make:\*, migrate:\*, framework:\* |
 
 ---
 

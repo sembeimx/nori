@@ -161,6 +161,21 @@ async def api_profile(self, request: Request):
 
 The decorator reads the `Authorization: Bearer <token>` header. If missing, malformed, or invalid, it returns `401 Unauthorized` as JSON. The token is trimmed and limited to 4096 characters to prevent abuse.
 
+### Token Revocation (Blacklist)
+
+Nori supports token revocation via a blacklist stored in the cache. When a token is revoked, its unique identifier (`jti`) is added to the blacklist until its original expiration time.
+
+```python
+from core.auth.jwt import revoke_token
+
+async def logout(self, request: Request):
+    # Revoke the current JWT
+    await revoke_token(request.state.token_payload)
+    return JSONResponse({'status': 'logged_out'})
+```
+
+The `revoke_token()` function accepts either a raw token string or a decoded payload dictionary.
+
 ---
 
 ## Granular Permissions (ACL)
@@ -197,6 +212,10 @@ class ArticleController:
 ```
 
 The `admin` role bypasses all permission checks.
+
+### Permissions Auto-Refresh
+
+To ensure session security, permissions are cached in the session but automatically refreshed from the database every **5 minutes** (default). This interval is configurable via `PERMISSIONS_TTL` in your settings.
 
 ---
 

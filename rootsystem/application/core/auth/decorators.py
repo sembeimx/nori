@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from functools import wraps
 from typing import Any, Callable
 
@@ -7,7 +8,11 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, RedirectResponse, Response
 
 from core.auth.jwt import verify_token as _verify_token
+from core.conf import config
 from core.registry import get_model
+
+_PERMISSIONS_TTL_KEY = '_permissions_loaded_at'
+_DEFAULT_PERMISSIONS_TTL = 300  # 5 minutes
 
 
 def login_required(func: Callable[..., Any]) -> Callable[..., Any]:
@@ -114,12 +119,17 @@ async def load_permissions(session: dict, user_id: int) -> list[str]:
             if perm.name not in perms:
                 perms.append(perm.name)
     session['permissions'] = perms
+    session[_PERMISSIONS_TTL_KEY] = time.time()
     return perms
 
 
 def require_permission(perm: str) -> Callable[..., Any]:
     """
     Decorator: requires a specific permission. Admin bypasses.
+
+    Permissions are auto-refreshed from the database when the session
+    cache expires (default: 5 minutes, configurable via
+    ``PERMISSIONS_TTL`` in settings).
 
         @require_permission('articles.edit')
         async def edit(self, request): ...
@@ -137,6 +147,13 @@ def require_permission(perm: str) -> Callable[..., Any]:
             user_role = request.session.get('role', 'user')
             if user_role == 'admin':
                 return await func(self, request, *args, **kwargs)
+
+            # Auto-refresh permissions if TTL expired (only if loaded via load_permissions before)
+            loaded_at = request.session.get(_PERMISSIONS_TTL_KEY)
+            if loaded_at is not None:
+                ttl = int(config.get('PERMISSIONS_TTL', _DEFAULT_PERMISSIONS_TTL))
+                if time.time() - loaded_at > ttl:
+                    await load_permissions(request.session, int(user_id))
 
             permissions = request.session.get('permissions', [])
             if perm not in permissions:

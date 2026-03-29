@@ -14,6 +14,7 @@ import base64
 import hashlib
 import hmac
 import json
+import secrets
 import time
 
 from core.conf import config
@@ -76,6 +77,8 @@ def create_token(payload: dict, *, expires_in: int | None = None) -> str:
 
     now = int(time.time())
     payload = {**payload, 'iat': now, 'exp': now + expires_in}
+    if 'jti' not in payload:
+        payload['jti'] = secrets.token_urlsafe(16)
 
     payload_encoded = _base64url_encode(json.dumps(
         payload, separators=(',', ':'),
@@ -127,4 +130,70 @@ def verify_token(token: str) -> dict | None:
     if 'exp' in payload and payload['exp'] < (int(time.time()) - _LEEWAY):
         return None
 
+    # Check blacklist (if jti is present)
+    jti = payload.get('jti')
+    if jti and _is_blacklisted(jti):
+        _log.debug("JWT rejected: jti %s is blacklisted", jti)
+        return None
+
     return payload
+
+
+_BLACKLIST_PREFIX = 'jwt_blacklist:'
+
+
+def _is_blacklisted(jti: str) -> bool:
+    """Check if a jti is in the blacklist (synchronous cache read)."""
+    from core.cache import get_backend
+    backend = get_backend()
+    # Synchronous check: MemoryCacheBackend stores in a dict we can read directly
+    key = f'{_BLACKLIST_PREFIX}{jti}'
+    entry = backend._store.get(key) if hasattr(backend, '_store') else None
+    if entry is None:
+        return False
+    _, expires_at = entry
+    if expires_at and time.time() > expires_at:
+        return False
+    return True
+
+
+async def revoke_token(token_or_payload: str | dict) -> None:
+    """Revoke a JWT by adding its ``jti`` to the blacklist.
+
+    The blacklist entry expires when the token itself would have expired,
+    so the cache doesn't grow indefinitely.
+
+    Args:
+        token_or_payload: A JWT string or an already-decoded payload dict.
+
+    Raises:
+        ValueError: If the token has no ``jti`` claim.
+
+    Usage::
+
+        from core.auth.jwt import revoke_token
+
+        # Revoke by token string
+        await revoke_token(token_string)
+
+        # Revoke by payload (from request.state.token_payload)
+        await revoke_token(request.state.token_payload)
+    """
+    from core.cache import cache_set
+
+    if isinstance(token_or_payload, str):
+        payload = verify_token(token_or_payload)
+        if payload is None:
+            return  # Already invalid/expired, nothing to revoke
+    else:
+        payload = token_or_payload
+
+    jti = payload.get('jti')
+    if not jti:
+        raise ValueError("Cannot revoke a token without a 'jti' claim")
+
+    # TTL = remaining time until expiry (or 1 hour if no exp)
+    exp = payload.get('exp', int(time.time()) + 3600)
+    ttl = max(exp - int(time.time()), 1)
+
+    await cache_set(f'{_BLACKLIST_PREFIX}{jti}', True, ttl=ttl)

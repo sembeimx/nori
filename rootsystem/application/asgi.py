@@ -38,6 +38,19 @@ async def lifespan(app):
     for w in warnings:
         _log.warning("Settings: %s", w)
 
+    # Warn about memory backends in production
+    if not settings.DEBUG:
+        if getattr(settings, 'CACHE_BACKEND', 'memory') == 'memory':
+            _log.warning(
+                "CACHE_BACKEND is 'memory' in production. Cache is not shared across "
+                "workers and will be lost on restart. Set CACHE_BACKEND=redis."
+            )
+        if getattr(settings, 'THROTTLE_BACKEND', 'memory') == 'memory':
+            _log.warning(
+                "THROTTLE_BACKEND is 'memory' in production. Rate limits are not shared "
+                "across workers. Set THROTTLE_BACKEND=redis."
+            )
+
     if settings.DB_ENABLED:
         await Tortoise.init(config=settings.TORTOISE_ORM)
         if settings.DEBUG:

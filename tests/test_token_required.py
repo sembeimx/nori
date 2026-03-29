@@ -107,3 +107,27 @@ async def test_bearer_only_no_token():
     req = FakeRequest(auth_header='Bearer ')
     resp = await ctrl.protected(req)
     assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_blacklisted_token_rejected():
+    """Revoked token is rejected even if valid and not expired."""
+    from core.auth.jwt import revoke_token
+    from core.cache import reset_backend
+
+    reset_backend() # Ensure clean memory cache
+    ctrl = FakeController()
+    token = create_token({'user_id': 99}, expires_in=3600)
+    
+    # 1. Access before revocation
+    req1 = FakeRequest(auth_header=f'Bearer {token}')
+    resp1 = await ctrl.protected(req1)
+    assert resp1.status_code == 200
+
+    # 2. Revoke
+    await revoke_token(token)
+
+    # 3. Access after revocation
+    req2 = FakeRequest(auth_header=f'Bearer {token}')
+    resp2 = await ctrl.protected(req2)
+    assert resp2.status_code == 401
