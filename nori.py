@@ -237,7 +237,7 @@ def _download_zip(url: str, dest: str) -> None:
         shutil.copyfileobj(resp, f)
 
 
-def framework_update(target_version: str | None = None, skip_backup: bool = False):
+def framework_update(target_version: str | None = None, skip_backup: bool = False, force: bool = False):
     """Update the framework core from a GitLab release.
 
     Downloads the release zip, extracts framework directories, backs up
@@ -273,8 +273,8 @@ def framework_update(target_version: str | None = None, skip_backup: bool = Fals
     version = tag.lstrip('v')
     print(f"  Target version:  {version} ({tag})")
 
-    if version == current:
-        print(f"\n  Already up to date.")
+    if version == current and not force:
+        print(f"\n  Already up to date. Use --force to re-install.")
         return
 
     # 2. Download the release zip (GitLab archive endpoint)
@@ -397,6 +397,7 @@ def main():
     parser_update = subparsers.add_parser("framework:update", help="Update the Nori core from GitHub")
     parser_update.add_argument("--version", default=None, help="Target version (e.g. 1.3.0). Defaults to latest.")
     parser_update.add_argument("--no-backup", action="store_true", help="Skip backing up the current core/")
+    parser_update.add_argument("--force", action="store_true", help="Re-install even if already on the target version")
 
     # Command: framework:version
     subparsers.add_parser("framework:version", help="Show the current framework version")
@@ -424,7 +425,7 @@ def main():
     elif args.command == "queue:work":
         queue_work(args.name)
     elif args.command == "framework:update":
-        framework_update(target_version=args.version, skip_backup=args.no_backup)
+        framework_update(target_version=args.version, skip_backup=args.no_backup, force=args.force)
     elif args.command == "framework:version":
         framework_version()
     else:
