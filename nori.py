@@ -8,6 +8,7 @@ import argparse
 import json
 import shutil
 import tempfile
+import textwrap
 import zipfile
 from datetime import datetime
 from urllib.request import urlopen, Request
@@ -344,6 +345,56 @@ def framework_update(target_version: str | None = None, skip_backup: bool = Fals
         print(f"  Run: python3 nori.py migrate:upgrade --app framework")
 
 
+def audit_purge(days: int, export: bool = False, dry_run: bool = False):
+    """Purge audit log entries older than N days."""
+    print(f"Purging audit log entries older than {days} days...")
+    script = textwrap.dedent(f"""\
+        import asyncio, sys, os, csv
+        sys.path.insert(0, '.')
+        import settings
+        from core.conf import configure
+        configure(settings)
+        from tortoise import Tortoise
+        from datetime import datetime, timedelta
+
+        async def _purge():
+            await Tortoise.init(config=settings.TORTOISE_ORM)
+            from core.registry import get_model
+            AuditLog = get_model('AuditLog')
+
+            cutoff = datetime.utcnow() - timedelta(days={days})
+            qs = AuditLog.filter(created_at__lt=cutoff)
+            count = await qs.count()
+
+            if count == 0:
+                print("No entries to purge.")
+                await Tortoise.close_connections()
+                return
+
+            if {dry_run}:
+                print(f"Would purge {{count}} entries older than {days} days.")
+                await Tortoise.close_connections()
+                return
+
+            if {export}:
+                entries = await qs.order_by('created_at').all()
+                filename = f"audit_log_export_{{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}}.csv"
+                with open(filename, 'w', newline='') as f:
+                    writer = csv.writer(f)
+                    writer.writerow(['id', 'user_id', 'action', 'model_name', 'record_id', 'changes', 'ip_address', 'request_id', 'created_at'])
+                    for e in entries:
+                        writer.writerow([e.id, e.user_id, e.action, e.model_name, e.record_id, e.changes, e.ip_address, e.request_id, e.created_at])
+                print(f"Exported {{count}} entries to {{filename}}")
+
+            await qs.delete()
+            print(f"Purged {{count}} audit log entries older than {days} days.")
+            await Tortoise.close_connections()
+
+        asyncio.run(_purge())
+    """)
+    subprocess.run([sys.executable, '-c', script], cwd=_APP_DIR)
+
+
 def framework_version():
     """Show the current framework version."""
     print(f"Nori v{_get_current_version()}")
@@ -404,6 +455,12 @@ def main():
     # Command: framework:version
     subparsers.add_parser("framework:version", help="Show the current framework version")
 
+    # Audit
+    audit_purge_parser = subparsers.add_parser('audit:purge', help='Purge old audit log entries')
+    audit_purge_parser.add_argument('--days', type=int, default=90, help='Delete entries older than N days (default: 90)')
+    audit_purge_parser.add_argument('--export', action='store_true', help='Export to CSV before deleting')
+    audit_purge_parser.add_argument('--dry-run', action='store_true', help='Show count without deleting')
+
     args = parser.parse_args()
 
     if args.command == "serve":
@@ -430,6 +487,8 @@ def main():
         framework_update(target_version=args.version, skip_backup=args.no_backup, force=args.force)
     elif args.command == "framework:version":
         framework_version()
+    elif args.command == 'audit:purge':
+        audit_purge(args.days, export=args.export, dry_run=args.dry_run)
     else:
         parser.print_help()
 

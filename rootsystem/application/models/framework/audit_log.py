@@ -24,3 +24,9 @@ class AuditLog(NoriModelMixin, Model):
     class Meta:
         table = 'audit_logs'
         ordering = ['-created_at']
+        indexes = [
+            ('action',),
+            ('model_name',),
+            ('user_id',),
+            ('created_at',),
+        ]

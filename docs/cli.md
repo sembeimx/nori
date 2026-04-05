@@ -24,6 +24,7 @@ python3 nori.py <command> [arguments]
 | `queue:work` | Run the persistent job queue worker |
 | `framework:update` | Update the Nori core from GitLab |
 | `framework:version` | Show the current framework version |
+| `audit:purge` | Purge old audit log entries |
 
 ---
 
@@ -222,6 +223,34 @@ Displays the current version of the Nori core installed in the project.
 ```bash
 python3 nori.py framework:version
 # Nori v1.2.0
+```
+
+### Audit Log
+
+Purge old entries from the `audit_logs` table. Useful for keeping the database lean in production.
+
+```bash
+# Preview how many entries would be purged
+python3 nori.py audit:purge --days 90 --dry-run
+
+# Export to CSV and purge
+python3 nori.py audit:purge --days 90 --export
+
+# Purge directly (no export)
+python3 nori.py audit:purge --days 90
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--days` | `90` | Delete entries older than N days |
+| `--export` | off | Export matching entries to CSV before deleting |
+| `--dry-run` | off | Show count without deleting |
+
+Recommended cron for production:
+
+```
+# Every Sunday at 3am, purge entries older than 90 days
+0 3 * * 0 cd /path/to/app && python3 nori.py audit:purge --days 90
 ```
 
 ---
