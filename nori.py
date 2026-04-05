@@ -323,9 +323,11 @@ def framework_update(target_version: str | None = None, skip_backup: bool = Fals
             os.makedirs(backup_root, exist_ok=True)
             for local_dir in extracted:
                 if os.path.exists(local_dir):
-                    dir_name = os.path.basename(local_dir)
-                    print(f"  Backing up {local_dir} → {backup_root}/{dir_name}")
-                    shutil.copytree(local_dir, os.path.join(backup_root, dir_name))
+                    rel_path = os.path.relpath(local_dir, _APP_DIR)
+                    backup_dest = os.path.join(backup_root, rel_path)
+                    print(f"  Backing up {local_dir} → {backup_dest}")
+                    os.makedirs(os.path.dirname(backup_dest), exist_ok=True)
+                    shutil.copytree(local_dir, backup_dest)
 
         # 5. Replace framework directories
         for local_dir, extract_dir in extracted.items():
