@@ -381,11 +381,11 @@ python3 nori.py migrate:downgrade --delete                 # Roll back and delet
 
 ## Extending the CLI
 
-The CLI is intentionally simple — a single `nori.py` file using Python's `argparse`. There is no plugin system by design (consistent with "Keep it Native").
+The CLI uses Python's `argparse` with no plugin system by design (consistent with "Keep it Native"). The entry point `nori.py` is a thin bootstrap — all command logic lives in `core/cli.py`, which updates automatically with `framework:update`.
 
 ### Adding a Custom Command
 
-To add your own command, edit `nori.py`:
+To add your own command, edit `rootsystem/application/core/cli.py`:
 
 **Step 1** — Add a handler function:
 

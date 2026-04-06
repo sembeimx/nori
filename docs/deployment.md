@@ -404,6 +404,11 @@ mkdocs serve
 
 Add SSL with Certbot: `sudo certbot --apache -d nori.yourdomain.com`
 
-### GitHub Actions (automatic)
+### Manual deploy
 
-The project includes a GitHub Actions workflow that builds and publishes the docs to GitHub Pages on every push to `main` that changes `docs/` or `mkdocs.yml`.
+Build the docs locally and deploy via rsync (or any method of your choice):
+
+```bash
+mkdocs build --clean
+rsync -avz --delete site/ yourserver:/path/to/docs/
+```
