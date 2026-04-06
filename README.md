@@ -1,5 +1,10 @@
 # Nori
 
+[![Tests](https://github.com/sembeimx/nori/actions/workflows/tests.yml/badge.svg)](https://github.com/sembeimx/nori/actions/workflows/tests.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org)
+[![Version](https://img.shields.io/github/v/release/sembeimx/nori)](https://github.com/sembeimx/nori/releases)
+
 An asynchronous web boilerplate built on **Starlette** and **Tortoise ORM** that preserves the fast, ergonomic development experience inspired by frameworks like Laravel or Nori Engine: a flat file structure, class-based controllers, declarative pipe-separated validation (`required|email|max:255`), authentication decorators, JWT, native CSRF, granular ACL permissions (`@require_permission`), audit logging, an agile collections wrapper (`NoriCollection`), WebSockets, distributed Rate Limiting (Redis), and native utilities for Email sending and file uploads.
 
 ---
