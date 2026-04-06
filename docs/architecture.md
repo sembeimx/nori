@@ -14,7 +14,7 @@ Nori is built on three foundations, each chosen for a specific reason:
 - **Tortoise ORM** — The only Python ORM that is async-native. It doesn't wrap synchronous calls in `run_in_executor` — it speaks async all the way to the database driver. In an async framework, the ORM shouldn't be the piece that blocks the event loop.
 - **Jinja2** — The most widely known Python template engine. No proprietary syntax, no learning curve. If you've used it anywhere else, you already know how it works in Nori.
 
-Everything else — authentication, validation, CSRF, JWT, collections, job queues — is built in pure Python with no external dependencies. The core has three runtime dependencies. The rest is ours to maintain, audit, and understand.
+Everything else — authentication, validation, CSRF, JWT, collections, job queues — is built in pure Python with no external dependencies. These three are the pillars. The remaining dependencies are infrastructure: servers (Uvicorn, Gunicorn), database drivers (asyncmy, asyncpg), form parsing, and environment loading. None of them contain application logic — that part is ours to maintain, audit, and understand.
 
 ---
 
