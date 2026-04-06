@@ -19,3 +19,4 @@ venv/
 :memory:
 :memory:-*
 site/
+.framework_backups/
