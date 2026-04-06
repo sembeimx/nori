@@ -320,7 +320,7 @@ Nori includes its own command-line manager at the root to streamline your progra
 | `python3 nori.py migrate:downgrade` | Roll back the last migration |
 | `python3 nori.py db:seed` | Run all registered database seeders |
 | `python3 nori.py queue:work` | Run the persistent job queue worker |
-| `python3 nori.py framework:update` | Update Nori core from GitLab |
+| `python3 nori.py framework:update` | Update Nori core from GitHub |
 | `python3 nori.py framework:version` | Show current framework version |
 4. **Dependency Injection (@inject)**: Forget about manually extracting dictionaries from the request. Use `@inject()` above your controller method and define parameters with native *Type Hints*:
    ```python

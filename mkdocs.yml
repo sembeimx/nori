@@ -3,8 +3,8 @@ site_url: https://nori.sembei.mx
 site_description: Opinionated async web framework for Python — structured, secure, and lightweight.
 site_author: Sembei
 
-repo_url: https://gitlab.com/sembeimexico/nori
-repo_name: sembeimexico/nori
+repo_url: https://github.com/sembeimx/nori
+repo_name: sembeimx/nori
 
 theme:
   name: material
@@ -36,7 +36,7 @@ theme:
     - content.code.copy
     - content.code.annotate
   icon:
-    repo: fontawesome/brands/gitlab
+    repo: fontawesome/brands/github
 
 nav:
   - Home: index.md
@@ -90,6 +90,6 @@ extra_css:
 
 extra:
   social:
-    - icon: fontawesome/brands/gitlab
-      link: https://gitlab.com/sembeimexico/nori
+    - icon: fontawesome/brands/github
+      link: https://github.com/sembeimx/nori
   generator: false

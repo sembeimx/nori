@@ -404,6 +404,6 @@ mkdocs serve
 
 Add SSL with Certbot: `sudo certbot --apache -d nori.yourdomain.com`
 
-### GitLab CI (automatic)
+### GitHub Actions (automatic)
 
-The project includes `.gitlab-ci.yml` that builds and publishes the docs to GitLab Pages on every push to `main` that changes `docs/` or `mkdocs.yml`.
+The project includes a GitHub Actions workflow that builds and publishes the docs to GitHub Pages on every push to `main` that changes `docs/` or `mkdocs.yml`.

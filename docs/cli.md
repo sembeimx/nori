@@ -22,7 +22,7 @@ python3 nori.py <command> [arguments]
 | `migrate:downgrade` | Roll back migrations |
 | `db:seed` | Run all registered database seeders |
 | `queue:work` | Run the persistent job queue worker |
-| `framework:update` | Update the Nori core from GitLab |
+| `framework:update` | Update the Nori core from GitHub |
 | `framework:version` | Show the current framework version |
 | `audit:purge` | Purge old audit log entries |
 
@@ -186,7 +186,7 @@ Nori 1.2+ includes commands to manage the framework core independently of your a
 
 ### `framework:update`
 
-Updates all framework-owned directories by downloading the latest release from the official GitLab repository.
+Updates all framework-owned directories by downloading the latest release from the official GitHub repository.
 
 ```bash
 python3 nori.py framework:update
@@ -208,13 +208,13 @@ python3 nori.py framework:update --no-backup
 
 **Process**:
 1. Reads current version from `core/version.py`.
-2. Queries the GitLab Releases API for the target version.
+2. Queries the GitHub Releases API for the target version.
 3. Creates a timestamped backup in `rootsystem/.framework_backups/`.
 4. Downloads and extracts the release zip.
 5. Replaces all three framework directories.
 6. If new framework migrations are detected, prompts to run `migrate:upgrade --app framework`.
 
-For private repositories, set `GITLAB_TOKEN` in your environment.
+For private repositories, set `GITHUB_TOKEN` in your environment.
 
 ### `framework:version`
 

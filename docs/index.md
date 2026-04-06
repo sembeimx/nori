@@ -20,7 +20,7 @@ Nori is a full-stack async web framework that makes decisions for you: project s
 
 ```bash
 # Clone and install
-git clone https://gitlab.com/sembeimexico/nori.git my-project
+git clone https://github.com/sembeimx/nori.git my-project
 cd my-project
 pip install -r requirements.txt
 
@@ -68,7 +68,7 @@ pytest tests/
 - **Collections** — Chainable `NoriCollection` with filtering, sorting, grouping, and aggregation
 - **Security by Default** — CSRF, security headers, magic byte upload verification, protected fields
 - **CLI Generators** — Scaffold controllers, models, seeders, and migrations
-- **Framework Updates** — `python3 nori.py framework:update` pulls the latest core from GitLab
+- **Framework Updates** — `python3 nori.py framework:update` pulls the latest core from GitHub
 
 ---
 
