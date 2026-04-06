@@ -2,6 +2,8 @@
 
 Nori abstracts common backend operations into clean, native modules with a consistent **multi-driver** pattern. Each module ships with sensible defaults (local disk, SMTP) and can be extended with custom drivers in `services/` — no modifications to the core required.
 
+Why drivers? Because your production stack is different from your dev machine. Local disk in development, S3 in production. SMTP locally, Resend in the cloud. The interface stays the same — only the backend changes.
+
 ---
 
 ## Architecture: The Driver Pattern

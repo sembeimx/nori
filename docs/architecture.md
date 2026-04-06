@@ -2,6 +2,8 @@
 
 How Nori processes a request from the network socket to the response, including the middleware stack, dependency injection, and error handling.
 
+Understanding how a request flows through Nori helps you debug faster, write better middleware, and know exactly where to put your logic. There's no magic -- just a clear pipeline.
+
 ---
 
 ## Request Lifecycle
@@ -53,6 +55,8 @@ Response ←──┘
 | **CsrfMiddleware** | `core.auth.csrf` | Validates CSRF tokens on state-changing methods (POST, PUT, DELETE, PATCH). Skips safe methods (GET, HEAD, OPTIONS) and JSON requests (`application/json`). Checks `X-CSRF-Token` header first, then `_csrf_token` form field. Auto-generates token if missing. Returns 403 on mismatch, 413 on oversized body (DoS protection, 10 MB limit). |
 
 ### Why This Order Matters
+
+Middleware order matters. Request ID wraps everything because every log line needs a trace. CSRF runs before your code because forged requests should never reach a controller. Session loads early because auth decorators depend on it.
 
 - **Request ID first**: ensures every log message — including middleware errors — has a trace ID.
 - **Security headers early**: guarantees all responses get security headers, even on middleware failures.

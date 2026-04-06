@@ -2,6 +2,8 @@
 
 Nori features a declarative validation engine using pipe-separated rules and a native CSRF protection system for form submissions.
 
+The pipe syntax reads left-to-right like a checklist: required, then email, then max 255 characters. It's composable, compact, and avoids deeply nested dictionaries. One string per field, one glance to understand the rules.
+
 ## Mandatory CSRF Protection
 
 Every form that makes a `POST` request must include a CSRF token. Since `csrf_field` is registered as a Jinja2 global, you can call it directly in your templates — no need to pass it from the controller:

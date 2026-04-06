@@ -2,6 +2,8 @@
 
 Nori provides a production-grade logging system under the `nori` namespace, with support for text and JSON formatters, file rotation, and environment-based configuration.
 
+Logging is invisible until something breaks. Then it is everything. Text format is for humans reading terminals. JSON format is for machines — log aggregators like Datadog or CloudWatch parse structured logs automatically.
+
 ---
 
 ## Configuration (.env)

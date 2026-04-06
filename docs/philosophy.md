@@ -16,6 +16,8 @@ Nori takes a different path: it makes decisions for you (project structure, auth
 
 ## Design principles
 
+These five principles guide every pull request, every code review, and every feature decision. When in doubt, we refer back to them.
+
 ### 1. Keep it native
 The **core framework** (`core/*`) should do as much as possible with pure Python. External dependencies are accepted only when reimplementing them would be irresponsible (cryptography, database drivers, SMTP). JWT, validation, file verification, collections, and pagination are all implemented in-house with zero extra dependencies.
 
@@ -34,6 +36,8 @@ Cache, mail, storage, search, and rate limiting all follow the same pattern: a d
 
 ### 5. Small core, big surface
 The entire framework is ~3,400 lines. Every line is tested. Adding features is welcome; adding complexity is not. A feature earns its place by being used in most projects, not by being clever.
+
+A framework you can read in an afternoon is a framework you can trust. If you can't understand how your auth works by reading the source, something is wrong.
 
 ---
 

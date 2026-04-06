@@ -2,6 +2,8 @@
 
 All routes in Nori are defined in the `rootsystem/application/routes.py` file. The system is built on Starlette's native *router*, offering fast, explicit routing based on asynchronous endpoints.
 
+Every route lives in one file because the entire app's URL surface should be visible at a glance. No routes hidden in decorators across dozens of files. A new developer can open `routes.py` and map the full API in seconds.
+
 ## Route Declaration
 
 To map a URL to a controller, the `Route` class is used. We recommend instantiating controllers as *singletons* at the beginning of the file to keep memory clean and avoid excessive instantiation.

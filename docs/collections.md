@@ -2,6 +2,8 @@
 
 In Nori, iterating over the database is simple. For advanced list manipulation, `NoriCollection` provides a chainable wrapper with filtering, sorting, grouping, and aggregation methods.
 
+Why a collection wrapper when Python has list comprehensions? Because `collect(users).where('role', 'admin').pluck('name')` reads like the business logic you are expressing. Chains are composable, readable, and don't mutate the original data.
+
 ## Collections
 
 If you need to wrap a list and chain list flow manipulation in a few lines of code, simply invoke `collect()`.

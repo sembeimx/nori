@@ -41,6 +41,7 @@ theme:
 nav:
   - Home: index.md
   - Getting Started:
+      - Tutorial: getting_started.md
       - Philosophy: philosophy.md
       - Architecture: architecture.md
       - CLI Reference: cli.md

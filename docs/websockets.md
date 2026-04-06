@@ -2,6 +2,8 @@
 
 Nori offers a native, object-oriented implementation for WebSockets, built on Starlette's asynchronous capabilities. Instead of dealing with loose functions and confusing callbacks, WebSockets in Nori are handled through dedicated classes (Handlers) that encapsulate the connection lifecycle.
 
+The WebSocket lifecycle is: connect, receive messages, disconnect. A class makes this linear and readable. Loose functions with callbacks hide the flow and scatter state across closures.
+
 ## WebSocket Handlers
 
 Handlers must inherit from `WebSocketHandler` or its convenience variant `JsonWebSocketHandler` (located in `core.ws`). `JsonWebSocketHandler` inherits from `WebSocketHandler`, so both share the same lifecycle and configuration.

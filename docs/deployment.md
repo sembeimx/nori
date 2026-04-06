@@ -2,6 +2,8 @@
 
 How to take Nori from development to a production server.
 
+Production is a different environment with different rules. Debug mode off, real database, proper secrets, a process manager that restarts on failure. This guide covers the minimum to ship safely.
+
 ---
 
 ## Environment checklist

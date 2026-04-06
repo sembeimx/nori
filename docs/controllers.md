@@ -2,6 +2,8 @@
 
 Controllers in Nori are the bridge between your Models (Database) and your Views (Templates/JSON). They are written as classes inside `rootsystem/application/modules/` to keep business rules encapsulated and intuitive.
 
+We chose classes over decorated functions because web endpoints rarely exist in isolation. A controller groups related actions, shares helper methods, and gives tests a clear target. One class per resource, one file per class.
+
 ## Naming Conventions
 
 - **Class names**: `PascalCase` with `Controller` suffix (e.g., `ProductController`, `AuthController`). WebSocket handlers use `Handler` suffix instead (e.g., `ChatHandler`).

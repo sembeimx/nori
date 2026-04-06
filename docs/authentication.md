@@ -4,6 +4,8 @@ Nori provides a complete, ready-to-use authentication system that includes sessi
 
 ## Password Hashing (Security)
 
+We use PBKDF2-SHA256 with 100,000 iterations because it's what OWASP recommends and it resists GPU-accelerated attacks. We didn't invent a hashing scheme -- we implemented the one that experts agree on.
+
 To create users or validate manual logins, you must always use the `Security` class provided by the framework in `core.auth.security`.
 
 ```python
@@ -24,6 +26,8 @@ csrf = Security.generate_csrf_token()  # 64 hex characters
 ```
 
 ## Brute-Force Protection (Login Guard)
+
+Strong password hashing is useless if an attacker can guess 1,000 passwords per second. Account lockout after repeated failures is the second line of defense. It's not optional.
 
 Nori includes per-account brute-force protection that locks accounts after repeated failed login attempts, with escalating lockout durations.
 

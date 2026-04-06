@@ -4,6 +4,8 @@ Nori provides two ways to handle background operations:
 1.  **Starlette BackgroundTasks** (Volatile, in-process)
 2.  **Persistent Job Queues** (Database-backed, survives restarts)
 
+Volatile tasks are fast and simple — fire and forget. Persistent queues are slower but survive restarts and retries. We give you both because the tradeoff depends on the job, not the framework.
+
 ---
 
 ## 1. Volatile Background Tasks (`background`)

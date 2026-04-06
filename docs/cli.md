@@ -1,6 +1,8 @@
 # Nori CLI
 
-The Nori CLI (`nori.py`) is the primary tool for development workflows — scaffolding code, managing database migrations, seeding data, and running the dev server. Commands use colon-separated naming (e.g., `make:model`, `migrate:upgrade`).
+The Nori CLI (`nori.py`) is the primary tool for development workflows — scaffolding code, managing database migrations, seeding data, and running the dev server.
+
+Commands use colon-separated naming (`make:model`, `migrate:upgrade`) because they group naturally in your head. Type `make:` and you know what's coming. Type `migrate:` and the scope is clear. It's namespace-like without being verbose.
 
 ```bash
 python3 nori.py <command> [arguments]

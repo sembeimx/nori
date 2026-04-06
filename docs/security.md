@@ -2,6 +2,8 @@
 
 Nori provides multiple layers of security — from HTTP headers and CSRF protection to data-level safeguards in the ORM and file upload pipeline. All security features are enabled by default and require no configuration to activate.
 
+Every security feature in Nori is enabled by default. We don't trust developers to remember to turn things on -- we trust them to turn things off when they have a reason.
+
 ---
 
 ## Security Headers
@@ -208,6 +210,8 @@ The **actual file content** is inspected for known file signatures:
 
 ### Why Magic Bytes Matter
 
+Checking file extensions is security theater. An attacker renames `malware.exe` to `photo.jpg` and hopes you only check the name. Magic byte verification reads the actual file header -- it catches what extensions miss.
+
 An attacker can trivially bypass extension and MIME checks:
 
 1. Rename `malware.exe` → `malware.jpg`
@@ -286,6 +290,8 @@ Security.verify_password('wrong', hashed)         # → False (constant-time)
 - **Format**: `algorithm$iterations$salt$hash` — self-describing, no external state needed.
 
 ---
+
+This page looks long. It's not. It's the minimum for a production web application. Security isn't a feature you bolt on -- it's the foundation everything else stands on.
 
 ## Security Checklist
 

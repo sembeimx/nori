@@ -2,6 +2,8 @@
 
 Nori provides a pluggable caching layer with TTL (time-to-live) support. Use it to cache expensive queries, computed values, or entire HTTP responses.
 
+A single `@cache_response(ttl=60)` on a dashboard endpoint can handle 100x more traffic without touching the database. Cache is the cheapest performance upgrade you can make.
+
 ---
 
 ## Configuration (.env)
@@ -63,6 +65,8 @@ async def monthly(self, request):
 ---
 
 ## Backends
+
+The memory backend works for development and single-process deployments. In production with Gunicorn, each worker has its own memory — use Redis so cache and rate limits are shared across all workers.
 
 ### MemoryCacheBackend (default)
 

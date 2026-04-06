@@ -2,6 +2,8 @@
 
 Nori uses the industry-standard **Jinja2** template system. Each route can respond by rendering an HTML file with variable contextual dictionaries served from the controller.
 
+We chose Jinja2 because it's the most widely known Python template engine. No learning curve, no proprietary syntax. If you've used it anywhere else, you already know how it works in Nori.
+
 The base hierarchy resides in `/rootsystem/templates/`. Templates must be organized in **folders matching the module name**:
 
 ```
