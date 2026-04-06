@@ -19,3 +19,6 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - run: pip install -r requirements.txt
       - run: pytest tests/ -q
+        env:
+          DEBUG: 'true'
+          DB_ENGINE: sqlite
