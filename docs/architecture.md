@@ -2,7 +2,19 @@
 
 How Nori processes a request from the network socket to the response, including the middleware stack, dependency injection, and error handling.
 
-Understanding how a request flows through Nori helps you debug faster, write better middleware, and know exactly where to put your logic. There's no magic -- just a clear pipeline.
+Understanding how a request flows through Nori helps you debug faster, write better middleware, and know exactly where to put your logic. There's no magic — just a clear pipeline.
+
+---
+
+## Why This Stack
+
+Nori is built on three foundations, each chosen for a specific reason:
+
+- **Starlette** — A lightweight ASGI framework that gives us routing, middleware, WebSockets, and test clients without imposing opinions on the rest. It's fast, well-maintained, and stays out of the way. We add the opinions on top.
+- **Tortoise ORM** — The only Python ORM that is async-native. It doesn't wrap synchronous calls in `run_in_executor` — it speaks async all the way to the database driver. In an async framework, the ORM shouldn't be the piece that blocks the event loop.
+- **Jinja2** — The most widely known Python template engine. No proprietary syntax, no learning curve. If you've used it anywhere else, you already know how it works in Nori.
+
+Everything else — authentication, validation, CSRF, JWT, collections, job queues — is built in pure Python with no external dependencies. The core has three runtime dependencies. The rest is ours to maintain, audit, and understand.
 
 ---
 
