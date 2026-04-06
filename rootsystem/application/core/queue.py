@@ -7,8 +7,6 @@ from typing import Callable, Any
 from core.conf import config
 from core.logger import get_logger
 from core.registry import get_model
-from core.tasks import background
-
 _log = get_logger('queue')
 _DRIVERS = {}
 
@@ -23,13 +21,16 @@ async def push(func_path: str, *args, queue: str = 'default', delay: int = 0, **
 
 async def _memory_handler(queue: str, payload: dict, delay: int = 0):
     from core.queue_worker import execute_payload
-    if delay > 0:
-        async def _delayed():
-            await asyncio.sleep(delay)
+
+    async def _run():
+        try:
+            if delay > 0:
+                await asyncio.sleep(delay)
             await execute_payload(payload)
-        background(_delayed)
-    else:
-        background(execute_payload, payload)
+        except Exception as exc:
+            _log.error('Memory queue task failed: %s', exc, exc_info=True)
+
+    asyncio.create_task(_run())
 
 async def _db_handler(queue: str, payload: dict, delay: int = 0):
     if not config.get('DB_ENABLED', False):
