@@ -20,3 +20,6 @@ venv/
 :memory:-*
 site/
 .framework_backups/
+.claude/
+.gemini/
+CLAUDE.md

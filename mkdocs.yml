@@ -89,6 +89,9 @@ extra_css:
   - stylesheets/custom.css
 
 extra:
+  version:
+    provider: mike
+    default: stable
   social:
     - icon: fontawesome/brands/github
       link: https://github.com/sembeimx/nori
