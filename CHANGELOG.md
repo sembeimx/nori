@@ -4,6 +4,13 @@ All notable changes to Nori are documented here. Format follows [Keep a Changelo
 
 ---
 
+## [1.2.4] — 2026-04-08
+
+### Fixed
+- `migrate:fresh` now re-creates the empty database after dropping it, fixing a failure on MySQL/Postgres where `aerich init-db` would error because the database no longer existed.
+
+---
+
 ## [1.2.3] — 2026-04-08
 
 ### Added
@@ -40,6 +47,7 @@ Projects on v1.2.1 or earlier need to manually replace `nori.py` once with the n
 
 ---
 
+[1.2.4]: https://github.com/sembeimx/nori/releases/tag/v1.2.4
 [1.2.3]: https://github.com/sembeimx/nori/releases/tag/v1.2.3
 [1.2.2]: https://github.com/sembeimx/nori/releases/tag/v1.2.2
 [1.2.1]: https://github.com/sembeimx/nori/releases/tag/v1.2.1
