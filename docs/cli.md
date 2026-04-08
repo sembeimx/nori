@@ -21,7 +21,9 @@ python3 nori.py <command> [arguments]
 | `migrate:init` | Initialize the Aerich migration system |
 | `migrate:make <name>` | Create a new migration from model changes |
 | `migrate:upgrade` | Apply all pending migrations (both apps) |
-| `migrate:downgrade` | Roll back migrations |
+| `migrate:downgrade` | Roll back last migration |
+| `migrate:fix` | Fix migration files to current Aerich format |
+| `migrate:fresh` | Drop DB + delete migrations + re-init (dev only) |
 | `db:seed` | Run all registered database seeders |
 | `queue:work` | Run the persistent job queue worker |
 | `framework:update` | Update the Nori core from GitHub |

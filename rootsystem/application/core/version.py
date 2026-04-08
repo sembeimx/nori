@@ -1,5 +1,4 @@
+"""Nori version."""
 from __future__ import annotations
 
-"""Single source of truth for the Nori framework version."""
-
-__version__ = '1.2.2'
+__version__ = '1.2.3'

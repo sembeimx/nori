@@ -4,6 +4,14 @@ All notable changes to Nori are documented here. Format follows [Keep a Changelo
 
 ---
 
+## [1.2.3] — 2026-04-08
+
+### Added
+- `migrate:fix` command to synchronize Aerich migration files with the current model state.
+- `migrate:fresh` command (robust version) to wipe the database, delete application migrations, and re-initialize the system. Includes safety checks for `DEBUG=true` and user confirmation.
+
+---
+
 ## [1.2.2] — 2026-04-06
 
 ### Fixed
@@ -32,5 +40,6 @@ Projects on v1.2.1 or earlier need to manually replace `nori.py` once with the n
 
 ---
 
+[1.2.3]: https://github.com/sembeimx/nori/releases/tag/v1.2.3
 [1.2.2]: https://github.com/sembeimx/nori/releases/tag/v1.2.2
 [1.2.1]: https://github.com/sembeimx/nori/releases/tag/v1.2.1

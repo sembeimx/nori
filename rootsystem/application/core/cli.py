@@ -154,6 +154,81 @@ def migrate_downgrade(steps: int = 1, delete: bool = False, app: str = 'models')
     subprocess.run(cmd, cwd=_APP_DIR)
 
 
+def migrate_fix() -> None:
+    print("Fixing migration files to current Aerich format...")
+    subprocess.run(
+        [sys.executable, '-m', 'aerich', 'fix-migrations'],
+        cwd=_APP_DIR,
+    )
+
+
+def migrate_fresh() -> None:
+    print("\n  Nori migrate:fresh")
+    print("  ------------------")
+
+    # 1. Check for DEBUG=true (safety)
+    script_check = (
+        "import sys, os; sys.path.insert(0, '.'); import settings\n"
+        "print('DEBUG_TRUE' if getattr(settings, 'DEBUG', False) else 'DEBUG_FALSE')"
+    )
+    try:
+        result = subprocess.check_output(
+            [sys.executable, '-c', script_check],
+            cwd=_APP_DIR,
+            stderr=subprocess.STDOUT,
+        ).decode().strip()
+    except subprocess.CalledProcessError as e:
+        print(f"  Error: Could not read settings.py — {e.output.decode().strip()}")
+        return
+
+    if result != 'DEBUG_TRUE':
+        print("  Error: migrate:fresh can only be run when DEBUG=true in settings.py")
+        return
+
+    # 2. Confirm action
+    confirm = input("  This will WIPE the database and reset migrations. Continue? [yes/no]: ")
+    if confirm.lower() != 'yes':
+        print("  Aborted.")
+        return
+
+    # 3. Wipe database (DB-agnostic via Tortoise)
+    print("\n  1. Wiping database tables (DB-agnostic)...")
+    script_drop = (
+        "import asyncio, sys, os\n"
+        "sys.path.insert(0, '.')\n"
+        "import settings\n"
+        "from tortoise import Tortoise\n"
+        "async def _drop():\n"
+        "    await Tortoise.init(config=settings.TORTOISE_ORM)\n"
+        "    # Use internal _drop_databases as the cleanest way to wipe everything\n"
+        "    # in a DB-agnostic manner during development.\n"
+        "    await Tortoise._drop_databases()\n"
+        "    await Tortoise.close_connections()\n"
+        "asyncio.run(_drop())\n"
+    )
+    subprocess.run([sys.executable, '-c', script_drop], cwd=_APP_DIR)
+
+    # 4. Deleting application migrations (preserve framework/)
+    print("  2. Deleting application migrations (models/)...")
+    migrations_dir = os.path.join(_APP_DIR, 'migrations', 'models')
+    if os.path.exists(migrations_dir):
+        shutil.rmtree(migrations_dir)
+        print(f"     Deleted {migrations_dir}")
+
+    # 5. Re-initialize database schema
+    print("  3. Re-initializing database schema...")
+    # Skip 'aerich init' as it may already exist in pyproject.toml
+    subprocess.run(
+        [sys.executable, '-m', 'aerich', 'init-db'],
+        cwd=_APP_DIR,
+    )
+
+    print("  4. Restoring framework tables...")
+    migrate_upgrade(app='framework')
+
+    print("\n  Fresh database ready.")
+
+
 # ---------------------------------------------------------------------------
 # Database
 # ---------------------------------------------------------------------------
@@ -432,6 +507,9 @@ def main() -> None:
     p_down.add_argument("--delete", action="store_true", help="Delete migration files on downgrade")
     p_down.add_argument("--app", default="models", help="App label: models (default) or framework")
 
+    subparsers.add_parser("migrate:fix", help="Fix migration files to current Aerich format")
+    subparsers.add_parser("migrate:fresh", help="Drop DB + delete migrations + re-init (dev only)")
+
     subparsers.add_parser("db:seed", help="Run database seeders")
 
     parser_work = subparsers.add_parser("queue:work", help="Run the queue worker")
@@ -467,6 +545,10 @@ def main() -> None:
         migrate_upgrade(app=args.app)
     elif args.command == "migrate:downgrade":
         migrate_downgrade(steps=args.steps, delete=args.delete, app=args.app)
+    elif args.command == "migrate:fix":
+        migrate_fix()
+    elif args.command == "migrate:fresh":
+        migrate_fresh()
     elif args.command == "db:seed":
         db_seed()
     elif args.command == "queue:work":
