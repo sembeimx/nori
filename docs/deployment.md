@@ -224,6 +224,25 @@ sudo a2ensite nori
 sudo systemctl reload apache2
 ```
 
+### 6. Reverse proxy headers
+
+When Nori runs behind a reverse proxy (Apache, Nginx), the proxy must send the `X-Forwarded-Proto` header so Starlette generates URLs with the correct protocol. Without it, `url_for()` produces `http://` instead of `https://`, causing mixed-content blocking in browsers.
+
+**Apache:**
+
+```apache
+RequestHeader set X-Forwarded-Proto "https"
+RequestHeader set X-Forwarded-For "%{REMOTE_ADDR}s"
+```
+
+**Nginx:**
+
+```nginx
+proxy_set_header X-Forwarded-Proto $scheme;
+proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+proxy_set_header Host $host;
+```
+
 ---
 
 ## Docker
@@ -275,6 +294,17 @@ The included Dockerfile uses a two-stage build to keep the image small:
 2. **Runtime** — copies only the installed packages and application code
 
 The final image runs Gunicorn with the included `gunicorn.conf.py`.
+
+### Docker + UFW
+
+If you run Docker on a server with UFW, use `network_mode: host` in your `docker-compose.yml` to avoid firewall conflicts. Docker modifies iptables directly and bypasses UFW, which can prevent connections between containers and host services (e.g., MySQL).
+
+```yaml
+services:
+  app:
+    build: .
+    network_mode: host
+```
 
 ---
 
