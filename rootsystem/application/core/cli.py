@@ -200,9 +200,11 @@ def migrate_fresh() -> None:
         "from tortoise import Tortoise\n"
         "async def _drop():\n"
         "    await Tortoise.init(config=settings.TORTOISE_ORM)\n"
-        "    # Use internal _drop_databases as the cleanest way to wipe everything\n"
-        "    # in a DB-agnostic manner during development.\n"
         "    await Tortoise._drop_databases()\n"
+        "    # Re-create the empty database (needed for MySQL/Postgres where\n"
+        "    # _drop_databases issues DROP DATABASE).  Mirrors the pattern\n"
+        "    # used by Tortoise's own test runner.\n"
+        "    await Tortoise.init(config=settings.TORTOISE_ORM, _create_db=True)\n"
         "    await Tortoise.close_connections()\n"
         "asyncio.run(_drop())\n"
     )
