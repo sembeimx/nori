@@ -63,6 +63,8 @@ nav:
       - Caching: caching.md
       - WebSockets: websockets.md
       - Logging: logging.md
+  - Testing:
+      - Testing Utilities: testing.md
   - Operations:
       - Deployment: deployment.md
       - Roadmap: roadmap.md

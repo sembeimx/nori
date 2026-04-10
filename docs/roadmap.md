@@ -53,14 +53,9 @@ Implemented. User commands live in `commands/*.py` with `register(subparsers)` +
 
 Added 8 rules: `url`, `date`, `confirmed`, `nullable`, `array`, `min_value`, `max_value`, `regex`. The `unique` rule (async DB check) remains as a future item. See [Forms & Validation](forms_validation.md).
 
-### 4. Testing Utilities for App Developers
+### ~~4. Testing Utilities for App Developers~~ — Done (v1.3.0)
 
-The framework has 417 tests but no helpers for users to test their own apps. A `core.testing` module could provide:
-
-- Pre-configured `httpx.AsyncClient` with the ASGI app mounted
-- Database setup/teardown helpers (Tortoise init + rollback)
-- Factory base class for generating test data
-- `@with_db` decorator for async test functions
+Implemented. `core.testing` provides `create_test_client()`, `setup_test_db()` / `teardown_test_db()`, `authenticate()` / `authenticate_api()`, `ModelFactory` base class, and assertion helpers. See [Testing](testing.md).
 
 ### ~~5. `file_max` Negative Value Bug~~ — Done (v1.3.0)
 
