@@ -4,6 +4,23 @@ All notable changes to Nori are documented here. Format follows [Keep a Changelo
 
 ---
 
+## [1.3.1] — 2026-04-10
+
+### Added
+- **Testing utilities** (`core.testing`): `create_test_client()`, `setup_test_db()` / `teardown_test_db()`, `authenticate()` with signed session cookies, `authenticate_api()`, `ModelFactory` base class, `assert_redirects()` / `assert_json_error()`, `clear_authentication()`.
+- 90 new tests: validation rules (34), Redis queue (8), CLI plugins (11), testing module (26), mail_resend service (4), storage_s3 service (7). Suite: 418 → 508 total.
+- GitHub Actions CI running on Python 3.9, 3.12, and 3.14.
+
+### Fixed
+- `asyncio.iscoroutinefunction` replaced with `inspect.iscoroutinefunction` (deprecated Python 3.14, removed 3.16).
+- `authenticate()` now creates real signed session cookies compatible with `@login_required` and `@require_role` (previously used non-functional `X-Test-*` headers).
+- Session cookie cleared before re-authenticating to avoid duplicates across httpx versions.
+- `datetime.utcnow()` replaced with `tortoise.timezone.now()` in getting_started tutorial seeder.
+- `index.md`: removed hardcoded line count, added venv/.env to Quick Start, added missing features to Key Features section.
+- `.env.example`: added `QUEUE_DRIVER`, `CACHE_MAX_KEYS`, `TRUSTED_PROXIES`, consolidated `REDIS_URL`.
+
+---
+
 ## [1.3.0] — 2026-04-10
 
 ### Added
@@ -78,6 +95,7 @@ Projects on v1.2.1 or earlier need to manually replace `nori.py` once with the n
 
 ---
 
+[1.3.1]: https://github.com/sembeimx/nori/releases/tag/v1.3.1
 [1.3.0]: https://github.com/sembeimx/nori/releases/tag/v1.3.0
 [1.2.5]: https://github.com/sembeimx/nori/releases/tag/v1.2.5
 [1.2.4]: https://github.com/sembeimx/nori/releases/tag/v1.2.4
