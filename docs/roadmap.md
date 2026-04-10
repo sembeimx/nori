@@ -62,9 +62,9 @@ The framework has 417 tests but no helpers for users to test their own apps. A `
 - Factory base class for generating test data
 - `@with_db` decorator for async test functions
 
-### 5. `file_max` Negative Value Bug
+### ~~5. `file_max` Negative Value Bug~~ — Done (v1.3.0)
 
-`_parse_size()` in `validation.py` raises `ValueError` on negative values instead of returning a validation error. This crashes the server instead of gracefully rejecting the rule. Fix: catch `ValueError` in `_check_rule` and return an error message.
+Fixed. `ValueError` from `_parse_size()` is now caught in `_check_rule` and returned as a validation error.
 
 ### 6. OpenAPI / Swagger
 
