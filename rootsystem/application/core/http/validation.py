@@ -26,6 +26,14 @@ _EMAIL_RE = re.compile(
     r'\.[a-zA-Z]{2,}$'
 )
 
+_URL_RE = re.compile(
+    r'^https?://'
+    r'[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?'
+    r'(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)*'
+    r'(:\d{1,5})?'
+    r'(/[^\s]*)?$'
+)
+
 _DEFAULT_MESSAGES = {
     'required': '{field} is required',
     'min': '{field} must be at least {n} characters',
@@ -34,6 +42,14 @@ _DEFAULT_MESSAGES = {
     'numeric': '{field} must be numeric',
     'matches': '{field} must match {param}',
     'in': '{field} must be one of: {options}',
+    'url': '{field} must be a valid URL',
+    'date': '{field} must be a valid date (YYYY-MM-DD)',
+    'confirmed': '{field} confirmation does not match',
+    'nullable': '',
+    'array': '{field} must be a list',
+    'min_value': '{field} must be at least {n}',
+    'max_value': '{field} must be at most {n}',
+    'regex': '{field} format is invalid',
     'file': '{field} must be a valid file',
     'file_max': '{field} exceeds maximum size of {size}',
     'file_types': '{field} must be of type: {types}',
@@ -86,6 +102,10 @@ def validate(
         value = ''
         if value_raw is not None:
             value = str(value_raw)
+
+        # nullable: skip all rules if value is empty/missing
+        if 'nullable' in field_rules and not value.strip():
+            continue
 
         field_errors: list[str] = []
 
@@ -163,6 +183,58 @@ def _check_rule(
         if value and value not in options:
             return _msg(field, rule, messages, options=', '.join(options))
 
+    elif rule == 'url':
+        if value and not _URL_RE.match(value):
+            return _msg(field, rule, messages)
+
+    elif rule == 'date':
+        if value:
+            from datetime import date as _date
+            try:
+                _date.fromisoformat(value)
+            except ValueError:
+                return _msg(field, rule, messages)
+
+    elif rule == 'confirmed':
+        confirm_value = str(data.get(f'{field}_confirmation', ''))
+        if value != confirm_value:
+            return _msg(field, rule, messages)
+
+    elif rule == 'nullable':
+        pass  # handled in the validate() loop
+
+    elif rule == 'array':
+        if value_raw is not None and not isinstance(value_raw, list):
+            return _msg(field, rule, messages)
+
+    elif rule == 'min_value':
+        try:
+            n = float(param)
+        except (ValueError, TypeError):
+            raise ValueError(f"Invalid parameter for 'min_value' rule: '{param}'")
+        if value:
+            try:
+                if float(value) < n:
+                    return _msg(field, rule, messages, n=param)
+            except ValueError:
+                return _msg(field, rule, messages, n=param)
+
+    elif rule == 'max_value':
+        try:
+            n = float(param)
+        except (ValueError, TypeError):
+            raise ValueError(f"Invalid parameter for 'max_value' rule: '{param}'")
+        if value:
+            try:
+                if float(value) > n:
+                    return _msg(field, rule, messages, n=param)
+            except ValueError:
+                return _msg(field, rule, messages, n=param)
+
+    elif rule == 'regex':
+        if value and not re.match(param, value):
+            return _msg(field, rule, messages)
+
     # File validation rules (operate on value_raw)
     elif rule == 'file':
         if value_raw is not None and not hasattr(value_raw, 'filename'):
@@ -170,7 +242,10 @@ def _check_rule(
 
     elif rule == 'file_max':
         if value_raw is not None and hasattr(value_raw, 'filename'):
-            max_bytes = _parse_size(param)
+            try:
+                max_bytes = _parse_size(param)
+            except ValueError:
+                return _msg(field, rule, messages, size=param)
             file_size = getattr(value_raw, 'size', None)
             if file_size is not None and file_size > max_bytes:
                 return _msg(field, rule, messages, size=param)

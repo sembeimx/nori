@@ -61,7 +61,8 @@ class User(NoriModelMixin, Model):
 
 ### Validation Rules (`validate`)
 - `required`, `email`, `numeric`, `matches:field`, `in:a,b`.
-- `min:N`, `max:N`.
+- `min:N`, `max:N`, `min_value:N`, `max_value:N`.
+- `url`, `date`, `confirmed`, `nullable`, `array`, `regex:pattern`.
 - `file`, `file_max:2mb`, `file_types:jpg,png`.
 
 ### Database Mixins

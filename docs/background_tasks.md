@@ -37,7 +37,7 @@ Each element in `background_tasks()` is a `(func, args_tuple, kwargs_dict)` trip
 
 ## 2. Persistent Queues (`push`)
 
-Nori features a robust, multi-driver persistent queue system. Jobs are stored in a database and processed by a background worker. **Use this for critical tasks like bulk emails, PDF generation, or heavy processing.**
+Nori features a robust, multi-driver persistent queue system. Jobs are stored in a database or Redis and processed by a background worker. **Use this for critical tasks like bulk emails, PDF generation, or heavy processing.**
 
 ### Key Robustness Features
 - **Atomic Locking**: Only one worker can process a single job at a time (race-condition free).
@@ -49,7 +49,19 @@ Nori features a robust, multi-driver persistent queue system. Jobs are stored in
 
 | Variable | Values | Description |
 | :--- | :--- | :--- |
-| `QUEUE_DRIVER` | `memory`, `database` | `database` is recommended for production. |
+| `QUEUE_DRIVER` | `memory`, `database`, `redis` | `database` or `redis` for production. |
+| `REDIS_URL` | Redis connection string | Required if using the `redis` driver. Default: `redis://localhost:6379` |
+
+### Driver Comparison
+
+| Feature | `memory` | `database` | `redis` |
+| :--- | :--- | :--- | :--- |
+| **Persistence** | No | Yes (DB) | Yes (Redis) |
+| **Job pickup** | Instant | Polling (3s) | Near-instant (BRPOP) |
+| **Shared across workers** | No | Yes | Yes |
+| **Delayed jobs** | `asyncio.sleep` | `available_at` column | Sorted set (ZADD) |
+| **Dead letters** | No | `failed_at` column | `nori:queue:{name}:failed` list |
+| **Requires** | Nothing | DB + `Job` model | `redis[hiredis]` package |
 
 ### Sending a Job to the Queue
 
@@ -101,7 +113,7 @@ python3 nori.py queue:work --name high_priority
 
 | Feature | `background()` | `push()` |
 | :--- | :--- | :--- |
-| **Persistence** | No (Lost on restart) | **Yes** (Stored in DB) |
+| **Persistence** | No (Lost on restart) | **Yes** (Stored in DB or Redis) |
 | **Retries** | No | **Yes** (Exponential backoff) |
 | **Worker process** | Not needed | **Required** (`queue:work`) |
 | **Atomic** | No | **Yes** (One worker per job) |

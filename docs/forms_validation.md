@@ -78,8 +78,16 @@ async def process_form(self, request: Request):
 | `numeric` | Admits native parseable Integers and Decimals. Rejects `Infinity` and `NaN`. |
 | `matches:field_b` | Full equitable validity cross-check (E.g. `matches:old_password`). |
 | `in:op,op2` | Forcing Static Enums of Options delimited by CSV (E.g.: `in:active,vetoed,suspended`). |
+| `url` | Validates the string is a valid HTTP/HTTPS URL. |
+| `date` | Validates the string is a valid ISO 8601 date (`YYYY-MM-DD`). |
+| `confirmed` | Requires a matching `{field}_confirmation` field in the data (e.g., `password` checks `password_confirmation`). |
+| `nullable` | Allows the field to be empty or missing without triggering any other rules. Place before other rules: `nullable\|email\|max:255`. |
+| `array` | Validates the field value is a list. |
+| `min_value:N` | Validates the numeric value is at least `N` (e.g., `min_value:0`, `min_value:1.5`). Unlike `min`, this checks the **number**, not string length. |
+| `max_value:N` | Validates the numeric value is at most `N` (e.g., `max_value:100`). |
+| `regex:pattern` | Validates the string matches a Python regular expression (e.g., `regex:^[A-Z]{3}$`). |
 | `file` | Validates the field is an uploaded file (has a `filename` attribute). |
-| `file_max:5mb` | Maximum file size. Accepts `mb`, `kb` suffixes or raw bytes (e.g. `file_max:500kb`, `file_max:10485760`). Negative values are rejected. |
+| `file_max:5mb` | Maximum file size. Accepts `mb`, `kb` suffixes or raw bytes (e.g. `file_max:500kb`, `file_max:10485760`). Invalid size values are rejected gracefully. |
 | `file_types:jpg,png` | Restricts the file extension to the given comma-separated list. |
 
 ### Custom Error Messages
