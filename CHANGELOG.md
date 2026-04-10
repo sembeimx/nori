@@ -10,6 +10,8 @@ All notable changes to Nori are documented here. Format follows [Keep a Changelo
 - **Redis queue driver**: `QUEUE_DRIVER=redis` enables near-instant job pickup via BRPOP, delayed jobs via sorted sets, and a dead letter list at `nori:queue:{name}:failed`. The worker auto-dispatches to database or Redis based on config.
 - **CLI plugin system**: Custom commands now live in `commands/*.py` and survive `framework:update`. Each file exports `register(subparsers)` and `handle(args)`. Files prefixed with `_` are skipped. Example provided at `commands/_example.py`.
 - **8 new validation rules**: `url`, `date` (ISO 8601), `confirmed` (field_confirmation pattern), `nullable` (skip all rules if empty), `array`, `min_value:N` / `max_value:N` (numeric range), `regex:pattern`.
+- **Testing utilities** (`core.testing`): `create_test_client()`, `setup_test_db()` / `teardown_test_db()`, `authenticate()` / `authenticate_api()`, `ModelFactory` base class, `assert_redirects()` / `assert_json_error()` assertion helpers.
+- 76 new tests covering all new features (418 → 494 total).
 
 ### Fixed
 - `file_max` validation rule no longer crashes the server on invalid size values — `ValueError` from `_parse_size` is caught and returned as a validation error.
