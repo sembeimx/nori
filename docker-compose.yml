@@ -14,6 +14,8 @@ services:
     environment:
       MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-secret}
       MYSQL_DATABASE: ${DB_NAME:-nori_app}
+      MYSQL_USER: ${DB_USER:-nori_user}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-secret}
     ports:
       - "3306:3306"
     volumes:

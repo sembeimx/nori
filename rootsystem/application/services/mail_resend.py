@@ -14,7 +14,7 @@ Requires: RESEND_API_KEY and MAIL_FROM in settings/.env
 
 import httpx
 
-import settings
+from core.conf import config
 from core.mail import register_mail_driver
 
 
@@ -36,7 +36,7 @@ async def _send_via_resend(
         httpx.HTTPStatusError: If the Resend API returns a non-2xx response.
     """
     payload = {
-        "from": settings.MAIL_FROM,
+        "from": config.MAIL_FROM,
         "to": to,
         "subject": subject,
         "html": body_html,
@@ -47,7 +47,7 @@ async def _send_via_resend(
     async with httpx.AsyncClient() as client:
         resp = await client.post(
             "https://api.resend.com/emails",
-            headers={"Authorization": f"Bearer {settings.RESEND_API_KEY}"},
+            headers={"Authorization": f"Bearer {config.RESEND_API_KEY}"},
             json=payload,
         )
         resp.raise_for_status()

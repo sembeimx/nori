@@ -390,6 +390,8 @@ The CLI uses Python's `argparse` with no plugin system by design (consistent wit
 
 ### Adding a Custom Command
 
+> **Warning**: `core/cli.py` is managed by the framework and will be **overwritten** by `framework:update`. If you add custom commands directly to `core/cli.py`, back them up before updating. A future version may support a plugin directory for user commands.
+
 To add your own command, edit `rootsystem/application/core/cli.py`:
 
 **Step 1** — Add a handler function:

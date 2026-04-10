@@ -42,7 +42,7 @@ from urllib.parse import urlencode
 
 import httpx
 
-import settings
+from core.conf import config
 from core.auth.oauth import generate_state, validate_state
 
 _AUTHORIZE_URL = 'https://github.com/login/oauth/authorize'
@@ -70,7 +70,7 @@ def get_auth_url(
     state = generate_state(session)
 
     params = {
-        'client_id': settings.GITHUB_CLIENT_ID,
+        'client_id': config.GITHUB_CLIENT_ID,
         'redirect_uri': redirect_uri,
         'scope': scopes or _DEFAULT_SCOPES,
         'state': state,
@@ -110,8 +110,8 @@ async def handle_callback(
         token_resp = await client.post(
             _TOKEN_URL,
             data={
-                'client_id': settings.GITHUB_CLIENT_ID,
-                'client_secret': settings.GITHUB_CLIENT_SECRET,
+                'client_id': config.GITHUB_CLIENT_ID,
+                'client_secret': config.GITHUB_CLIENT_SECRET,
                 'code': code,
                 'redirect_uri': redirect_uri,
             },

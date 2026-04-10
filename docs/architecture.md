@@ -186,7 +186,7 @@ These decorators wrap controller methods and run **before** the method body:
 
 ## Decoupling: Registry & Config
 
-Nori 1.2.0 introduced a decoupled architecture to ensure the core remains agnostic to the application structure, facilitating seamless framework updates.
+Nori uses a decoupled architecture to ensure the core remains agnostic to the application structure, facilitating seamless framework updates.
 
 ### 1. Model Registry (`core.registry`)
 

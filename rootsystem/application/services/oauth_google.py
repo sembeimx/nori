@@ -41,7 +41,7 @@ from urllib.parse import urlencode
 
 import httpx
 
-import settings
+from core.conf import config
 from core.auth.oauth import generate_state, validate_state
 from core.auth.oauth import generate_pkce_verifier, get_pkce_verifier
 
@@ -70,7 +70,7 @@ def get_auth_url(
     _verifier, challenge = generate_pkce_verifier(session)
 
     params = {
-        'client_id': settings.GOOGLE_CLIENT_ID,
+        'client_id': config.GOOGLE_CLIENT_ID,
         'redirect_uri': redirect_uri,
         'response_type': 'code',
         'scope': scopes or _DEFAULT_SCOPES,
@@ -115,8 +115,8 @@ async def handle_callback(
 
     async with httpx.AsyncClient() as client:
         token_resp = await client.post(_TOKEN_URL, data={
-            'client_id': settings.GOOGLE_CLIENT_ID,
-            'client_secret': settings.GOOGLE_CLIENT_SECRET,
+            'client_id': config.GOOGLE_CLIENT_ID,
+            'client_secret': config.GOOGLE_CLIENT_SECRET,
             'code': code,
             'redirect_uri': redirect_uri,
             'grant_type': 'authorization_code',

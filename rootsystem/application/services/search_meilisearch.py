@@ -72,7 +72,7 @@ from typing import Any
 
 import httpx
 
-import settings
+from core.conf import config
 from core.search import register_search_driver
 
 
@@ -110,7 +110,7 @@ def _get_headers() -> dict[str, str]:
         Dict with Content-Type and Authorization (if API key is set).
     """
     headers: dict[str, str] = {'Content-Type': 'application/json'}
-    api_key = getattr(settings, 'MEILISEARCH_API_KEY', '')
+    api_key = config.get('MEILISEARCH_API_KEY', '')
     if api_key:
         headers['Authorization'] = f'Bearer {api_key}'
     return headers
@@ -121,7 +121,7 @@ def _get_base_url() -> str:
 
     Defaults to ``http://localhost:7700`` if not configured.
     """
-    return getattr(settings, 'MEILISEARCH_URL', 'http://localhost:7700').rstrip('/')
+    return config.get('MEILISEARCH_URL', 'http://localhost:7700').rstrip('/')
 
 
 async def _search(

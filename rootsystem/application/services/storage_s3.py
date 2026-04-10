@@ -25,7 +25,7 @@ import hashlib
 import hmac
 import datetime
 
-import settings
+from core.conf import config
 from core.http.upload import register_storage_driver
 
 
@@ -122,13 +122,13 @@ async def _store_s3(
         httpx.HTTPStatusError: If the storage API returns a non-2xx
             response.
     """
-    bucket = settings.S3_BUCKET
-    region = getattr(settings, 'S3_REGION', 'us-east-1')
-    access_key = settings.S3_ACCESS_KEY
-    secret_key = settings.S3_SECRET_KEY
+    bucket = config.S3_BUCKET
+    region = config.get('S3_REGION', 'us-east-1')
+    access_key = config.S3_ACCESS_KEY
+    secret_key = config.S3_SECRET_KEY
 
-    endpoint = getattr(settings, 'S3_ENDPOINT', None)
-    url_prefix = getattr(settings, 'S3_URL_PREFIX', None)
+    endpoint = config.get('S3_ENDPOINT', None)
+    url_prefix = config.get('S3_URL_PREFIX', None)
 
     # Build the object key using upload_dir as prefix
     key = f"{upload_dir.strip('/')}/{filename}" if upload_dir else filename
