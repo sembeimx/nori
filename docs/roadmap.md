@@ -10,18 +10,18 @@ Current state of Nori and what's coming next.
 |------|-------------|
 | **HTTP** | Security headers, CORS, sessions, CSRF, rate limiting (pluggable backends), flash messages, Request ID tracing |
 | **Auth** | Login/logout, PBKDF2 password hashing, role decorators, JWT with `@token_required`, granular ACL (`@require_permission`), brute-force protection, OAuth2 (Google + GitHub) |
-| **Validation** | Declarative pipe-separated rules: `required`, `min`, `max`, `email`, `numeric`, `matches`, `in`, `file`, `file_max`, `file_types` |
+| **Validation** | Declarative pipe-separated rules: `required`, `min`, `max`, `email`, `numeric`, `matches`, `in`, `url`, `date`, `confirmed`, `nullable`, `array`, `min_value`, `max_value`, `regex`, `file`, `file_max`, `file_types` |
 | **Database** | Tortoise ORM (MySQL, PostgreSQL, SQLite), soft deletes, tree mixin (recursive CTEs), `to_dict()` with `protected_fields`, Aerich migrations with separate framework/app namespaces |
 | **Storage** | Multi-driver `save_upload()` with extension, MIME, and magic byte verification. Built-in: `local`. Example: `services/storage_s3.py` |
 | **Email** | Multi-driver `send_mail()` with Jinja2 templates. Built-in: `smtp`, `log`. Example: `services/mail_resend.py` |
 | **Search** | Multi-driver dispatcher. No built-in driver (opt-in). Example: `services/search_meilisearch.py` |
 | **Caching** | LRU memory backend (max 10,000 keys) + Redis backend. `@cache_response` decorator |
-| **Background Tasks** | `background()` (volatile) + `push()` (persistent job queue with atomic locking, exponential backoff, dead letters) |
+| **Background Tasks** | `background()` (volatile) + `push()` (persistent job queue with memory, database, and Redis drivers; atomic locking, exponential backoff, dead letters) |
 | **WebSockets** | `WebSocketHandler` and `JsonWebSocketHandler` base classes |
 | **Architecture** | Decoupled core via `core.conf` (config provider) and `core.registry` (model registry). Framework-agnostic to application code |
 | **CLI** | `serve`, `make:controller`, `make:model`, `make:seeder`, `migrate:*`, `db:seed`, `queue:work`, `framework:update`, `framework:version` |
 | **Deployment** | Dockerfile, docker-compose, Gunicorn config, Apache/Nginx examples, MkDocs documentation site |
-| **Tests** | 417 tests (pytest + pytest-asyncio), unit + E2E with httpx |
+| **Tests** | 417+ tests (pytest + pytest-asyncio), unit + E2E with httpx |
 
 ---
 
@@ -41,34 +41,17 @@ All production-critical gaps have been addressed:
 
 ## What's next
 
-### 1. Redis Queue Driver
+### ~~1. Redis Queue Driver~~ — Done (v1.3.0)
 
-The queue system supports `memory` and `database` drivers. A Redis driver would complete the trifecta — cache, throttle, and queue all sharing a single Redis instance in production. The driver interface already exists (`register_queue_driver`), so implementation is a single async handler that pushes/pops from a Redis list with atomic locking.
+Implemented. `QUEUE_DRIVER=redis` with BRPOP for near-instant pickup, delayed jobs via sorted sets, and dead letter list. See [Background Tasks](background_tasks.md).
 
-**Why it matters**: The `database` driver works but polls. Redis gives sub-second job pickup, reduces DB load, and shares state across workers — same reasons we already use it for cache and throttle.
+### ~~2. CLI Plugin System~~ — Done (v1.3.0)
 
-### 2. CLI Plugin System
+Implemented. User commands live in `commands/*.py` with `register(subparsers)` + `handle(args)`. Survive `framework:update`. See [CLI](cli.md#extending-the-cli).
 
-Custom commands currently require editing `core/cli.py`, which gets overwritten by `framework:update`. A plugin system that scans a user-owned directory (e.g., `commands/`) for command modules would decouple user commands from the framework lifecycle.
+### ~~3. Validation: Additional Rules~~ — Done (v1.3.0)
 
-**Proposed approach**: Each file in `commands/` exports a `register(subparsers)` function. `core/cli.py` auto-discovers and calls them after registering built-in commands. No external dependencies, consistent with "Keep it Native".
-
-### 3. Validation: Additional Rules
-
-The validator has 9 rules. Common rules that are missing:
-
-| Rule | Purpose |
-|------|---------|
-| `unique:table,column` | Check DB for uniqueness (requires async, new pattern) |
-| `url` | Validate URL format |
-| `date` | Validate date string (ISO 8601) |
-| `regex:pattern` | Match against a custom regex |
-| `confirmed` | Alias for `matches:field_confirmation` (Laravel convention) |
-| `nullable` | Allow `None`/empty without triggering `required` |
-| `array` | Validate the field is a list |
-| `min_value:N` / `max_value:N` | Numeric range validation (vs. `min`/`max` which check string length) |
-
-Each rule is ~10 lines in `_check_rule()`. The `unique` rule is the only one that requires async DB access, which would need a design decision on how `validate()` handles async rules.
+Added 8 rules: `url`, `date`, `confirmed`, `nullable`, `array`, `min_value`, `max_value`, `regex`. The `unique` rule (async DB check) remains as a future item. See [Forms & Validation](forms_validation.md).
 
 ### 4. Testing Utilities for App Developers
 

@@ -4,6 +4,18 @@ All notable changes to Nori are documented here. Format follows [Keep a Changelo
 
 ---
 
+## [1.3.0] — 2026-04-10
+
+### Added
+- **Redis queue driver**: `QUEUE_DRIVER=redis` enables near-instant job pickup via BRPOP, delayed jobs via sorted sets, and a dead letter list at `nori:queue:{name}:failed`. The worker auto-dispatches to database or Redis based on config.
+- **CLI plugin system**: Custom commands now live in `commands/*.py` and survive `framework:update`. Each file exports `register(subparsers)` and `handle(args)`. Files prefixed with `_` are skipped. Example provided at `commands/_example.py`.
+- **8 new validation rules**: `url`, `date` (ISO 8601), `confirmed` (field_confirmation pattern), `nullable` (skip all rules if empty), `array`, `min_value:N` / `max_value:N` (numeric range), `regex:pattern`.
+
+### Fixed
+- `file_max` validation rule no longer crashes the server on invalid size values — `ValueError` from `_parse_size` is caught and returned as a validation error.
+
+---
+
 ## [1.2.5] — 2026-04-10
 
 ### Fixed
@@ -64,6 +76,7 @@ Projects on v1.2.1 or earlier need to manually replace `nori.py` once with the n
 
 ---
 
+[1.3.0]: https://github.com/sembeimx/nori/releases/tag/v1.3.0
 [1.2.5]: https://github.com/sembeimx/nori/releases/tag/v1.2.5
 [1.2.4]: https://github.com/sembeimx/nori/releases/tag/v1.2.4
 [1.2.3]: https://github.com/sembeimx/nori/releases/tag/v1.2.3
