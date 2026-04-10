@@ -70,7 +70,7 @@ class ProtectedChatHandler(JsonWebSocketHandler):
         websocket.state.user_id = user_id
         await websocket.send_json({"event": "welcome", "user_id": user_id})
 
-    async def on_receive(self, websocket, data: dict):
+    async def on_receive_json(self, websocket, data: dict):
         user_id = websocket.state.user_id
         await websocket.send_json({"from": user_id, "message": data.get("message")})
 ```

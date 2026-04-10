@@ -26,7 +26,7 @@ return JSONResponse({'ok': True}, background=task)
 
 ## 2. Persistent Queues (`push`)
 
-Nori features a robust, multi-driver persistent queue system. Jobs are stored in a database (or Redis) and processed by a background worker. **Use this for critical tasks like bulk emails, PDF generation, or heavy processing.**
+Nori features a robust, multi-driver persistent queue system. Jobs are stored in a database and processed by a background worker. **Use this for critical tasks like bulk emails, PDF generation, or heavy processing.**
 
 ### Key Robustness Features
 - **Atomic Locking**: Only one worker can process a single job at a time (race-condition free).
@@ -38,8 +38,7 @@ Nori features a robust, multi-driver persistent queue system. Jobs are stored in
 
 | Variable | Values | Description |
 | :--- | :--- | :--- |
-| `QUEUE_DRIVER` | `memory`, `database`, `redis` | `database` is recommended for production. |
-| `REDIS_URL` | Redis URL | Required if using the `redis` driver. |
+| `QUEUE_DRIVER` | `memory`, `database` | `database` is recommended for production. |
 
 ### Sending a Job to the Queue
 
@@ -91,7 +90,7 @@ python3 nori.py queue:work --name high_priority
 
 | Feature | `background()` | `push()` |
 | :--- | :--- | :--- |
-| **Persistence** | No (Lost on restart) | **Yes** (Stored in DB/Redis) |
+| **Persistence** | No (Lost on restart) | **Yes** (Stored in DB) |
 | **Retries** | No | **Yes** (Exponential backoff) |
 | **Worker process** | Not needed | **Required** (`queue:work`) |
 | **Atomic** | No | **Yes** (One worker per job) |

@@ -66,11 +66,13 @@ from core.http.validation import validate
 class ArticleController:
 
     @inject()
-    async def store(self, request: Request, title: str, category_id: int, draft: bool = False) -> Response:
-        errors = validate({'title': title}, {'title': 'required|min:3'})
+    async def store(self, request: Request, form: dict, article_id: int, draft: bool = False) -> Response:
+        errors = validate(form, {'title': 'required|min:3'})
         if errors:
             return templates.TemplateResponse(request, 'articles/create.html', {'errors': errors})
-        # title, category_id, and draft are resolved from form/JSON/query automatically
+        # form: entire request body as dict (JSON or form-encoded)
+        # article_id: resolved from path param /articles/{article_id}
+        # draft: resolved from query param ?draft=true, defaults to False
         ...
 ```
 
@@ -78,11 +80,14 @@ class ArticleController:
 
 For each parameter in the method signature (after `self` and `request`):
 
-1. **Form data / JSON body** — checked first (POST/PUT/PATCH requests)
-2. **Path parameters** — from the URL (e.g., `{id:int}`)
-3. **Query parameters** — from the query string (e.g., `?page=2`)
+1. **`form` / `dict` annotation** — if the parameter is named `form` or annotated as `dict`, it receives the entire parsed request body (JSON or form data)
+2. **Path parameters** — from the URL (e.g., `{article_id:int}`)
+3. **Query parameters** — from the query string (e.g., `?draft=true`)
+4. **Default value** — the parameter's default, or `None` if none of the above matched
 
-If the parameter has a type annotation (e.g., `int`, `float`), `@inject()` attempts to cast the value. If casting fails, the parameter receives its default value or `None`.
+If the parameter has a type annotation (`int`, `float`, `str`, `bool`), `@inject()` attempts to cast the value. If casting fails, the parameter receives its default value or `None`.
+
+> **Important**: `@inject` does **not** extract individual fields from the request body. To access form fields, use a `form: dict` parameter and read keys from it (e.g., `form['title']`). Individual typed parameters like `article_id: int` are resolved only from path or query parameters.
 
 > **Limitation**: Type coercion works with simple types (`int`, `float`, `str`, `bool`). Complex generic types like `list[int]` or `dict[str, Any]` are not supported — the raw string value will be passed or the default will be used. Parse these manually from `request.json()` or `request.form()`.
 

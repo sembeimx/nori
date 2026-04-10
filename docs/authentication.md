@@ -125,9 +125,9 @@ class DashboardController:
 ```
 
 **Decorator Behavior:**
-Depending on what the client tried to access, they act smartly (Content Negotiation via `Accept` Header):
-* If the client is a browser (`Content-Type` HTML), they transparently redirect to `/login` (302) or `/forbidden` (403).
-* If the client is pure Fetch/AJAX HTTP (`application/json`), they throw standard JSON dictionaries `{"error": "Unauthorized"}` with HTTP codes `401` and `403`.
+Depending on what the client tried to access, they act smartly (Content Negotiation via `Accept` header):
+* If the `Accept` header does **not** include `application/json` (i.e., a browser), they transparently redirect to `/login` (302) or `/forbidden` (403).
+* If the `Accept` header includes `application/json` (Fetch/AJAX), they return standard JSON responses `{"error": "Unauthorized"}` with HTTP codes `401` and `403`.
 
 ---
 
