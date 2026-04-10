@@ -8,7 +8,6 @@
 
 Nori is a full-stack async web framework that makes decisions for you: project structure, authentication, validation, controllers, and CLI generators — all built-in, all async-native.
 
-- **~5,000 lines of core** — small enough to read, big enough to ship
 - **Built-in auth + ACL** — sessions, JWT, OAuth2, roles, granular permissions
 - **Tortoise ORM** — async database layer with migrations
 - **CLI generators + plugin system** — scaffold controllers, models, seeders; extend with your own commands
