@@ -41,14 +41,56 @@ All production-critical gaps have been addressed:
 
 ## What's next
 
-### 1. OpenAPI / Swagger
+### 1. Redis Queue Driver
+
+The queue system supports `memory` and `database` drivers. A Redis driver would complete the trifecta — cache, throttle, and queue all sharing a single Redis instance in production. The driver interface already exists (`register_queue_driver`), so implementation is a single async handler that pushes/pops from a Redis list with atomic locking.
+
+**Why it matters**: The `database` driver works but polls. Redis gives sub-second job pickup, reduces DB load, and shares state across workers — same reasons we already use it for cache and throttle.
+
+### 2. CLI Plugin System
+
+Custom commands currently require editing `core/cli.py`, which gets overwritten by `framework:update`. A plugin system that scans a user-owned directory (e.g., `commands/`) for command modules would decouple user commands from the framework lifecycle.
+
+**Proposed approach**: Each file in `commands/` exports a `register(subparsers)` function. `core/cli.py` auto-discovers and calls them after registering built-in commands. No external dependencies, consistent with "Keep it Native".
+
+### 3. Validation: Additional Rules
+
+The validator has 9 rules. Common rules that are missing:
+
+| Rule | Purpose |
+|------|---------|
+| `unique:table,column` | Check DB for uniqueness (requires async, new pattern) |
+| `url` | Validate URL format |
+| `date` | Validate date string (ISO 8601) |
+| `regex:pattern` | Match against a custom regex |
+| `confirmed` | Alias for `matches:field_confirmation` (Laravel convention) |
+| `nullable` | Allow `None`/empty without triggering `required` |
+| `array` | Validate the field is a list |
+| `min_value:N` / `max_value:N` | Numeric range validation (vs. `min`/`max` which check string length) |
+
+Each rule is ~10 lines in `_check_rule()`. The `unique` rule is the only one that requires async DB access, which would need a design decision on how `validate()` handles async rules.
+
+### 4. Testing Utilities for App Developers
+
+The framework has 417 tests but no helpers for users to test their own apps. A `core.testing` module could provide:
+
+- Pre-configured `httpx.AsyncClient` with the ASGI app mounted
+- Database setup/teardown helpers (Tortoise init + rollback)
+- Factory base class for generating test data
+- `@with_db` decorator for async test functions
+
+### 5. `file_max` Negative Value Bug
+
+`_parse_size()` in `validation.py` raises `ValueError` on negative values instead of returning a validation error. This crashes the server instead of gracefully rejecting the rule. Fix: catch `ValueError` in `_check_rule` and return an error message.
+
+### 6. OpenAPI / Swagger
 
 Auto-generated API docs from route definitions. Pipe-separated validation (`'required|email|max:255'`) doesn't map cleanly to OpenAPI schemas — may require optional type metadata on routes.
 
-### 2. Internationalization (i18n)
+### 7. Internationalization (i18n)
 
-Translation support for templates and validation messages. Bilingual documentation site (EN/ES).
+Translation support for templates and validation messages. The `messages=` parameter in `validate()` is a first step — a full i18n system would load messages from locale files and resolve them automatically. Bilingual documentation site (EN/ES).
 
-### 3. Admin Panel
+### 8. Admin Panel
 
 Leverage `core.registry` to auto-discover registered models. Visual interface for AuditLog inspection, Job queue status, and basic CRUD.
