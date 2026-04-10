@@ -5,7 +5,9 @@ import sys
 import os
 import subprocess
 import argparse
+import importlib
 import json
+import pathlib
 import shutil
 import tempfile
 import textwrap
@@ -475,6 +477,58 @@ def framework_version() -> None:
 
 
 # ---------------------------------------------------------------------------
+# User command plugins
+# ---------------------------------------------------------------------------
+
+def _load_user_commands(subparsers) -> dict:
+    """Discover and load user commands from the commands/ directory.
+
+    Each Python file in ``commands/`` (excluding ``__init__.py`` and files
+    starting with ``_``) must define a ``register(subparsers)`` function
+    that adds one or more subparsers, and a ``handle(args)`` function
+    that executes the command.
+
+    Returns a dict mapping command names to their handle functions.
+    """
+    handlers: dict = {}
+    commands_dir = pathlib.Path('commands')
+
+    if not commands_dir.is_dir():
+        return handlers
+
+    for filepath in sorted(commands_dir.glob('*.py')):
+        if filepath.name.startswith('_') or filepath.name == '__init__.py':
+            continue
+
+        module_name = f'commands.{filepath.stem}'
+        try:
+            module = importlib.import_module(module_name)
+        except Exception as exc:
+            print(f"  Warning: failed to load command '{filepath.name}': {exc}")
+            continue
+
+        register_fn = getattr(module, 'register', None)
+        handle_fn = getattr(module, 'handle', None)
+        if register_fn is None or handle_fn is None:
+            print(f"  Warning: '{filepath.name}' missing register() or handle() — skipped")
+            continue
+
+        # Capture registered command names by comparing before/after
+        before = set(subparsers._name_parser_map.keys()) if hasattr(subparsers, '_name_parser_map') else set()
+        try:
+            register_fn(subparsers)
+        except Exception as exc:
+            print(f"  Warning: register() in '{filepath.name}' failed: {exc}")
+            continue
+        after = set(subparsers._name_parser_map.keys()) if hasattr(subparsers, '_name_parser_map') else set()
+
+        for cmd_name in after - before:
+            handlers[cmd_name] = handle_fn
+
+    return handlers
+
+
+# ---------------------------------------------------------------------------
 # CLI entry point
 # ---------------------------------------------------------------------------
 
@@ -529,6 +583,9 @@ def main() -> None:
     audit_purge_parser.add_argument('--export', action='store_true', help='Export to CSV before deleting')
     audit_purge_parser.add_argument('--dry-run', action='store_true', help='Show count without deleting')
 
+    # Load user commands from commands/ directory
+    _user_handlers = _load_user_commands(subparsers)
+
     args = parser.parse_args()
 
     if args.command == "serve":
@@ -561,5 +618,7 @@ def main() -> None:
         framework_version()
     elif args.command == 'audit:purge':
         audit_purge(args.days, export=args.export, dry_run=args.dry_run)
+    elif args.command in _user_handlers:
+        _user_handlers[args.command](args)
     else:
         parser.print_help()

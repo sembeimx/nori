@@ -386,37 +386,53 @@ python3 nori.py migrate:downgrade --delete                 # Roll back and delet
 
 ## Extending the CLI
 
-The CLI uses Python's `argparse` with no plugin system by design (consistent with "Keep it Native"). The entry point `nori.py` is a thin bootstrap — all command logic lives in `core/cli.py`, which updates automatically with `framework:update`.
+The CLI uses Python's `argparse` with a plugin system based on the `commands/` directory. The entry point `nori.py` is a thin bootstrap — all framework command logic lives in `core/cli.py`, which updates automatically with `framework:update`. Your custom commands live in `commands/` and are never touched by updates.
 
 ### Adding a Custom Command
 
-> **Warning**: `core/cli.py` is managed by the framework and will be **overwritten** by `framework:update`. If you add custom commands directly to `core/cli.py`, back them up before updating. A future version may support a plugin directory for user commands.
+Create a Python file in `rootsystem/application/commands/`. Each file must export two functions:
 
-To add your own command, edit `rootsystem/application/core/cli.py`:
+- `register(subparsers)` — adds one or more argparse subparsers
+- `handle(args)` — executes the command when invoked
 
-**Step 1** — Add a handler function:
-
-```python
-def my_custom_command(arg1):
-    """Description of what it does."""
-    print(f"Running custom command with {arg1}")
-    # Your logic here — import modules, run scripts, etc.
-```
-
-**Step 2** — Register the subparser (in `main()`):
+**Example** — `commands/stats.py`:
 
 ```python
-# Command: custom:task
-parser_custom = subparsers.add_parser("custom:task", help="Run my custom task")
-parser_custom.add_argument("arg1", type=str, help="First argument")
+"""Show application statistics."""
+from __future__ import annotations
+
+import subprocess
+import sys
+
+
+def register(subparsers) -> None:
+    parser = subparsers.add_parser('app:stats', help='Show application statistics')
+    parser.add_argument('--verbose', action='store_true', help='Show detailed stats')
+
+
+def handle(args) -> None:
+    print("Application Stats")
+    print("=" * 40)
+    if args.verbose:
+        print("  Verbose mode enabled")
+    # Your logic here
 ```
 
-**Step 3** — Add the dispatch condition (in `main()`):
+Then run it:
 
-```python
-elif args.command == "custom:task":
-    my_custom_command(args.arg1)
+```bash
+python3 nori.py app:stats
+python3 nori.py app:stats --verbose
 ```
+
+An example file is provided at `commands/_example.py` — rename it (remove the `_` prefix) to activate.
+
+### How It Works
+
+1. The CLI scans `commands/*.py` at startup (files starting with `_` are skipped)
+2. Each module's `register(subparsers)` is called to add its command(s)
+3. When the command is invoked, the module's `handle(args)` receives the parsed args
+4. If a module fails to load, a warning is printed and the CLI continues
 
 ### Command Naming Convention
 
@@ -425,16 +441,22 @@ Follow the `category:action` pattern:
 - `make:*` — Code generation commands
 - `migrate:*` — Database migration commands
 - `db:*` — Database utility commands
-- `queue:*` — Queue management (planned)
-- `cache:clear` — Cache management (example)
+- `queue:*` — Queue management
+- `app:*` — Application-specific commands (recommended for user commands)
 
 ### Running Async Code in Custom Commands
 
-If your command needs database access or async operations, use the same pattern as `db:seed`:
+If your command needs database access or async operations, use the subprocess pattern to get a dedicated Tortoise connection:
 
 ```python
-def my_async_command():
-    """Run an async operation with database access."""
+import subprocess
+import sys
+
+def register(subparsers) -> None:
+    subparsers.add_parser('app:count-users', help='Count all users')
+
+
+def handle(args) -> None:
     script = (
         "import asyncio, sys\n"
         "sys.path.insert(0, '.')\n"
@@ -442,14 +464,13 @@ def my_async_command():
         "from tortoise import Tortoise\n"
         "async def _run():\n"
         "    await Tortoise.init(config=settings.TORTOISE_ORM)\n"
-        "    # Your async logic here\n"
         "    from models.user import User\n"
         "    count = await User.all().count()\n"
         "    print(f'Total users: {count}')\n"
         "    await Tortoise.close_connections()\n"
         "asyncio.run(_run())\n"
     )
-    subprocess.run([sys.executable, '-c', script], cwd=_APP_DIR)
+    subprocess.run([sys.executable, '-c', script], cwd='.')
 ```
 
 This spawns a subprocess with its own Tortoise connection, keeping the CLI process lightweight.
