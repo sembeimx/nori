@@ -4,6 +4,23 @@ All notable changes to Nori are documented here. Format follows [Keep a Changelo
 
 ---
 
+## [1.2.5] — 2026-04-10
+
+### Fixed
+- Documentation: corrected `@inject()` resolution order, removed non-existent Redis queue driver reference, fixed WebSocket `on_receive` → `on_receive_json` example, fixed `Content-Type` → `Accept` header reference in auth decorators.
+- Documentation: fixed logging text format example to match actual formatter output.
+- `docker-compose.yml` now includes `MYSQL_USER` and `MYSQL_PASSWORD` for the db service.
+
+### Changed
+- All 5 service drivers (`mail_resend`, `storage_s3`, `oauth_github`, `oauth_google`, `search_meilisearch`) now use `core.conf.config` instead of `import settings` directly, consistent with the core decoupling convention.
+- Test dependencies (`pytest`, `pytest-asyncio`) moved to `requirements-dev.txt`. Production installs no longer include test tooling.
+
+### Added
+- Documentation for previously undocumented features: `run_in_background()`, `background_tasks()`, rate-limit response headers (`X-RateLimit-*`), `validate()` custom messages parameter, `framework:update --force` flag, `tree(root_id=)` subtree parameter, HSTS `includeSubDomains` directive and `hsts`/`csp` constructor params, 5 missing framework loggers.
+- Warning in CLI docs about `framework:update` overwriting custom commands in `core/cli.py`.
+
+---
+
 ## [1.2.4] — 2026-04-08
 
 ### Fixed
@@ -47,6 +64,7 @@ Projects on v1.2.1 or earlier need to manually replace `nori.py` once with the n
 
 ---
 
+[1.2.5]: https://github.com/sembeimx/nori/releases/tag/v1.2.5
 [1.2.4]: https://github.com/sembeimx/nori/releases/tag/v1.2.4
 [1.2.3]: https://github.com/sembeimx/nori/releases/tag/v1.2.3
 [1.2.2]: https://github.com/sembeimx/nori/releases/tag/v1.2.2
