@@ -72,10 +72,10 @@ async def test_create_article(client):
 
 ### Session Auth
 
-Use `authenticate()` to set session-based auth headers on a test client:
+Use `authenticate()` to set a signed session cookie on the test client. This works with `@login_required`, `@require_role`, `@require_any_role`, and `@require_permission`:
 
 ```python
-from core.testing import authenticate
+from core.testing import authenticate, clear_authentication
 
 async def test_dashboard_requires_login(client):
     resp = await client.get('/dashboard')
@@ -84,6 +84,9 @@ async def test_dashboard_requires_login(client):
     authenticate(client, user_id='42', role='admin')
     resp = await client.get('/dashboard')
     assert resp.status_code == 200
+
+    # Remove authentication
+    clear_authentication(client)
 ```
 
 With permissions:
@@ -91,6 +94,8 @@ With permissions:
 ```python
 authenticate(client, user_id='1', role='editor', permissions=['articles.edit'])
 ```
+
+The function creates a real Starlette session cookie signed with `SECRET_KEY`. No mocking required — your auth decorators receive a fully populated `request.session`.
 
 ### JWT Auth
 

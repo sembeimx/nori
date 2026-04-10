@@ -118,11 +118,14 @@ def authenticate(
     user_id: str | int = '1',
     role: str = 'user',
     permissions: list[str] | None = None,
+    secret_key: str | None = None,
 ) -> None:
     """Set session-based authentication on a test client.
 
-    After calling this, requests made with ``client`` will include a
-    session cookie with the given user identity.
+    Creates a signed session cookie that Starlette's ``SessionMiddleware``
+    will accept, populating ``request.session`` with the given identity.
+    This works with ``@login_required``, ``@require_role``, and
+    ``@require_permission`` decorators.
 
     Usage::
 
@@ -135,22 +138,47 @@ def authenticate(
         user_id: User ID to store in ``session['user_id']``.
         role: Role string for ``session['role']``.
         permissions: Optional list of permission strings.
+        secret_key: Secret key for signing the cookie. Defaults to
+                    ``settings.SECRET_KEY``.
     """
-    # Starlette's SessionMiddleware uses signed cookies. The simplest way
-    # to authenticate in tests is to hit a route that sets the session.
-    # We store auth data in the client's cookies by going through the app.
-    # However, since the test may not have a login route, we use a
-    # different approach: we patch the session directly via the ASGI scope.
-    #
-    # For httpx + ASGITransport, we can set cookies that SessionMiddleware
-    # will read. The most reliable approach is to use a real request.
-    #
-    # We attach auth metadata to the client for use with a custom header
-    # approach — controllers can check X-Test-Auth or the session.
-    client.headers['X-Test-User-Id'] = str(user_id)
-    client.headers['X-Test-Role'] = role
+    session_data: dict[str, Any] = {
+        'user_id': str(user_id),
+        'role': role,
+    }
     if permissions:
-        client.headers['X-Test-Permissions'] = ','.join(permissions)
+        session_data['permissions'] = permissions
+
+    _set_session_cookie(client, session_data, secret_key)
+
+
+def clear_authentication(client: AsyncClient) -> None:
+    """Remove session authentication from a test client."""
+    client.cookies.delete('session')
+
+
+def _set_session_cookie(
+    client: AsyncClient,
+    session_data: dict,
+    secret_key: str | None = None,
+) -> None:
+    """Sign and set a Starlette session cookie on the client.
+
+    Replicates Starlette's SessionMiddleware cookie format:
+    ``json.dumps → base64 → itsdangerous.TimestampSigner.sign()``.
+    """
+    import json
+    from base64 import b64encode
+
+    import itsdangerous
+
+    if secret_key is None:
+        from core.conf import config
+        secret_key = config.SECRET_KEY
+
+    payload = b64encode(json.dumps(session_data).encode('utf-8'))
+    signer = itsdangerous.TimestampSigner(str(secret_key))
+    signed = signer.sign(payload).decode('utf-8')
+    client.cookies.set('session', signed)
 
 
 def authenticate_api(

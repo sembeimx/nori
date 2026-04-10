@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import importlib
+import inspect
 import json
 import signal
 import time
@@ -26,7 +27,7 @@ async def execute_payload(payload: dict):
     mod_path, func_name = payload['func'].split(':')
     module = importlib.import_module(mod_path)
     func = getattr(module, func_name)
-    if asyncio.iscoroutinefunction(func):
+    if inspect.iscoroutinefunction(func):
         await func(*payload.get('args', []), **payload.get('kwargs', {}))
     else:
         func(*payload.get('args', []), **payload.get('kwargs', {}))

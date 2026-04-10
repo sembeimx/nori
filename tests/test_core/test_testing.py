@@ -10,6 +10,8 @@ from core.testing import (
     assert_redirects,
     authenticate,
     authenticate_api,
+    clear_authentication,
+    _set_session_cookie,
 )
 
 
@@ -193,19 +195,46 @@ def test_assert_json_error_no_message_check():
 # authenticate helpers
 # ---------------------------------------------------------------------------
 
-def test_authenticate_sets_headers():
-    client = MagicMock()
-    client.headers = {}
-    authenticate(client, user_id='42', role='admin')
-    assert client.headers['X-Test-User-Id'] == '42'
-    assert client.headers['X-Test-Role'] == 'admin'
+def test_authenticate_sets_session_cookie():
+    """authenticate() creates a signed session cookie with user data."""
+    from httpx import AsyncClient
+    client = AsyncClient()
+    authenticate(client, user_id='42', role='admin', secret_key='test-secret')
+    cookie = client.cookies.get('session')
+    assert cookie is not None
+    # Verify the cookie can be decoded
+    import json
+    from base64 import b64decode
+    import itsdangerous
+    signer = itsdangerous.TimestampSigner('test-secret')
+    unsigned = signer.unsign(cookie.encode())
+    data = json.loads(b64decode(unsigned))
+    assert data['user_id'] == '42'
+    assert data['role'] == 'admin'
 
 
 def test_authenticate_with_permissions():
-    client = MagicMock()
-    client.headers = {}
-    authenticate(client, user_id='1', role='editor', permissions=['articles.edit', 'articles.delete'])
-    assert client.headers['X-Test-Permissions'] == 'articles.edit,articles.delete'
+    from httpx import AsyncClient
+    client = AsyncClient()
+    authenticate(client, user_id='1', role='editor',
+                 permissions=['articles.edit', 'articles.delete'],
+                 secret_key='test-secret')
+    cookie = client.cookies.get('session')
+    import json
+    from base64 import b64decode
+    import itsdangerous
+    signer = itsdangerous.TimestampSigner('test-secret')
+    data = json.loads(b64decode(signer.unsign(cookie.encode())))
+    assert data['permissions'] == ['articles.edit', 'articles.delete']
+
+
+def test_clear_authentication():
+    from httpx import AsyncClient
+    client = AsyncClient()
+    authenticate(client, user_id='1', secret_key='test-secret')
+    assert client.cookies.get('session') is not None
+    clear_authentication(client)
+    assert client.cookies.get('session') is None
 
 
 def test_authenticate_api_with_payload():
@@ -228,3 +257,77 @@ def test_authenticate_api_no_args():
     client.headers = {}
     authenticate_api(client)
     assert 'Authorization' not in client.headers
+
+
+# ---------------------------------------------------------------------------
+# Integration: authenticate() with real decorators
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_authenticate_works_with_login_required():
+    """authenticate() creates a real session that @login_required accepts."""
+    from starlette.applications import Starlette
+    from starlette.middleware import Middleware
+    from starlette.middleware.sessions import SessionMiddleware
+    from starlette.requests import Request
+    from starlette.responses import JSONResponse
+    from starlette.routing import Route
+    from core.auth.decorators import login_required
+    from core.testing import create_test_client, authenticate
+
+    class Ctrl:
+        @login_required
+        async def protected(self, request: Request):
+            return JSONResponse({'user_id': request.session.get('user_id')})
+
+    ctrl = Ctrl()
+    test_app = Starlette(
+        routes=[Route('/protected', ctrl.protected, methods=['GET'])],
+        middleware=[Middleware(SessionMiddleware, secret_key='integration-test')],
+    )
+
+    async with create_test_client(app=test_app) as client:
+        # Without auth — should get 401
+        resp = await client.get('/protected', headers={'accept': 'application/json'})
+        assert resp.status_code == 401
+
+        # With auth — should pass
+        authenticate(client, user_id='42', role='admin', secret_key='integration-test')
+        resp = await client.get('/protected', headers={'accept': 'application/json'})
+        assert resp.status_code == 200
+        assert resp.json()['user_id'] == '42'
+
+
+@pytest.mark.asyncio
+async def test_authenticate_works_with_require_role():
+    """authenticate() sets the role correctly for @require_role."""
+    from starlette.applications import Starlette
+    from starlette.middleware import Middleware
+    from starlette.middleware.sessions import SessionMiddleware
+    from starlette.requests import Request
+    from starlette.responses import JSONResponse
+    from starlette.routing import Route
+    from core.auth.decorators import require_role
+    from core.testing import create_test_client, authenticate
+
+    class Ctrl:
+        @require_role('admin')
+        async def admin_only(self, request: Request):
+            return JSONResponse({'ok': True})
+
+    ctrl = Ctrl()
+    test_app = Starlette(
+        routes=[Route('/admin', ctrl.admin_only, methods=['GET'])],
+        middleware=[Middleware(SessionMiddleware, secret_key='role-test')],
+    )
+
+    async with create_test_client(app=test_app) as client:
+        # Wrong role — should get 403
+        authenticate(client, user_id='1', role='user', secret_key='role-test')
+        resp = await client.get('/admin', headers={'accept': 'application/json'})
+        assert resp.status_code == 403
+
+        # Correct role — should pass
+        authenticate(client, user_id='1', role='admin', secret_key='role-test')
+        resp = await client.get('/admin', headers={'accept': 'application/json'})
+        assert resp.status_code == 200
