@@ -8,10 +8,10 @@
 
 Nori is a full-stack async web framework that makes decisions for you: project structure, authentication, validation, controllers, and CLI generators — all built-in, all async-native.
 
-- **~3,400 lines of core** — small enough to read, big enough to ship
+- **~5,000 lines of core** — small enough to read, big enough to ship
 - **Built-in auth + ACL** — sessions, JWT, OAuth2, roles, granular permissions
 - **Tortoise ORM** — async database layer with migrations
-- **CLI generators** — scaffold controllers, models, seeders
+- **CLI generators + plugin system** — scaffold controllers, models, seeders; extend with your own commands
 - **Convention over configuration** — a right place for everything
 
 ---
@@ -22,7 +22,12 @@ Nori is a full-stack async web framework that makes decisions for you: project s
 # Clone and install
 git clone https://github.com/sembeimx/nori.git my-project
 cd my-project
+python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
+
+# Configure environment
+cp .env.example rootsystem/application/.env
+# Edit .env: set DB_ENGINE=sqlite, DB_NAME=db.sqlite3
 
 # Start the dev server
 python3 nori.py serve
@@ -52,7 +57,8 @@ python3 nori.py make:controller Article
 # 5. Define routes in routes.py
 # 6. Create templates in templates/article/
 # 7. Run tests
-pytest tests/
+pip install -r requirements-dev.txt
+DEBUG=true pytest tests/
 ```
 
 ---
@@ -61,13 +67,14 @@ pytest tests/
 
 - **Session Auth + JWT** — Login, roles, granular permissions (ACL), brute-force protection, JWT revocation, session permissions TTL
 - **OAuth2** — Google (OpenID Connect + PKCE) and GitHub drivers included
-- **Declarative Validation** — Pipe-separated syntax: `'required|email|max:255'`
+- **Declarative Validation** — 17 built-in rules with pipe syntax: `'required|email|max:255|url|date|confirmed|nullable'`
 - **Multi-Driver Services** — Storage, Email, Search, Cache with pluggable backends and memory backend guards
-- **Background Tasks** — Volatile (`background()`) and persistent job queues (`push()`)
+- **Background Tasks** — Volatile (`background()`) and persistent job queues (`push()`) with database and Redis drivers
 - **WebSockets** — Handler base classes with session/JWT auth
 - **Collections** — Chainable `NoriCollection` with filtering, sorting, grouping, and aggregation
 - **Security by Default** — CSRF, security headers, magic byte upload verification, protected fields
-- **CLI Generators** — Scaffold controllers, models, seeders, and migrations
+- **CLI + Plugin System** — Built-in generators plus custom commands in `commands/` that survive framework updates
+- **Testing Utilities** — Test client, model factories, session auth helpers, and assertion helpers
 - **Framework Updates** — `python3 nori.py framework:update` pulls the latest core from GitHub
 
 ---
@@ -92,7 +99,8 @@ pytest tests/
 | **[Flash Messages](flash_messages.md)** | Session-based flash notifications |
 | **[Logging](logging.md)** | Request ID tracing and structured logging |
 | **[Deployment](deployment.md)** | Gunicorn, Apache/Nginx, Docker, sizing guide |
-| **[CLI Reference](cli.md)** | All commands: serve, make:\*, migrate:\*, framework:\* |
+| **[Testing](testing.md)** | Test client, model factories, auth helpers, assertions |
+| **[CLI Reference](cli.md)** | All commands, plugin system for custom commands |
 | **[Philosophy](philosophy.md)** | Design principles and framework goals |
 | **[Roadmap](roadmap.md)** | Planned features and development direction |
 

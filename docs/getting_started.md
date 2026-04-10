@@ -250,7 +250,7 @@ Open `rootsystem/application/seeders/article_seeder.py` and replace it:
 
 ```python
 """Seeder for Article."""
-from datetime import datetime
+from tortoise.timezone import now
 from models.article import Article
 
 
@@ -260,13 +260,13 @@ async def run() -> None:
         title='Hello World',
         slug='hello-world',
         content='<p>Welcome to my blog built with Nori. This is the first post.</p>',
-        published_at=datetime.utcnow(),
+        published_at=now(),
     )
     await Article.create(
         title='Getting Started with Nori',
         slug='getting-started-with-nori',
         content='<p>Nori is an async Python web framework that makes building web apps straightforward.</p>',
-        published_at=datetime.utcnow(),
+        published_at=now(),
     )
 ```
 
@@ -311,8 +311,10 @@ Notice how every feature follows the same cycle: model, migration, controller, r
 
 Now that you understand the basic flow, explore the framework further:
 
-- **[Validation](forms_validation.md)** — Add a contact form with `validate(form, {'email': 'required|email'})`
+- **[Validation](forms_validation.md)** — Add a contact form with `validate(form, {'email': 'required|email|url|date'})`
 - **[Authentication](authentication.md)** — Protect routes with `@login_required`
 - **[Database](database.md)** — Add relationships, soft deletes, and tree structures
 - **[Services](services.md)** — Send emails, upload files, index for search
+- **[Testing](testing.md)** — Write tests with `create_test_client()`, factories, and auth helpers
+- **[CLI](cli.md)** — Add custom commands in `commands/` that survive framework updates
 - **[Deployment](deployment.md)** — Ship to production with Gunicorn and Nginx
