@@ -218,3 +218,201 @@ def test_file_max_rejects_zero_size():
     import pytest as pt
     with pt.raises(ValueError, match='positive'):
         _parse_size('0')
+
+
+def test_file_max_invalid_size_returns_error():
+    """file_max with an invalid size string should return a validation error, not crash."""
+    class FakeFile:
+        filename = 'test.jpg'
+        size = 100
+    errors = validate({'avatar': FakeFile()}, {'avatar': 'file|file_max:-5mb'})
+    assert 'avatar' in errors
+
+
+# --- url ---
+
+def test_url_valid_http():
+    errors = validate({'site': 'http://example.com'}, {'site': 'required|url'})
+    assert errors == {}
+
+
+def test_url_valid_https_with_path():
+    errors = validate({'site': 'https://example.com/path?q=1'}, {'site': 'required|url'})
+    assert errors == {}
+
+
+def test_url_invalid_no_scheme():
+    errors = validate({'site': 'example.com'}, {'site': 'required|url'})
+    assert 'site' in errors
+
+
+def test_url_invalid_ftp():
+    errors = validate({'site': 'ftp://example.com'}, {'site': 'required|url'})
+    assert 'site' in errors
+
+
+def test_url_empty_skipped():
+    errors = validate({'site': ''}, {'site': 'url'})
+    assert errors == {}
+
+
+# --- date ---
+
+def test_date_valid_iso():
+    errors = validate({'dob': '2024-01-15'}, {'dob': 'required|date'})
+    assert errors == {}
+
+
+def test_date_invalid_format():
+    errors = validate({'dob': '15/01/2024'}, {'dob': 'required|date'})
+    assert 'dob' in errors
+
+
+def test_date_invalid_values():
+    errors = validate({'dob': '2024-13-32'}, {'dob': 'required|date'})
+    assert 'dob' in errors
+
+
+def test_date_empty_skipped():
+    errors = validate({'dob': ''}, {'dob': 'date'})
+    assert errors == {}
+
+
+# --- confirmed ---
+
+def test_confirmed_match():
+    data = {'password': 'secret123', 'password_confirmation': 'secret123'}
+    errors = validate(data, {'password': 'required|confirmed'})
+    assert errors == {}
+
+
+def test_confirmed_mismatch():
+    data = {'password': 'secret123', 'password_confirmation': 'different'}
+    errors = validate(data, {'password': 'required|confirmed'})
+    assert 'password' in errors
+
+
+def test_confirmed_missing_confirmation_field():
+    data = {'password': 'secret123'}
+    errors = validate(data, {'password': 'required|confirmed'})
+    assert 'password' in errors
+
+
+# --- nullable ---
+
+def test_nullable_skips_empty():
+    errors = validate({'bio': ''}, {'bio': 'nullable|min:10'})
+    assert errors == {}
+
+
+def test_nullable_skips_missing():
+    errors = validate({}, {'bio': 'nullable|min:10'})
+    assert errors == {}
+
+
+def test_nullable_still_validates_present():
+    errors = validate({'bio': 'hi'}, {'bio': 'nullable|min:10'})
+    assert 'bio' in errors
+
+
+def test_nullable_valid_value():
+    errors = validate({'bio': 'This is a long enough bio'}, {'bio': 'nullable|min:10'})
+    assert errors == {}
+
+
+# --- array ---
+
+def test_array_valid():
+    errors = validate({'tags': ['a', 'b']}, {'tags': 'required|array'})
+    assert errors == {}
+
+
+def test_array_invalid_string():
+    errors = validate({'tags': 'not-a-list'}, {'tags': 'required|array'})
+    assert 'tags' in errors
+
+
+def test_array_none_skipped():
+    errors = validate({}, {'tags': 'array'})
+    assert errors == {}
+
+
+# --- min_value / max_value ---
+
+def test_min_value_valid():
+    errors = validate({'age': '18'}, {'age': 'required|min_value:0'})
+    assert errors == {}
+
+
+def test_min_value_too_low():
+    errors = validate({'age': '-1'}, {'age': 'required|min_value:0'})
+    assert 'age' in errors
+    assert 'at least' in errors['age'][0]
+
+
+def test_min_value_float():
+    errors = validate({'price': '9.99'}, {'price': 'required|min_value:5.5'})
+    assert errors == {}
+
+
+def test_min_value_non_numeric():
+    errors = validate({'age': 'abc'}, {'age': 'required|min_value:0'})
+    assert 'age' in errors
+
+
+def test_max_value_valid():
+    errors = validate({'qty': '50'}, {'qty': 'required|max_value:100'})
+    assert errors == {}
+
+
+def test_max_value_too_high():
+    errors = validate({'qty': '150'}, {'qty': 'required|max_value:100'})
+    assert 'qty' in errors
+    assert 'at most' in errors['qty'][0]
+
+
+def test_max_value_boundary():
+    errors = validate({'qty': '100'}, {'qty': 'required|max_value:100'})
+    assert errors == {}
+
+
+def test_max_value_empty_skipped():
+    errors = validate({'qty': ''}, {'qty': 'max_value:100'})
+    assert errors == {}
+
+
+# --- regex ---
+
+def test_regex_match():
+    errors = validate({'code': 'ABC'}, {'code': r'required|regex:^[A-Z]{3}$'})
+    assert errors == {}
+
+
+def test_regex_no_match():
+    errors = validate({'code': 'abc'}, {'code': r'required|regex:^[A-Z]{3}$'})
+    assert 'code' in errors
+
+
+def test_regex_partial_no_match():
+    errors = validate({'code': 'AB'}, {'code': r'required|regex:^[A-Z]{3}$'})
+    assert 'code' in errors
+
+
+def test_regex_empty_skipped():
+    errors = validate({'code': ''}, {'code': r'regex:^[A-Z]+$'})
+    assert errors == {}
+
+
+# --- combined new rules ---
+
+def test_combined_nullable_url():
+    errors = validate({'website': ''}, {'website': 'nullable|url'})
+    assert errors == {}
+
+
+def test_combined_date_min_max():
+    errors = validate({'age': '25', 'dob': '1999-01-01'}, {
+        'age': 'required|numeric|min_value:18|max_value:120',
+        'dob': 'required|date',
+    })
+    assert errors == {}
