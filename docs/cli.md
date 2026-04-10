@@ -201,6 +201,7 @@ python3 nori.py framework:update --no-backup
 **Options**:
 - `--version <v>`: Update to a specific version (e.g. `1.3.0`). Defaults to latest release.
 - `--no-backup`: Skip the automatic backup (useful for CI/Docker).
+- `--force`: Re-install even if already on the target version.
 
 **What gets updated**:
 

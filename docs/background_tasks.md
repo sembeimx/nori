@@ -13,14 +13,25 @@ Volatile tasks are fast and simple — fire and forget. Persistent queues are sl
 Uses Starlette's `BackgroundTask`. Ideal for quick, non-critical tasks like sending a notification or indexing a search document where losing the task on a server restart is acceptable.
 
 ```python
-from core.tasks import background
+from core.tasks import background, background_tasks, run_in_background
 
-# Create a task
+# Option 1: Create a single task, pass it to a response
 task = background(send_welcome_email, user.email, user.name)
-
-# Pass it to a response
 return JSONResponse({'ok': True}, background=task)
+
+# Option 2: Attach a task to an existing response
+response = JSONResponse({'ok': True})
+return run_in_background(response, send_welcome_email, user.email)
+
+# Option 3: Multiple tasks on a single response
+tasks = background_tasks(
+    (send_welcome_email, (user.email, user.name), {}),
+    (index_user_search, (user.id,), {}),
+)
+return JSONResponse({'ok': True}, background=tasks)
 ```
+
+Each element in `background_tasks()` is a `(func, args_tuple, kwargs_dict)` triple.
 
 ---
 

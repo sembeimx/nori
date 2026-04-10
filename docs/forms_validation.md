@@ -47,6 +47,15 @@ async def process_form(self, request: Request):
         'role': 'required|in:admin,editor,user',
     })
     
+    # 2b. Optional: custom error messages per field.rule
+    errors = validate(raw_form, {
+        'email': 'required|email',
+        'password': 'required|min:8',
+    }, {
+        'email.required': 'Email is mandatory',
+        'password.min': 'Password must be at least 8 characters',
+    })
+
     # 3. Decision Tree
     if errors:
         # We repopulate the current form including the pre-validated strings.
@@ -72,6 +81,23 @@ async def process_form(self, request: Request):
 | `file` | Validates the field is an uploaded file (has a `filename` attribute). |
 | `file_max:5mb` | Maximum file size. Accepts `mb`, `kb` suffixes or raw bytes (e.g. `file_max:500kb`, `file_max:10485760`). Negative values are rejected. |
 | `file_types:jpg,png` | Restricts the file extension to the given comma-separated list. |
+
+### Custom Error Messages
+
+`validate()` accepts an optional third parameter to override default error messages per `field.rule`:
+
+```python
+errors = validate(form, {
+    'name': 'required|min:3',
+    'email': 'required|email',
+}, {
+    'name.required': 'Please enter your name',
+    'name.min': 'Name is too short',
+    'email.email': 'That doesn\'t look like an email',
+})
+```
+
+Keys use `field.rule` format (e.g., `email.required`, `password.min`). If a custom message is not provided for a specific field.rule combination, the default message is used.
 
 ### File Upload Validation Example
 

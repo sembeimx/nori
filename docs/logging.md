@@ -39,7 +39,7 @@ log.exception('Unexpected error')  # Includes traceback
 ### Text (default)
 
 ```
-2026-03-26 14:30:00 [INFO] nori.mymodule: User 42 logged in
+[2026-03-26 14:30:00] INFO - nori.mymodule: User 42 logged in
 ```
 
 Human-readable, suitable for development and simple production setups.
@@ -83,6 +83,11 @@ Nori's internal modules use named loggers for targeted filtering:
 | `nori.throttle` | Rate limiting |
 | `nori.mail` | Email dispatcher |
 | `nori.upload` | File upload validation |
+| `nori.auth` | Authentication, login guard, permissions |
+| `nori.inject` | Dependency injection warnings |
+| `nori.search` | Search dispatcher |
+| `nori.cache` | Cache backend initialization |
+| `nori.queue` | Queue dispatcher and worker |
 
 You can adjust the level of any individual logger in your application code:
 

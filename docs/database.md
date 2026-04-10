@@ -254,3 +254,4 @@ Natively injected functions:
 * `await node.is_root()` -> True if the node has no parent.
 * `await node.move_to(new_parent_id=5)` -> Move node to a new parent (validates against cycles).
 * `await Category.tree()` -> Load the entire tree in one query, structured in memory.
+* `await Category.tree(root_id=5)` -> Load only the subtree under node 5 (children of that node, structured recursively).

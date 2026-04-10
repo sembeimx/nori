@@ -17,9 +17,9 @@ Every security feature in Nori is enabled by default. We don't trust developers 
 | `X-XSS-Protection` | `1; mode=block` | Reflected XSS (legacy browsers) |
 | `Referrer-Policy` | `strict-origin-when-cross-origin` | Information leakage via referrer |
 | `Permissions-Policy` | `camera=(), microphone=(), geolocation=()` | Unauthorized device access |
-| `Strict-Transport-Security` | `max-age=31536000` (1 year) | Downgrade attacks (HSTS) |
+| `Strict-Transport-Security` | `max-age=31536000; includeSubDomains` (1 year) | Downgrade attacks (HSTS) |
 
-Optional `Content-Security-Policy` (CSP) can be configured if needed.
+HSTS is enabled by default. To disable it (e.g., during development without HTTPS), pass `hsts=False` to `SecurityHeadersMiddleware` in `asgi.py`. Optional `Content-Security-Policy` (CSP) can be configured by passing `csp='...'` to the middleware constructor.
 
 ---
 
@@ -106,6 +106,18 @@ class AuthController:
 ```
 
 Returns **429 Too Many Requests** when the limit is exceeded (JSON or HTML based on `Accept` header).
+
+### Rate-Limit Headers
+
+The decorator adds rate-limit headers to **every response** (both allowed and blocked):
+
+| Header | Description |
+|--------|-------------|
+| `X-RateLimit-Limit` | Maximum requests allowed in the window |
+| `X-RateLimit-Remaining` | Requests remaining in the current window |
+| `X-RateLimit-Reset` | Seconds until the window resets |
+
+Clients can use these headers to implement backoff or display rate-limit status in the UI.
 
 ### Trusted Proxies (IP Spoofing Protection)
 
