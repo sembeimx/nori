@@ -178,6 +178,12 @@ def _set_session_cookie(
     payload = b64encode(json.dumps(session_data).encode('utf-8'))
     signer = itsdangerous.TimestampSigner(str(secret_key))
     signed = signer.sign(payload).decode('utf-8')
+    # Clear any existing session cookie before setting the new one.
+    # This avoids duplicate cookies across httpx versions.
+    try:
+        client.cookies.delete('session')
+    except (KeyError, TypeError):
+        pass
     client.cookies.set('session', signed)
 
 
