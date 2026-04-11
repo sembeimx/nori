@@ -4,6 +4,17 @@ All notable changes to Nori are documented here. Format follows [Keep a Changelo
 
 ---
 
+## [1.4.0] — 2026-04-10
+
+### Added
+- **Async validation** (`validate_async`): superset of `validate()` that supports database-dependent rules. Runs sync rules first, then async rules only for fields that passed.
+- **`unique` validation rule**: checks value uniqueness against the database. Syntax: `unique:table,column` or `unique:table,column,except_id` for updates. SQL injection protected via identifier validation.
+- **`routes:list` CLI command**: prints a table of all registered routes with path, methods, and name. Supports `Route`, `Mount` (recursive), and `WebSocketRoute`.
+- **Middleware documentation** (`docs/middleware.md`): full middleware stack reference, parameter docs for all built-in middleware, custom middleware guide with ASGI patterns.
+- 11 new tests (508 → 519 total).
+
+---
+
 ## [1.3.1] — 2026-04-10
 
 ### Added
@@ -95,6 +106,7 @@ Projects on v1.2.1 or earlier need to manually replace `nori.py` once with the n
 
 ---
 
+[1.4.0]: https://github.com/sembeimx/nori/releases/tag/v1.4.0
 [1.3.1]: https://github.com/sembeimx/nori/releases/tag/v1.3.1
 [1.3.0]: https://github.com/sembeimx/nori/releases/tag/v1.3.0
 [1.2.5]: https://github.com/sembeimx/nori/releases/tag/v1.2.5

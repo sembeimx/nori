@@ -21,7 +21,7 @@ Current state of Nori and what's coming next.
 | **Architecture** | Decoupled core via `core.conf` (config provider) and `core.registry` (model registry). Framework-agnostic to application code |
 | **CLI** | `serve`, `make:controller`, `make:model`, `make:seeder`, `migrate:*`, `db:seed`, `queue:work`, `framework:update`, `framework:version` |
 | **Deployment** | Dockerfile, docker-compose, Gunicorn config, Apache/Nginx examples, MkDocs documentation site |
-| **Tests** | 417+ tests (pytest + pytest-asyncio), unit + E2E with httpx |
+| **Tests** | 519 tests (pytest + pytest-asyncio), unit + E2E with httpx |
 
 ---
 
@@ -51,7 +51,7 @@ Implemented. User commands live in `commands/*.py` with `register(subparsers)` +
 
 ### ~~3. Validation: Additional Rules~~ — Done (v1.3.0)
 
-Added 8 rules: `url`, `date`, `confirmed`, `nullable`, `array`, `min_value`, `max_value`, `regex`. The `unique` rule (async DB check) remains as a future item. See [Forms & Validation](forms_validation.md).
+Added 8 rules: `url`, `date`, `confirmed`, `nullable`, `array`, `min_value`, `max_value`, `regex`. See [Forms & Validation](forms_validation.md). The `unique` rule was added in v1.4.0.
 
 ### ~~4. Testing Utilities for App Developers~~ — Done (v1.3.0)
 
@@ -61,14 +61,22 @@ Implemented. `core.testing` provides `create_test_client()`, `setup_test_db()` /
 
 Fixed. `ValueError` from `_parse_size()` is now caught in `_check_rule` and returned as a validation error.
 
-### 6. OpenAPI / Swagger
+### ~~6. `unique` Validation Rule~~ — Done (v1.4.0)
+
+Implemented. `unique:table,column` checks value uniqueness via async database query. Requires `validate_async()`. Supports `unique:table,column,except_id` for update forms. See [Forms & Validation](forms_validation.md#async-validation-validate_async).
+
+### ~~7. `routes:list` CLI Command~~ — Done (v1.4.0)
+
+Implemented. `python3 nori.py routes:list` prints a table of all registered routes with path, methods, and name. Supports recursive Mount groups and WebSocket routes. See [CLI Reference](cli.md#route-inspection).
+
+### 8. OpenAPI / Swagger
 
 Auto-generated API docs from route definitions. Pipe-separated validation (`'required|email|max:255'`) doesn't map cleanly to OpenAPI schemas — may require optional type metadata on routes.
 
-### 7. Internationalization (i18n)
+### 9. Internationalization (i18n)
 
 Translation support for templates and validation messages. The `messages=` parameter in `validate()` is a first step — a full i18n system would load messages from locale files and resolve them automatically. Bilingual documentation site (EN/ES).
 
-### 8. Admin Panel
+### 10. Admin Panel
 
 Leverage `core.registry` to auto-discover registered models. Visual interface for AuditLog inspection, Job queue status, and basic CRUD.
