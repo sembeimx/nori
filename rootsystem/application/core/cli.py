@@ -472,6 +472,57 @@ def audit_purge(days: int, export: bool = False, dry_run: bool = False) -> None:
     subprocess.run([sys.executable, '-c', script], cwd=_APP_DIR)
 
 
+def routes_list() -> None:
+    """Print all registered routes in a table format."""
+    script = textwrap.dedent("""\
+        import sys, os
+        sys.path.insert(0, '.')
+        from routes import routes as app_routes
+        from starlette.routing import Route, Mount, WebSocketRoute
+
+        def _collect(routes, prefix=''):
+            rows = []
+            for route in routes:
+                if isinstance(route, Mount):
+                    sub_prefix = prefix + route.path
+                    if route.routes:
+                        rows.extend(_collect(route.routes, sub_prefix))
+                    else:
+                        rows.append((sub_prefix, 'MOUNT', route.name or ''))
+                elif isinstance(route, WebSocketRoute):
+                    rows.append((prefix + route.path, 'WS', route.name or ''))
+                elif isinstance(route, Route):
+                    methods = ','.join(sorted(route.methods - {'HEAD'})) if route.methods else 'ANY'
+                    rows.append((prefix + route.path, methods, route.name or ''))
+            return rows
+
+        rows = _collect(app_routes)
+
+        if not rows:
+            print('No routes registered.')
+            raise SystemExit(0)
+
+        # Calculate column widths
+        headers = ('Path', 'Methods', 'Name')
+        widths = [len(h) for h in headers]
+        for row in rows:
+            for i, cell in enumerate(row):
+                widths[i] = max(widths[i], len(cell))
+
+        fmt = '  {{:<{}}}  {{:<{}}}  {{}}'.format(widths[0], widths[1])
+        sep = '  ' + '-' * widths[0] + '  ' + '-' * widths[1] + '  ' + '-' * widths[2]
+
+        print()
+        print(fmt.format(*headers))
+        print(sep)
+        for row in rows:
+            print(fmt.format(*row))
+        print()
+        print(f'  {{len(rows)}} route(s) registered.')
+    """)
+    subprocess.run([sys.executable, '-c', script], cwd=_APP_DIR)
+
+
 def framework_version() -> None:
     print(f"Nori v{_get_current_version()}")
 
@@ -577,6 +628,7 @@ def main() -> None:
     parser_update.add_argument("--force", action="store_true", help="Re-install even if already on the target version")
 
     subparsers.add_parser("framework:version", help="Show the current framework version")
+    subparsers.add_parser("routes:list", help="List all registered routes")
 
     audit_purge_parser = subparsers.add_parser('audit:purge', help='Purge old audit log entries')
     audit_purge_parser.add_argument('--days', type=int, default=90, help='Delete entries older than N days (default: 90)')
@@ -616,6 +668,8 @@ def main() -> None:
         framework_update(target_version=args.version, skip_backup=args.no_backup, force=args.force)
     elif args.command == "framework:version":
         framework_version()
+    elif args.command == 'routes:list':
+        routes_list()
     elif args.command == 'audit:purge':
         audit_purge(args.days, export=args.export, dry_run=args.dry_run)
     elif args.command in _user_handlers:

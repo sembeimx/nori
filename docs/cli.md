@@ -28,6 +28,7 @@ python3 nori.py <command> [arguments]
 | `queue:work` | Run the persistent job queue worker |
 | `framework:update` | Update the Nori core from GitHub |
 | `framework:version` | Show the current framework version |
+| `routes:list` | List all registered routes |
 | `audit:purge` | Purge old audit log entries |
 
 ---
@@ -45,6 +46,28 @@ Starts Uvicorn with hot reload enabled. Watches both Python files and the `roots
 |------|---------|-------------|
 | `--host` | `0.0.0.0` | Bind address |
 | `--port` | `8000` | Port number |
+
+---
+
+## Route Inspection
+
+```bash
+python3 nori.py routes:list
+```
+
+Prints a table of all registered routes from `routes.py`, including path, HTTP methods, and route name:
+
+```
+  Path       Methods  Name
+  ---------  -------  ------------
+  /health    GET      health.check
+  /          GET      page.home
+  /ws/echo   WS       ws.echo
+
+  3 route(s) registered.
+```
+
+`Mount` groups are expanded — nested routes show their full prefix. WebSocket routes display `WS` in the methods column.
 
 ---
 

@@ -89,6 +89,7 @@ async def process_form(self, request: Request):
 | `file` | Validates the field is an uploaded file (has a `filename` attribute). |
 | `file_max:5mb` | Maximum file size. Accepts `mb`, `kb` suffixes or raw bytes (e.g. `file_max:500kb`, `file_max:10485760`). Invalid size values are rejected gracefully. |
 | `file_types:jpg,png` | Restricts the file extension to the given comma-separated list. |
+| `unique:table,column` | Checks the value does not already exist in the database. Requires `validate_async()`. Optionally pass a third parameter to exclude a row by ID on updates: `unique:users,email,42`. |
 
 ### Custom Error Messages
 
@@ -106,6 +107,36 @@ errors = validate(form, {
 ```
 
 Keys use `field.rule` format (e.g., `email.required`, `password.min`). If a custom message is not provided for a specific field.rule combination, the default message is used.
+
+### Async Validation (`validate_async`)
+
+The `unique` rule requires a database query, so it only works with the async variant:
+
+```python
+from core.http.validation import validate_async
+
+async def store(self, request: Request, form: dict):
+    errors = await validate_async(form, {
+        'email': 'required|email|unique:users,email',
+        'username': 'required|min:3|unique:users,username',
+    })
+    if errors:
+        return templates.TemplateResponse(request, 'register.html', {'errors': errors})
+```
+
+`validate_async` runs all synchronous rules first. If a field fails a sync rule (like `email` format), the `unique` check is skipped entirely — no unnecessary database hit.
+
+**Exclude a row on update** (e.g., allow the current user to keep their own email):
+
+```python
+errors = await validate_async(form, {
+    'email': f'required|email|unique:users,email,{user.id}',
+})
+```
+
+The third parameter (`42` or `{user.id}`) tells the rule to ignore the row with that primary key. This prevents "already taken" errors when a user submits a form without changing their email.
+
+> **Note**: `validate_async` is a superset of `validate`. You can use it for any validation — it just adds support for async rules. If no async rules are present, it behaves identically to `validate` with no database access.
 
 ### File Upload Validation Example
 

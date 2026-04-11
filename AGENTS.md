@@ -63,6 +63,7 @@ class User(NoriModelMixin, Model):
 - `required`, `email`, `numeric`, `matches:field`, `in:a,b`.
 - `min:N`, `max:N`, `min_value:N`, `max_value:N`.
 - `url`, `date`, `confirmed`, `nullable`, `array`, `regex:pattern`.
+- `unique:table,column` (async — requires `validate_async()`).
 - `file`, `file_max:2mb`, `file_types:jpg,png`.
 
 ### Database Mixins

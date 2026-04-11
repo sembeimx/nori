@@ -12,6 +12,11 @@ Declarative validation with pipe-separated rules.
         'email.required': 'Email is mandatory',
         'password.min': 'Password must be at least 8 characters',
     })
+
+    # Async validation (for rules like unique):
+    errors = await validate_async(data, {
+        'email': 'required|email|unique:users,email',
+    })
 """
 from __future__ import annotations
 
@@ -34,6 +39,8 @@ _URL_RE = re.compile(
     r'(/[^\s]*)?$'
 )
 
+_IDENTIFIER_RE = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_]*$')
+
 _DEFAULT_MESSAGES = {
     'required': '{field} is required',
     'min': '{field} must be at least {n} characters',
@@ -53,6 +60,7 @@ _DEFAULT_MESSAGES = {
     'file': '{field} must be a valid file',
     'file_max': '{field} exceeds maximum size of {size}',
     'file_types': '{field} must be of type: {types}',
+    'unique': '{field} has already been taken',
 }
 
 
@@ -203,6 +211,9 @@ def _check_rule(
     elif rule == 'nullable':
         pass  # handled in the validate() loop
 
+    elif rule == 'unique':
+        pass  # handled in validate_async()
+
     elif rule == 'array':
         if value_raw is not None and not isinstance(value_raw, list):
             return _msg(field, rule, messages)
@@ -258,6 +269,105 @@ def _check_rule(
             if ext not in allowed:
                 return _msg(field, rule, messages, types=param)
 
+    return None
+
+
+async def validate_async(
+    data: dict[str, object],
+    rules: dict[str, str | list[str]],
+    messages: dict[str, str] | None = None,
+) -> dict[str, list[str]]:
+    """
+    Async variant of validate() that supports database-dependent rules.
+
+    Runs all synchronous rules first via validate(), then checks async
+    rules (``unique``) only for fields that passed synchronous validation.
+
+    The ``unique`` rule checks that a value does not already exist in the
+    database.  Syntax::
+
+        'unique:table,column'              # basic uniqueness check
+        'unique:table,column,except_value' # exclude a row by primary key
+
+    Args:
+        data: dict of field_name -> value (from request.form())
+        rules: dict of field_name -> rules (pipe-separated string or list)
+        messages: optional dict of 'field.rule' -> custom message
+
+    Returns:
+        dict of field_name -> list of errors. Empty = valid.
+    """
+    errors = validate(data, rules, messages)
+
+    for field, field_rules in rules.items():
+        if field in errors:
+            continue
+
+        if isinstance(field_rules, str):
+            field_rules = field_rules.split('|')
+
+        value_raw = data.get(field)
+        value = str(value_raw) if value_raw is not None else ''
+
+        if 'nullable' in field_rules and not value.strip():
+            continue
+
+        for rule in field_rules:
+            rule = rule.strip()
+            if not rule:
+                continue
+
+            param: str | None = None
+            if ':' in rule:
+                rule, param = rule.split(':', 1)
+
+            if rule == 'unique' and value.strip():
+                msg = await _check_unique(param, field, value, messages)
+                if msg:
+                    errors.setdefault(field, []).append(msg)
+
+    return errors
+
+
+async def _check_unique(
+    param: str | None,
+    field: str,
+    value: str,
+    messages: dict[str, str] | None,
+) -> str | None:
+    """Check uniqueness against the database via Tortoise connection."""
+    if not param:
+        raise ValueError("'unique' rule requires parameters: unique:table,column")
+
+    parts = param.split(',')
+    if len(parts) < 2:
+        raise ValueError(
+            f"'unique' rule requires at least table and column: "
+            f"unique:table,column — got: '{param}'"
+        )
+
+    table = parts[0].strip()
+    column = parts[1].strip()
+    except_id = parts[2].strip() if len(parts) > 2 else None
+
+    if not _IDENTIFIER_RE.match(table):
+        raise ValueError(f"Invalid table name: '{table}'")
+    if not _IDENTIFIER_RE.match(column):
+        raise ValueError(f"Invalid column name: '{column}'")
+
+    from tortoise import connections
+    conn = connections.get('default')
+
+    if except_id:
+        sql = f'SELECT COUNT(*) AS cnt FROM {table} WHERE {column} = $1 AND id != $2'
+        _, result = await conn.execute_query(sql, [value, except_id])
+    else:
+        sql = f'SELECT COUNT(*) AS cnt FROM {table} WHERE {column} = $1'
+        _, result = await conn.execute_query(sql, [value])
+
+    count = result[0]['cnt'] if result else 0
+    if count > 0:
+        return _msg(field, 'unique', messages)
     return None
 
 

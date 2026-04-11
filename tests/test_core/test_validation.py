@@ -1,5 +1,7 @@
 """Tests for core.http.validation."""
-from core.http.validation import validate
+import pytest
+from unittest.mock import AsyncMock, patch, MagicMock
+from core.http.validation import validate, validate_async
 
 
 # --- required ---
@@ -415,4 +417,120 @@ def test_combined_date_min_max():
         'age': 'required|numeric|min_value:18|max_value:120',
         'dob': 'required|date',
     })
+    assert errors == {}
+
+
+# --- unique (sync validate ignores it) ---
+
+def test_unique_ignored_in_sync_validate():
+    """The unique rule is silently skipped in sync validate()."""
+    errors = validate({'email': 'test@example.com'}, {'email': 'required|unique:users,email'})
+    assert errors == {}
+
+
+# --- validate_async ---
+
+def _mock_conn(rows):
+    """Create a mock Tortoise connection returning given rows."""
+    conn = MagicMock()
+    conn.execute_query = AsyncMock(return_value=(1, rows))
+    return conn
+
+
+@pytest.mark.asyncio
+async def test_validate_async_unique_taken():
+    with patch('tortoise.connections') as mock_conns:
+        mock_conns.get.return_value = _mock_conn([{'cnt': 1}])
+        errors = await validate_async(
+            {'email': 'taken@example.com'},
+            {'email': 'required|email|unique:users,email'},
+        )
+    assert 'email' in errors
+    assert 'already been taken' in errors['email'][0]
+
+
+@pytest.mark.asyncio
+async def test_validate_async_unique_available():
+    with patch('tortoise.connections') as mock_conns:
+        mock_conns.get.return_value = _mock_conn([{'cnt': 0}])
+        errors = await validate_async(
+            {'email': 'new@example.com'},
+            {'email': 'required|email|unique:users,email'},
+        )
+    assert errors == {}
+
+
+@pytest.mark.asyncio
+async def test_validate_async_unique_with_except():
+    with patch('tortoise.connections') as mock_conns:
+        conn = _mock_conn([{'cnt': 0}])
+        mock_conns.get.return_value = conn
+        errors = await validate_async(
+            {'email': 'existing@example.com'},
+            {'email': 'required|email|unique:users,email,42'},
+        )
+    assert errors == {}
+    sql_call = conn.execute_query.call_args
+    assert 'id != $2' in sql_call[0][0]
+    assert sql_call[0][1] == ['existing@example.com', '42']
+
+
+@pytest.mark.asyncio
+async def test_validate_async_unique_skipped_when_sync_fails():
+    """If a sync rule fails (e.g., email format), unique is not checked."""
+    errors = await validate_async(
+        {'email': 'not-an-email'},
+        {'email': 'required|email|unique:users,email'},
+    )
+    assert 'email' in errors
+    assert len(errors['email']) == 1
+    assert 'valid email' in errors['email'][0]
+
+
+@pytest.mark.asyncio
+async def test_validate_async_unique_skipped_when_empty_nullable():
+    errors = await validate_async(
+        {'email': ''},
+        {'email': 'nullable|unique:users,email'},
+    )
+    assert errors == {}
+
+
+@pytest.mark.asyncio
+async def test_validate_async_unique_custom_message():
+    with patch('tortoise.connections') as mock_conns:
+        mock_conns.get.return_value = _mock_conn([{'cnt': 1}])
+        errors = await validate_async(
+            {'email': 'taken@example.com'},
+            {'email': 'required|unique:users,email'},
+            {'email.unique': 'This email is already registered'},
+        )
+    assert errors['email'][0] == 'This email is already registered'
+
+
+@pytest.mark.asyncio
+async def test_validate_async_unique_invalid_table_name():
+    with pytest.raises(ValueError, match='Invalid table name'):
+        await validate_async(
+            {'email': 'a@b.com'},
+            {'email': 'required|unique:DROP TABLE--,email'},
+        )
+
+
+@pytest.mark.asyncio
+async def test_validate_async_unique_missing_column():
+    with pytest.raises(ValueError, match='at least table and column'):
+        await validate_async(
+            {'email': 'a@b.com'},
+            {'email': 'required|unique:users'},
+        )
+
+
+@pytest.mark.asyncio
+async def test_validate_async_without_unique_rules():
+    """validate_async works fine with only sync rules (no DB hit)."""
+    errors = await validate_async(
+        {'name': 'Alice', 'email': 'alice@example.com'},
+        {'name': 'required|min:2', 'email': 'required|email'},
+    )
     assert errors == {}

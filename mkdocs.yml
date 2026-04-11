@@ -48,6 +48,7 @@ nav:
   - Core:
       - Controllers: controllers.md
       - Routing: routing.md
+      - Middleware: middleware.md
       - Templates: templates.md
       - Forms & Validation: forms_validation.md
       - Flash Messages: flash_messages.md
