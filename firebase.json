@@ -1,0 +1,22 @@
+{
+  "hosting": {
+    "target": "nori-docs",
+    "public": "site",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "headers": [
+      {
+        "source": "**/*.@(jpg|jpeg|gif|png|svg|webp|js|css)",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "max-age=2592000, public"
+          }
+        ]
+      }
+    ]
+  }
+}
