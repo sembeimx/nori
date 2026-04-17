@@ -41,42 +41,20 @@ All production-critical gaps have been addressed:
 
 ## What's next
 
-### ~~1. Redis Queue Driver~~ — Done (v1.3.0)
+Focus items that extend the framework's core thesis — server-rendered pages and JSON APIs as first-class peers — plus developer experience wins. For completed work, see the [changelog](https://github.com/sembeimx/nori/blob/main/CHANGELOG.md).
 
-Implemented. `QUEUE_DRIVER=redis` with BRPOP for near-instant pickup, delayed jobs via sorted sets, and dead letter list. See [Background Tasks](background_tasks.md).
+### 1. OpenAPI / Swagger
 
-### ~~2. CLI Plugin System~~ — Done (v1.3.0)
+Auto-generated API documentation from route definitions and declarative validation rules (`'required|email|max:255'`). The validation metadata already describes request shapes — exposing it as an OpenAPI 3 document is a generation step, not a refoundation. This is the keystone for the API-peer side of the framework: every JSON endpoint becomes introspectable, documented, and consumable by codegen tools out of the box.
 
-Implemented. User commands live in `commands/*.py` with `register(subparsers)` + `handle(args)`. Survive `framework:update`. See [CLI](cli.md#extending-the-cli).
+### 2. Content Negotiation Helpers
 
-### ~~3. Validation: Additional Rules~~ — Done (v1.3.0)
+First-class support for routes that serve both HTML and JSON from a single controller. Response helpers that return JSON when `Accept: application/json` is present and render the configured template otherwise, plus HTMX-aware utilities (`HX-Redirect`, `HX-Trigger`, partial rendering). This moves the dual-shape thesis from the framework level down to the controller layer where it matters day-to-day.
 
-Added 8 rules: `url`, `date`, `confirmed`, `nullable`, `array`, `min_value`, `max_value`, `regex`. See [Forms & Validation](forms_validation.md). The `unique` rule was added in v1.4.0.
+### 3. Internationalization (i18n)
 
-### ~~4. Testing Utilities for App Developers~~ — Done (v1.3.0)
+Translation support for templates and validation messages. The `messages=` parameter in `validate()` is a first step — a full i18n system would load messages from locale files and resolve them automatically. Bilingual documentation site (EN/ES) as a parallel effort.
 
-Implemented. `core.testing` provides `create_test_client()`, `setup_test_db()` / `teardown_test_db()`, `authenticate()` / `authenticate_api()`, `ModelFactory` base class, and assertion helpers. See [Testing](testing.md).
-
-### ~~5. `file_max` Negative Value Bug~~ — Done (v1.3.0)
-
-Fixed. `ValueError` from `_parse_size()` is now caught in `_check_rule` and returned as a validation error.
-
-### ~~6. `unique` Validation Rule~~ — Done (v1.4.0)
-
-Implemented. `unique:table,column` checks value uniqueness via async database query. Requires `validate_async()`. Supports `unique:table,column,except_id` for update forms. See [Forms & Validation](forms_validation.md#async-validation-validate_async).
-
-### ~~7. `routes:list` CLI Command~~ — Done (v1.4.0)
-
-Implemented. `python3 nori.py routes:list` prints a table of all registered routes with path, methods, and name. Supports recursive Mount groups and WebSocket routes. See [CLI Reference](cli.md#route-inspection).
-
-### 8. OpenAPI / Swagger
-
-Auto-generated API docs from route definitions. Pipe-separated validation (`'required|email|max:255'`) doesn't map cleanly to OpenAPI schemas — may require optional type metadata on routes.
-
-### 9. Internationalization (i18n)
-
-Translation support for templates and validation messages. The `messages=` parameter in `validate()` is a first step — a full i18n system would load messages from locale files and resolve them automatically. Bilingual documentation site (EN/ES).
-
-### 10. Admin Panel
+### 4. Admin Panel
 
 Leverage `core.registry` to auto-discover registered models. Visual interface for AuditLog inspection, Job queue status, and basic CRUD.

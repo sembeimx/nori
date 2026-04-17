@@ -208,7 +208,7 @@ Nori includes pre-built abstracted layers in the form of Python mixins for solvi
 These mixins exist because we've seen the same patterns in every project: soft deletes (you always regret a hard delete), tree structures (categories, permissions, org charts), and safe serialization (sensitive fields leaking into API responses). We built them once, correctly.
 
 ### NoriSoftDeletes (Logical Deletion)
-Protects transactional entropy by preventing hard `DROP` or `DELETE` SQL operations. `NoriSoftDeletes` already inherits from Tortoise's `Model`, so you do **not** need to inherit from both — just replace `Model` with `NoriSoftDeletes`. The mixin adds a `deleted_at` DatetimeField automatically.
+Protects transactional entropy by preventing hard `DROP` or `DELETE` SQL operations. `NoriSoftDeletes` already inherits from Tortoise's `Model`, so you do **not** need to inherit from both — just replace `Model` with `NoriSoftDeletes`. The mixin adds a nullable `deleted_at` DatetimeField that is automatically set to the current timestamp when `.delete()` is called.
 
 ```python
 from core.mixins.soft_deletes import NoriSoftDeletes

@@ -72,8 +72,8 @@ async def process_form(self, request: Request):
 | Declared Rule | Operational Function |
 | :---: | :--- |
 | `required` | Blocks empty strings or omitted Key parameters in Form Request submission. |
-| `min:N` | Sets a limiting Count Limit of characters less than `N`. |
-| `max:N` | Ensures the string does not Overflow `N`. |
+| `min:N` | Validates the string length is at least `N` characters. |
+| `max:N` | Validates the string length is at most `N` characters. |
 | `email` | Strict verification RegEx for official Email String (`name@domain.tld`). Rejects consecutive dots in local part per RFC 5321. |
 | `numeric` | Admits native parseable Integers and Decimals. Rejects `Infinity` and `NaN`. |
 | `matches:field_b` | Full equitable validity cross-check (E.g. `matches:old_password`). |

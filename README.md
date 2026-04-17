@@ -5,9 +5,9 @@
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org)
 [![Version](https://img.shields.io/github/v/release/sembeimx/nori)](https://github.com/sembeimx/nori/releases)
 
-A batteries-included async Python web framework built on **Starlette** and **Tortoise ORM**.
+**The async Python framework where server-rendered pages and JSON APIs are first-class peers.**
 
-Class-based controllers, declarative validation (`required|email|max:255` — 17 built-in rules), native authentication (sessions, JWT, OAuth2), CSRF protection, granular ACL permissions, audit logging, persistent job queues (database + Redis), WebSockets, rate limiting, pluggable CLI, testing utilities, and a self-updating core.
+Built on Starlette and Tortoise ORM. Nori is for apps that live in both shapes at once — a SaaS dashboard with an HTMX UI and a JSON endpoint for the mobile client, an admin panel and a public API, a marketing site and a webhook handler. One auth system, one ORM, one validation layer, one testing setup. Nothing to stitch together.
 
 ---
 
@@ -98,7 +98,7 @@ nori/
             ├── queue.py             ← Job queue (memory/database/redis drivers)
             ├── queue_worker.py      ← Queue worker with retry and dead letters
             ├── auth/                ← Sessions, JWT, CSRF, OAuth2, ACL decorators
-            ├── http/                ← @inject DI, validation (17 rules)
+            ├── http/                ← @inject DI, declarative validation
             └── mixins/              ← NoriModelMixin, NoriSoftDeletes, NoriTreeMixin
 ```
 

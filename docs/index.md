@@ -1,17 +1,20 @@
 # Nori Framework
 
-**Opinionated async web framework for Python** — structured, secure, and lightweight.
+**The async Python framework where server-rendered pages and JSON APIs are first-class peers.**
 
 ---
 
 ## What is Nori?
 
-Nori is a full-stack async web framework that makes decisions for you: project structure, authentication, validation, controllers, and CLI generators — all built-in, all async-native.
+Nori is an async web framework built on Starlette and Tortoise ORM, designed for apps that live in both shapes at once — server-rendered pages and JSON APIs as first-class peers, not one bolted onto the other.
 
-- **Built-in auth + ACL** — sessions, JWT, OAuth2, roles, granular permissions
-- **Tortoise ORM** — async database layer with migrations
-- **CLI generators + plugin system** — scaffold controllers, models, seeders; extend with your own commands
-- **Convention over configuration** — a right place for everything
+This is the shape Nori was built for:
+
+- A SaaS dashboard with an HTMX UI and a JSON endpoint for the mobile client
+- An admin panel and a public API for third-party integrations
+- A marketing site that also handles webhooks and background jobs
+
+Everything you need to build that app lives in the core. Auth, validation, ORM, queues, WebSockets, CSRF, rate limiting, testing — one of each, integrated. No stitching.
 
 ---
 
@@ -66,7 +69,7 @@ DEBUG=true pytest tests/
 
 - **Session Auth + JWT** — Login, roles, granular permissions (ACL), brute-force protection, JWT revocation, session permissions TTL
 - **OAuth2** — Google (OpenID Connect + PKCE) and GitHub drivers included
-- **Declarative Validation** — 17 built-in rules with pipe syntax: `'required|email|max:255|url|date|confirmed|nullable'`
+- **Declarative Validation** — 19 built-in rules with pipe syntax: `'required|email|max:255|url|date|confirmed|nullable'`
 - **Multi-Driver Services** — Storage, Email, Search, Cache with pluggable backends and memory backend guards
 - **Background Tasks** — Volatile (`background()`) and persistent job queues (`push()`) with database and Redis drivers
 - **WebSockets** — Handler base classes with session/JWT auth
