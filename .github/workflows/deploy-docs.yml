@@ -13,9 +13,9 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
 
@@ -25,6 +25,9 @@ jobs:
       - name: Build docs
         run: mkdocs build
 
+      # FirebaseExtended/action-hosting-deploy still runs on Node 20 as of
+      # 2026-04-21. Track https://github.com/FirebaseExtended/action-hosting-deploy/issues/448
+      # and bump once an upstream Node 24 release is published.
       - name: Deploy to Firebase
         uses: FirebaseExtended/action-hosting-deploy@v0
         with:
