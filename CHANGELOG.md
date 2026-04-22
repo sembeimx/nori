@@ -4,6 +4,17 @@ All notable changes to Nori are documented here. Format follows [Keep a Changelo
 
 ---
 
+## [1.5.0] — 2026-04-21
+
+### Added
+- **Google Cloud Storage driver** (`services/storage_gcs.py`): native GCS storage backend using service account JWT → OAuth2 access token exchange (no `google-cloud-storage` SDK). Signs RS256 JWTs with the service account's private key, caches the 1-hour Bearer token in-process with async-safe refresh 60 s before expiry, and uploads via the GCS XML API (`PUT https://storage.googleapis.com/{bucket}/{key}`). Supports loading credentials from a file (`GCS_CREDENTIALS_FILE`) or an inline JSON string (`GCS_CREDENTIALS_JSON`) for containerised deployments. Optional `GCS_URL_PREFIX` for CDN-fronted public URLs.
+- 16 new tests for the GCS driver covering JWT construction and signature verification with a real throwaway RSA keypair, token caching and refresh logic, credentials loading precedence, and upload URL construction. Suite: 519 → 535 total.
+
+### Changed
+- `requirements.txt` lists `cryptography>=42.0` as an optional dep (commented) — only required when enabling the GCS driver. Dev dependency pinned in `requirements-dev.txt` so CI runs the new tests.
+
+---
+
 ## [1.4.0] — 2026-04-10
 
 ### Added
