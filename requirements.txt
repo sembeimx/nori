@@ -13,3 +13,4 @@ typing-extensions>=4.0
 gunicorn>=22.0
 aiosmtplib>=3.0
 # redis[hiredis]  # optional: for distributed rate limiting (THROTTLE_BACKEND=redis)
+# cryptography>=42.0  # optional: for GCS driver (RS256 JWT signing)

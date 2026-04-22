@@ -420,6 +420,7 @@ ip = get_client_ip(request)  # Respects X-Forwarded-For from TRUSTED_PROXIES onl
 |------|--------|-----|----------|
 | `services/mail_resend.py` | `resend` | Email via Resend API | `RESEND_API_KEY`, `MAIL_FROM` |
 | `services/storage_s3.py` | `s3` | S3/R2/Spaces/MinIO | `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY` |
+| `services/storage_gcs.py` | `gcs` | Google Cloud Storage | `GCS_BUCKET`, `GCS_CREDENTIALS_FILE` (or `GCS_CREDENTIALS_JSON`), plus the `cryptography` package |
 | `services/search_meilisearch.py` | `meilisearch` | Meilisearch full-text search | `MEILISEARCH_URL` |
 
 ### How to use an example driver
@@ -460,6 +461,38 @@ S3_URL_PREFIX=https://cdn.example.com              # optional, custom public URL
 ```
 
 The S3 driver implements AWS Signature V4 in pure Python (no `boto3` dependency). It works with any S3-compatible API: AWS S3, Cloudflare R2, DigitalOcean Spaces, MinIO.
+
+### GCS Driver — Additional Configuration
+
+```text
+GCS_BUCKET=my-bucket
+GCS_CREDENTIALS_FILE=/path/to/service-account.json
+# or, for containerised deployments where secrets are env-injected:
+# GCS_CREDENTIALS_JSON={"type":"service_account",...}
+GCS_URL_PREFIX=https://cdn.example.com    # optional, defaults to https://storage.googleapis.com/{bucket}
+```
+
+The GCS driver authenticates natively via **service account JWT → OAuth2 access token** (no `google-cloud-storage` SDK). It:
+
+1. Loads the service account JSON from `GCS_CREDENTIALS_FILE` (preferred) or `GCS_CREDENTIALS_JSON`.
+2. Signs a short-lived JWT with RS256 using the service account's private key.
+3. Exchanges the JWT for a 1-hour Bearer access token at `https://oauth2.googleapis.com/token`.
+4. Caches the token in-process and refreshes 60 s before expiry (async-safe).
+5. Uploads via `PUT https://storage.googleapis.com/{bucket}/{key}`.
+
+**Setup on GCP:**
+
+1. Create a bucket in a GCP project with the Cloud Storage API enabled.
+2. Create a service account and grant it **Storage Object Admin** on the bucket.
+3. Generate a JSON key for the service account — this is the file you point `GCS_CREDENTIALS_FILE` at.
+
+**Requires the `cryptography` package** for RS256 JWT signing. It is listed as optional in `requirements.txt`; install it when you enable the GCS driver:
+
+```bash
+pip install cryptography
+```
+
+**Public URLs:** the returned URL assumes the bucket (or object) is publicly readable. Configure bucket-level public access via IAM (`allUsers` → *Storage Object Viewer*) or set a `GCS_URL_PREFIX` pointing at a CDN that handles auth.
 
 ### Resend Driver — Additional Configuration
 
