@@ -99,17 +99,24 @@ Use whichever fits your deployment.
 
 ## Upgrading an existing site
 
-If your site runs Nori ≤ 1.5.0, `framework:update` will patch your `asgi.py` automatically the first time you run it against a release that ships the hook:
+If your site runs Nori ≤ 1.5.x, the upgrade to 1.6.0 is a two-step:
 
 ```bash
-python3 nori.py framework:update
+python3 nori.py framework:update             # step 1 — brings in v1.6.0
+python3 nori.py framework:update --force     # step 2 — applies patches
 ```
 
-You will see something like:
+### Why two steps?
+
+The patch system itself ships in 1.6.0. When you run `framework:update` on an older release, the code that executes is still the OLD `core/cli.py` — it has already been loaded into memory by the Python interpreter. It downloads and replaces the files on disk with 1.6.0, but the running process keeps executing the old logic, which does not know about patches.
+
+The second run (`--force`) is executed by the newly installed 1.6.0 `cli.py`, so the patcher actually fires and you will see:
 
 ```text
   Applying patches...
     ✓ asgi.py: added bootstrap hook
 ```
 
-The patch is idempotent — running it again is a no-op. A timestamped backup of the pre-patch `asgi.py` lives under `rootsystem/.framework_backups/` if you ever need to inspect it.
+This is a **one-time** quirk for the first upgrade to a release that introduces the patch system. From 1.6.x onwards, patches run automatically on every update.
+
+The patch is idempotent — running it repeatedly is a no-op. A timestamped backup of the pre-patch `asgi.py` lives under `rootsystem/.framework_backups/` if you ever need to inspect it.

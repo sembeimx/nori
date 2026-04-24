@@ -12,6 +12,9 @@ All notable changes to Nori are documented here. Format follows [Keep a Changelo
 - **Observability docs** (`docs/observability.md`): rationale for the hook design, the Sentry recipe end-to-end, notes on Datadog (`ddtrace-run`) and OpenTelemetry, and the upgrade path for sites on Nori ≤ 1.5.
 - 16 new tests for the bootstrap loader (file absent, function present, idempotency, missing function, raising hook, import error, syntax error) and the asgi.py patcher (injection positions, idempotency, missing file, syntax error, AST validity of the patched output). Suite: 535 → 551 total.
 
+### Upgrade note
+- **First-time upgrade to 1.6.0 requires two steps** (`framework:update` then `framework:update --force`). The running Python process has the OLD `cli.py` in memory, so the patcher shipped in 1.6.0 does not fire on the same run that installs 1.6.0. The `--force` re-run executes under the new `cli.py` and applies the patch. This is a one-time quirk — from 1.6.x onwards patches run automatically. See [docs/observability.md](https://nori.sembei.mx/observability/#upgrading-an-existing-site).
+
 ---
 
 ## [1.5.0] — 2026-04-21
