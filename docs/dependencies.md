@@ -116,6 +116,21 @@ Your old `requirements.txt` keeps all its entries, including framework deps that
 
 ---
 
+## Docker
+
+If your site uses the Docker setup shipped with Nori, the `Dockerfile` copies the requirements files during the builder stage:
+
+```dockerfile
+COPY requirements.txt requirements.nori.txt ./
+RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
+```
+
+**Both files must be copied.** `pip install -r requirements.txt` resolves `-r requirements.nori.txt` at install time, so if only `requirements.txt` is present the build fails with `ERROR: -r requirements.nori.txt not found`.
+
+If your site predates 1.7.1 and was based on an earlier Nori `Dockerfile`, add `requirements.nori.txt` to the `COPY` line manually — it is a one-line edit. The rest of the build is unchanged.
+
+---
+
 ## Dev dependencies
 
 `requirements-dev.txt` is yours and is never touched by `framework:update`. The convention is to start it with `-r requirements.txt` so dev installs include prod deps, then add testing tools:

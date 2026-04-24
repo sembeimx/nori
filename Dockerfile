@@ -6,7 +6,7 @@ WORKDIR /app
 # Install build dependencies for asyncmy
 RUN apt-get update && apt-get install -y gcc pkg-config default-libmysqlclient-dev && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt .
+COPY requirements.txt requirements.nori.txt ./
 RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 
 # Stage 2: Runtime
