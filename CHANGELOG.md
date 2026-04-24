@@ -4,6 +4,16 @@ All notable changes to Nori are documented here. Format follows [Keep a Changelo
 
 ---
 
+## [1.6.0] — 2026-04-24
+
+### Added
+- **Bootstrap hook** (`core/bootstrap.py`): optional `rootsystem/application/bootstrap.py` with a top-level `bootstrap()` function runs as the very first thing in the ASGI entry point, before Starlette, Tortoise, or any other third-party import. This is the correct moment to initialise observability SDKs (Sentry, Datadog, OpenTelemetry) that patch libraries at import time. The hook is optional — if the file is absent, `load_bootstrap()` is a no-op; if it imports or raises, a warning is logged on `nori.bootstrap` and the app still starts.
+- **`framework:update` patch system**: after replacing the framework directories, the update command now applies idempotent patches to user-land files so new core features that need a hook in `asgi.py` are wired up automatically. First patch: injects the bootstrap hook call into `asgi.py` after the `from __future__` import and module docstring, preserving any user customizations. A timestamped backup is kept in `rootsystem/.framework_backups/`.
+- **Observability docs** (`docs/observability.md`): rationale for the hook design, the Sentry recipe end-to-end, notes on Datadog (`ddtrace-run`) and OpenTelemetry, and the upgrade path for sites on Nori ≤ 1.5.
+- 16 new tests for the bootstrap loader (file absent, function present, idempotency, missing function, raising hook, import error, syntax error) and the asgi.py patcher (injection positions, idempotency, missing file, syntax error, AST validity of the patched output). Suite: 535 → 551 total.
+
+---
+
 ## [1.5.0] — 2026-04-21
 
 ### Added
