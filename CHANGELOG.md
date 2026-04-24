@@ -4,6 +4,32 @@ All notable changes to Nori are documented here. Format follows [Keep a Changelo
 
 ---
 
+## [1.8.0] — 2026-04-24
+
+### Fixed
+- **`tomlkit` missing from `requirements.nori.txt`**: Aerich 0.9.2 imports `tomlkit` at runtime to read/write `pyproject.toml` during `migrate:init` / `migrate`, but does not list it as a transitive dependency. Pinning `tomlkit>=0.13` directly avoids `ModuleNotFoundError` on first install.
+
+### Changed (BREAKING)
+- **`migrations/framework/` is now user-owned, generated locally against each site's DB engine.** It has been removed from `_FRAMEWORK_DIRS` — `framework:update` no longer ships, replaces, or backs up its contents. The pre-generated `0_20260328_init.py` (which hard-coded SQLite-only `AUTOINCREMENT` syntax and broke MySQL / PostgreSQL setups with error 1064) has been removed from the repo. Each site now generates its own framework migrations via `python3 nori.py migrate:init` on first install, and via `migrate:make ... --app framework` whenever the framework adds new models.
+
+### Docs
+- Updated `docs/getting_started.md`, `docs/database.md`, and `docs/cli.md` to reflect the new flow (engine-specific migrations, `migrate:init` as a mandatory first-run step).
+
+### Upgrade note
+
+**For sites that successfully applied the old SQLite migration** (DB engine = SQLite, or MySQL/Postgres deployment that happened to skip the broken migration somehow): no action needed. Your `migrations/framework/0_20260328_init.py` stays in place, your `aerich` table tracks it, and future `migrate:make --app framework` commands diff against the embedded `MODELS_STATE` correctly.
+
+**For sites that never applied the old migration** (e.g. fresh checkout on MySQL where the migration crashed with error 1064 before being recorded): delete the broken file and regenerate:
+
+```bash
+rm rootsystem/application/migrations/framework/0_20260328_init.py
+python3 nori.py migrate:init
+```
+
+This generates the initial framework migration adapted to your engine and applies it.
+
+---
+
 ## [1.7.1] — 2026-04-24
 
 ### Fixed
