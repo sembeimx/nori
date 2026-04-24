@@ -4,6 +4,26 @@ All notable changes to Nori are documented here. Format follows [Keep a Changelo
 
 ---
 
+## [1.7.0] — 2026-04-24
+
+### Added
+- **Split requirements**: framework deps now live in their own `requirements.nori.txt` at the project root, and the site's `requirements.txt` inlines them via `-r requirements.nori.txt`. The new file is framework-owned (replaced on every `framework:update`, backed up under `rootsystem/.framework_backups/`), while `requirements.txt` remains user-owned — only patched once to add the `-r` line. This eliminates silent drift of framework minimums on upgrade.
+- **`_FRAMEWORK_FILES` update support**: `framework:update` now handles individual files (not just directories). Extracts, backs up, and replaces any entry registered in `_FRAMEWORK_FILES` with the same semantics as `_FRAMEWORK_DIRS`.
+- **Reload-safe patch system** (`core/_patches.py`): moved `_patch_bootstrap_hook_in_asgi` and the dispatcher `apply()` out of `core/cli.py` into a dedicated module. `framework_update()` clears it from `sys.modules` and re-imports it after the framework replace, so patches added in a release can actually fire on the same update that ships them — closing the first-update trap that hit 1.6.0.
+- **New patcher `_patch_requirements_dash_r_to_nori`**: idempotently prepends `-r requirements.nori.txt` to an existing `requirements.txt` on upgrade, preserving any user deps and comments.
+- **Dependencies docs** (`docs/dependencies.md`): rationale for the split, how to add site deps, activating optional drivers, stricter pins, upgrade path, dev deps.
+- 7 new tests for the requirements patcher (idempotency, leading comments, missing file, full `apply()` runs) and for the patcher error-isolation path. Suite: 551 → 558 total.
+
+### Changed
+- `core/cli.py` no longer contains patch logic. `framework_update()` imports `core._patches` via `importlib` after clearing `sys.modules`, so the freshly-installed bytecode runs.
+- `requirements.txt` in the framework repo is now the scaffold template: starts with `-r requirements.nori.txt`, optional drivers commented, placeholder section for site deps.
+
+### Upgrade note
+- **Coming from ≤ 1.6**: the first `framework:update` to 1.7.0 still requires the two-step run (`framework:update` then `framework:update --force`) because the old `cli.py` in memory does not know about the reload trick. After that, patches apply automatically on every update — the trap is closed from 1.7 onwards.
+- Your existing `requirements.txt` is preserved. After the patch, it will start with `-r requirements.nori.txt` and your old deps remain below. pip deduplicates entries that also appear in `requirements.nori.txt`; stricter pins in your file still win. You may optionally remove the framework entries from your file to keep it clean.
+
+---
+
 ## [1.6.0] — 2026-04-24
 
 ### Added
