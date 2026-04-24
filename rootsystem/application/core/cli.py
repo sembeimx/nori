@@ -1,6 +1,7 @@
 """Nori CLI — all framework commands live here so they update with core."""
 from __future__ import annotations
 
+import ast
 import sys
 import os
 import subprocess
@@ -412,11 +413,91 @@ def framework_update(target_version: str | None = None, skip_backup: bool = Fals
                 shutil.rmtree(local_dir)
             shutil.copytree(extract_dir, local_dir)
 
+    patches = _apply_patches()
+    if patches:
+        print("\n  Applying patches...")
+        for p in patches:
+            print(f"    ✓ {p}")
+
     print(f"\n  Updated: {current} → {version}")
     has_migrations = _FRAMEWORK_MIGRATIONS_DIR in extracted
     if has_migrations:
         print(f"  New framework migrations detected.")
         print(f"  Run: python3 nori.py migrate:upgrade --app framework")
+
+
+# ---------------------------------------------------------------------------
+# Post-update patches
+# ---------------------------------------------------------------------------
+# Idempotent patches applied to user-land files after a framework update.
+# Each patcher reads the target file, checks whether the change is already
+# present, and injects the missing bits — existing user customizations are
+# preserved. Register new patches in _apply_patches().
+
+_ASGI_FILE = os.path.join(_APP_DIR, 'asgi.py')
+_BOOTSTRAP_IMPORT_LINE = 'from core.bootstrap import load_bootstrap'
+_BOOTSTRAP_CALL_LINE = 'load_bootstrap()'
+
+
+def _patch_bootstrap_hook_in_asgi() -> bool:
+    if not os.path.exists(_ASGI_FILE):
+        return False
+
+    with open(_ASGI_FILE) as f:
+        content = f.read()
+
+    if _BOOTSTRAP_IMPORT_LINE in content:
+        return False
+
+    try:
+        tree = ast.parse(content)
+    except SyntaxError as e:
+        print(f"  Warning: cannot parse asgi.py ({e}) — skipping bootstrap patch")
+        return False
+
+    insert_lineno = 1
+    for stmt in tree.body:
+        is_docstring = (
+            isinstance(stmt, ast.Expr)
+            and isinstance(stmt.value, ast.Constant)
+            and isinstance(stmt.value.value, str)
+        )
+        is_future = (
+            isinstance(stmt, ast.ImportFrom)
+            and stmt.module == '__future__'
+        )
+        if is_docstring or is_future:
+            insert_lineno = stmt.end_lineno + 1
+            continue
+        break
+
+    injection = (
+        '\n'
+        '# Bootstrap hook — MUST run before any framework/third-party import so\n'
+        '# observability SDKs (Sentry, OTel, Datadog) can patch libraries at load time.\n'
+        f'{_BOOTSTRAP_IMPORT_LINE}\n'
+        f'{_BOOTSTRAP_CALL_LINE}\n'
+        '\n'
+    )
+
+    lines = content.splitlines(keepends=True)
+    idx = min(insert_lineno - 1, len(lines))
+    lines.insert(idx, injection)
+
+    with open(_ASGI_FILE, 'w') as f:
+        f.write(''.join(lines))
+
+    return True
+
+
+def _apply_patches() -> list[str]:
+    applied: list[str] = []
+    try:
+        if _patch_bootstrap_hook_in_asgi():
+            applied.append('asgi.py: added bootstrap hook')
+    except Exception as e:
+        print(f"  Warning: bootstrap hook patch failed — {e}")
+    return applied
 
 
 # ---------------------------------------------------------------------------

@@ -76,6 +76,7 @@ Nori's internal modules use named loggers for targeted filtering:
 | Logger | Used by |
 |--------|---------|
 | `nori.asgi` | Application startup, error handlers |
+| `nori.bootstrap` | User bootstrap hook (`bootstrap.py`) errors |
 | `nori.audit` | Audit log entries |
 | `nori.tasks` | Background task errors |
 | `nori.ws` | WebSocket handler errors |
