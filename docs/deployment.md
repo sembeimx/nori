@@ -226,22 +226,56 @@ sudo systemctl reload apache2
 
 ### 6. Reverse proxy headers
 
-When Nori runs behind a reverse proxy (Apache, Nginx), the proxy must send the `X-Forwarded-Proto` header so Starlette generates URLs with the correct protocol. Without it, `url_for()` produces `http://` instead of `https://`, causing mixed-content blocking in browsers.
+When Nori runs behind a reverse proxy (Apache, Nginx, Caddy, Traefik), **two things** must be in place:
 
-**Apache:**
+1. **The proxy sends** `X-Forwarded-Proto` and friends
+2. **Uvicorn trusts the upstream IP** — otherwise it ignores the headers and falls back to `scheme=http`
+
+Without (2), `url_for()` produces `http://` instead of `https://`, causing mixed-content blocking in browsers.
+
+**The proxy side:**
+
+Apache:
 
 ```apache
 RequestHeader set X-Forwarded-Proto "https"
 RequestHeader set X-Forwarded-For "%{REMOTE_ADDR}s"
 ```
 
-**Nginx:**
+Nginx:
 
 ```nginx
 proxy_set_header X-Forwarded-Proto $scheme;
 proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
 proxy_set_header Host $host;
 ```
+
+Caddy (automatic — `reverse_proxy` sends these by default):
+
+```caddy
+reverse_proxy app:8000
+```
+
+**The app side:**
+
+Nori's bundled `gunicorn.conf.py` ships with `forwarded_allow_ips = "*"`, which tells the Uvicorn worker to trust forwarded headers from any upstream. This is the right default for containerized deployments (the only reachable upstream is the proxy itself). **No action needed in 99% of setups.**
+
+Tighten only if you have a specific reason — e.g., a single-host VPS where you want Uvicorn to trust only the local proxy:
+
+```python
+# gunicorn.conf.py
+forwarded_allow_ips = "127.0.0.1"
+```
+
+**How to verify it works** after deploying:
+
+```bash
+curl -s https://your-site.com/ | grep -o 'href="http[^:]*' | head -5
+```
+
+If you see `https` everywhere, you're good. If you see any bare `http`, the proxy headers aren't reaching Starlette — re-check both the proxy config and `forwarded_allow_ips`.
+
+**Gotcha**: in practice, setting `FORWARDED_ALLOW_IPS` as an environment variable has proven unreliable with `UvicornWorker` across versions — the config-file path is deterministic. Always set `forwarded_allow_ips` in `gunicorn.conf.py` or pass `--forwarded-allow-ips=*` as a CLI flag to gunicorn.
 
 ---
 
