@@ -68,6 +68,7 @@ nav:
       - Testing Utilities: testing.md
   - Operations:
       - Deployment: deployment.md
+      - Dependencies: dependencies.md
       - Observability: observability.md
       - Roadmap: roadmap.md
 

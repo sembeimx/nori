@@ -1,9 +1,9 @@
-"""Tests for the post-update patch system (core.cli._apply_patches)."""
+"""Tests for the post-update patch system (core._patches)."""
 from __future__ import annotations
 
 import pytest
 
-from core import cli
+from core import _patches
 
 
 ASGI_WITH_FUTURE_AND_DOCSTRING = '''\
@@ -39,97 +39,203 @@ load_bootstrap()
 from starlette.applications import Starlette
 '''
 
+REQUIREMENTS_V15 = '''\
+starlette>=0.28
+uvicorn[standard]>=0.29
+tortoise-orm>=0.25
+# redis[hiredis]
+'''
+
+REQUIREMENTS_ALREADY_PATCHED = '''\
+-r requirements.nori.txt
+
+starlette>=0.28
+'''
+
+REQUIREMENTS_WITH_LEADING_COMMENT = '''\
+# Site deps — updated 2026-04-01
+starlette>=0.28
+'''
+
 
 @pytest.fixture
-def asgi_file(tmp_path, monkeypatch):
-    """Redirect _ASGI_FILE to a temp file for the duration of the test."""
-    target = tmp_path / 'asgi.py'
-    monkeypatch.setattr(cli, '_ASGI_FILE', str(target))
-    return target
+def patch_env(tmp_path, monkeypatch):
+    """Redirect both patch targets into tmp_path so tests are hermetic."""
+    asgi = tmp_path / 'asgi.py'
+    requirements = tmp_path / 'requirements.txt'
+    monkeypatch.setattr(_patches, '_ASGI_FILE', str(asgi))
+    monkeypatch.setattr(_patches, '_REQUIREMENTS_FILE', str(requirements))
+    return {'asgi': asgi, 'requirements': requirements}
 
 
-def test_patch_injects_after_docstring_and_future(asgi_file):
-    asgi_file.write_text(ASGI_WITH_FUTURE_AND_DOCSTRING)
+# ---------------------------------------------------------------------------
+# bootstrap-hook patcher
+# ---------------------------------------------------------------------------
 
-    changed = cli._patch_bootstrap_hook_in_asgi()
+def test_bootstrap_patch_injects_after_docstring_and_future(patch_env):
+    patch_env['asgi'].write_text(ASGI_WITH_FUTURE_AND_DOCSTRING)
+
+    changed = _patches._patch_bootstrap_hook_in_asgi()
 
     assert changed is True
-    result = asgi_file.read_text()
+    result = patch_env['asgi'].read_text()
     assert 'from core.bootstrap import load_bootstrap' in result
     assert 'load_bootstrap()' in result
-    # Must appear BEFORE any starlette import
     assert result.index('load_bootstrap()') < result.index('from starlette')
-    # Must appear AFTER the docstring (which ends with its closing """)
     assert result.index('"""\n', result.index('Nori - ASGI')) < result.index('load_bootstrap()')
 
 
-def test_patch_is_idempotent(asgi_file):
-    asgi_file.write_text(ASGI_ALREADY_PATCHED)
-    before = asgi_file.read_text()
+def test_bootstrap_patch_is_idempotent(patch_env):
+    patch_env['asgi'].write_text(ASGI_ALREADY_PATCHED)
+    before = patch_env['asgi'].read_text()
 
-    changed = cli._patch_bootstrap_hook_in_asgi()
+    changed = _patches._patch_bootstrap_hook_in_asgi()
 
     assert changed is False
-    assert asgi_file.read_text() == before
+    assert patch_env['asgi'].read_text() == before
 
 
-def test_patch_without_docstring(asgi_file):
-    asgi_file.write_text(ASGI_WITHOUT_DOCSTRING)
+def test_bootstrap_patch_without_docstring(patch_env):
+    patch_env['asgi'].write_text(ASGI_WITHOUT_DOCSTRING)
 
-    changed = cli._patch_bootstrap_hook_in_asgi()
+    changed = _patches._patch_bootstrap_hook_in_asgi()
 
     assert changed is True
-    result = asgi_file.read_text()
+    result = patch_env['asgi'].read_text()
     assert result.index('from __future__') < result.index('load_bootstrap()')
     assert result.index('load_bootstrap()') < result.index('from starlette')
 
 
-def test_patch_bare_file(asgi_file):
-    asgi_file.write_text(ASGI_BARE)
+def test_bootstrap_patch_bare_file(patch_env):
+    patch_env['asgi'].write_text(ASGI_BARE)
 
-    changed = cli._patch_bootstrap_hook_in_asgi()
+    changed = _patches._patch_bootstrap_hook_in_asgi()
 
     assert changed is True
-    result = asgi_file.read_text()
+    result = patch_env['asgi'].read_text()
     assert result.index('load_bootstrap()') < result.index('from starlette')
 
 
-def test_patch_missing_file(asgi_file):
-    # asgi_file.write_text never called — file does not exist
-    assert cli._patch_bootstrap_hook_in_asgi() is False
+def test_bootstrap_patch_missing_file(patch_env):
+    assert _patches._patch_bootstrap_hook_in_asgi() is False
 
 
-def test_patch_syntax_error_file(asgi_file, capsys):
-    asgi_file.write_text('def broken(:\n    pass\n')
+def test_bootstrap_patch_syntax_error_file(patch_env, capsys):
+    patch_env['asgi'].write_text('def broken(:\n    pass\n')
 
-    changed = cli._patch_bootstrap_hook_in_asgi()
+    changed = _patches._patch_bootstrap_hook_in_asgi()
 
     assert changed is False
     captured = capsys.readouterr()
     assert 'cannot parse asgi.py' in captured.out
 
 
-def test_apply_patches_reports_applied(asgi_file):
-    asgi_file.write_text(ASGI_WITH_FUTURE_AND_DOCSTRING)
+def test_bootstrap_patched_file_is_valid_python(patch_env):
+    import ast
+    patch_env['asgi'].write_text(ASGI_WITH_FUTURE_AND_DOCSTRING)
 
-    applied = cli._apply_patches()
+    _patches._patch_bootstrap_hook_in_asgi()
+
+    ast.parse(patch_env['asgi'].read_text())
+
+
+# ---------------------------------------------------------------------------
+# requirements.nori.txt patcher
+# ---------------------------------------------------------------------------
+
+def test_requirements_patch_injects_dash_r_at_top(patch_env):
+    patch_env['requirements'].write_text(REQUIREMENTS_V15)
+
+    changed = _patches._patch_requirements_dash_r_to_nori()
+
+    assert changed is True
+    result = patch_env['requirements'].read_text()
+    assert result.startswith('-r requirements.nori.txt\n')
+    assert 'starlette>=0.28' in result  # original deps preserved
+
+
+def test_requirements_patch_is_idempotent(patch_env):
+    patch_env['requirements'].write_text(REQUIREMENTS_ALREADY_PATCHED)
+    before = patch_env['requirements'].read_text()
+
+    changed = _patches._patch_requirements_dash_r_to_nori()
+
+    assert changed is False
+    assert patch_env['requirements'].read_text() == before
+
+
+def test_requirements_patch_preserves_leading_comments(patch_env):
+    patch_env['requirements'].write_text(REQUIREMENTS_WITH_LEADING_COMMENT)
+
+    changed = _patches._patch_requirements_dash_r_to_nori()
+
+    assert changed is True
+    result = patch_env['requirements'].read_text()
+    assert result.startswith('-r requirements.nori.txt\n')
+    assert '# Site deps — updated 2026-04-01' in result
+
+
+def test_requirements_patch_missing_file(patch_env):
+    assert _patches._patch_requirements_dash_r_to_nori() is False
+
+
+# ---------------------------------------------------------------------------
+# apply() — runs all patchers
+# ---------------------------------------------------------------------------
+
+def test_apply_runs_both_patchers(patch_env):
+    patch_env['asgi'].write_text(ASGI_WITH_FUTURE_AND_DOCSTRING)
+    patch_env['requirements'].write_text(REQUIREMENTS_V15)
+
+    applied = _patches.apply()
+
+    assert 'asgi.py: added bootstrap hook' in applied
+    assert 'requirements.txt: added -r requirements.nori.txt' in applied
+    assert len(applied) == 2
+
+
+def test_apply_reports_only_asgi_when_requirements_missing(patch_env):
+    patch_env['asgi'].write_text(ASGI_WITH_FUTURE_AND_DOCSTRING)
+
+    applied = _patches.apply()
 
     assert applied == ['asgi.py: added bootstrap hook']
 
 
-def test_apply_patches_empty_when_nothing_to_do(asgi_file):
-    asgi_file.write_text(ASGI_ALREADY_PATCHED)
+def test_apply_reports_only_requirements_when_asgi_missing(patch_env):
+    patch_env['requirements'].write_text(REQUIREMENTS_V15)
 
-    applied = cli._apply_patches()
+    applied = _patches.apply()
+
+    assert applied == ['requirements.txt: added -r requirements.nori.txt']
+
+
+def test_apply_empty_when_nothing_to_do(patch_env):
+    patch_env['asgi'].write_text(ASGI_ALREADY_PATCHED)
+    patch_env['requirements'].write_text(REQUIREMENTS_ALREADY_PATCHED)
+
+    applied = _patches.apply()
 
     assert applied == []
 
 
-def test_patched_file_is_valid_python(asgi_file):
-    """Injected code must not break AST parsing of the result."""
-    import ast
-    asgi_file.write_text(ASGI_WITH_FUTURE_AND_DOCSTRING)
+def test_apply_continues_after_individual_patcher_failure(patch_env, monkeypatch, capsys):
+    """If one patcher raises, others still run and a warning is printed."""
+    patch_env['requirements'].write_text(REQUIREMENTS_V15)
 
-    cli._patch_bootstrap_hook_in_asgi()
+    def broken_patcher():
+        raise RuntimeError('boom')
 
-    ast.parse(asgi_file.read_text())
+    # Swap the first entry in _PATCHERS so it raises; the second still fires.
+    original = list(_patches._PATCHERS)
+    monkeypatch.setattr(_patches, '_PATCHERS', [
+        (broken_patcher, 'fake patch'),
+        original[1],
+    ])
+
+    applied = _patches.apply()
+
+    assert applied == ['requirements.txt: added -r requirements.nori.txt']
+    captured = capsys.readouterr()
+    assert 'fake patch' in captured.out
+    assert 'boom' in captured.out

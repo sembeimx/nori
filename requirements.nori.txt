@@ -1,0 +1,17 @@
+# Nori framework dependencies — DO NOT EDIT.
+# This file is owned by the framework and regenerated on every `framework:update`.
+# Your site's dependencies go in requirements.txt, which already `-r`s this file.
+starlette>=0.28
+uvicorn[standard]>=0.29
+tortoise-orm>=0.25
+aerich>=0.8
+asyncmy>=0.2
+asyncpg>=0.29
+jinja2>=3.1
+python-multipart>=0.0.6
+python-dotenv>=1.0
+httpx>=0.27
+itsdangerous>=2.1
+typing-extensions>=4.0
+gunicorn>=22.0
+aiosmtplib>=3.0

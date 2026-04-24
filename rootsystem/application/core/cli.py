@@ -1,7 +1,6 @@
 """Nori CLI — all framework commands live here so they update with core."""
 from __future__ import annotations
 
-import ast
 import sys
 import os
 import subprocess
@@ -289,10 +288,18 @@ _FRAMEWORK_MODELS_DIR = os.path.join(_APP_DIR, 'models', 'framework')
 _FRAMEWORK_MIGRATIONS_DIR = os.path.join(_APP_DIR, 'migrations', 'framework')
 _BACKUP_DIR = os.path.join('rootsystem', '.framework_backups')
 
+_REQUIREMENTS_NORI_FILE = 'requirements.nori.txt'
+
 _FRAMEWORK_DIRS = {
     'rootsystem/application/core/': _CORE_DIR,
     'rootsystem/application/models/framework/': _FRAMEWORK_MODELS_DIR,
     'rootsystem/application/migrations/framework/': _FRAMEWORK_MIGRATIONS_DIR,
+}
+
+# Individual files shipped by the framework that live OUTSIDE the directories
+# above. Replaced wholesale on update just like the dirs (with backup).
+_FRAMEWORK_FILES = {
+    'requirements.nori.txt': _REQUIREMENTS_NORI_FILE,
 }
 
 
@@ -389,6 +396,18 @@ def framework_update(target_version: str | None = None, skip_backup: bool = Fals
                 if found:
                     extracted[local_dir] = extract_dir
 
+            extracted_files: dict[str, str] = {}
+            for zip_rel_file, local_file in _FRAMEWORK_FILES.items():
+                member_name = root_prefix + zip_rel_file
+                if member_name in zf.namelist():
+                    temp_path = os.path.join(tmp, zip_rel_file.replace('/', '_'))
+                    parent = os.path.dirname(temp_path)
+                    if parent:
+                        os.makedirs(parent, exist_ok=True)
+                    with zf.open(member_name) as src, open(temp_path, 'wb') as dst:
+                        shutil.copyfileobj(src, dst)
+                    extracted_files[local_file] = temp_path
+
             if _CORE_DIR not in extracted:
                 print("  Error: Release zip does not contain rootsystem/application/core/")
                 print("  This release may not be compatible with your project structure.")
@@ -405,6 +424,14 @@ def framework_update(target_version: str | None = None, skip_backup: bool = Fals
                     print(f"  Backing up {local_dir} → {backup_dest}")
                     os.makedirs(os.path.dirname(backup_dest), exist_ok=True)
                     shutil.copytree(local_dir, backup_dest)
+            for local_file in extracted_files:
+                if os.path.exists(local_file):
+                    backup_dest = os.path.join(backup_root, local_file)
+                    print(f"  Backing up {local_file} → {backup_dest}")
+                    parent = os.path.dirname(backup_dest)
+                    if parent:
+                        os.makedirs(parent, exist_ok=True)
+                    shutil.copy2(local_file, backup_dest)
 
         for local_dir, extract_dir in extracted.items():
             label = os.path.relpath(local_dir, _APP_DIR)
@@ -413,7 +440,23 @@ def framework_update(target_version: str | None = None, skip_backup: bool = Fals
                 shutil.rmtree(local_dir)
             shutil.copytree(extract_dir, local_dir)
 
-    patches = _apply_patches()
+        for local_file, temp_path in extracted_files.items():
+            print(f"  Replacing {local_file} ...")
+            shutil.copy2(temp_path, local_file)
+
+    # Reload patches from the freshly installed core. The OLD cli.py that is
+    # currently executing was loaded into memory before the update, so any
+    # patches added in the new release cannot fire from here. Clearing the
+    # module from sys.modules and re-importing forces Python to read the
+    # freshly installed bytecode from disk.
+    sys.modules.pop('core._patches', None)
+    try:
+        from core import _patches
+        patches = _patches.apply()
+    except Exception as e:
+        print(f"\n  Warning: could not load core._patches — {e}")
+        patches = []
+
     if patches:
         print("\n  Applying patches...")
         for p in patches:
@@ -424,80 +467,6 @@ def framework_update(target_version: str | None = None, skip_backup: bool = Fals
     if has_migrations:
         print(f"  New framework migrations detected.")
         print(f"  Run: python3 nori.py migrate:upgrade --app framework")
-
-
-# ---------------------------------------------------------------------------
-# Post-update patches
-# ---------------------------------------------------------------------------
-# Idempotent patches applied to user-land files after a framework update.
-# Each patcher reads the target file, checks whether the change is already
-# present, and injects the missing bits — existing user customizations are
-# preserved. Register new patches in _apply_patches().
-
-_ASGI_FILE = os.path.join(_APP_DIR, 'asgi.py')
-_BOOTSTRAP_IMPORT_LINE = 'from core.bootstrap import load_bootstrap'
-_BOOTSTRAP_CALL_LINE = 'load_bootstrap()'
-
-
-def _patch_bootstrap_hook_in_asgi() -> bool:
-    if not os.path.exists(_ASGI_FILE):
-        return False
-
-    with open(_ASGI_FILE) as f:
-        content = f.read()
-
-    if _BOOTSTRAP_IMPORT_LINE in content:
-        return False
-
-    try:
-        tree = ast.parse(content)
-    except SyntaxError as e:
-        print(f"  Warning: cannot parse asgi.py ({e}) — skipping bootstrap patch")
-        return False
-
-    insert_lineno = 1
-    for stmt in tree.body:
-        is_docstring = (
-            isinstance(stmt, ast.Expr)
-            and isinstance(stmt.value, ast.Constant)
-            and isinstance(stmt.value.value, str)
-        )
-        is_future = (
-            isinstance(stmt, ast.ImportFrom)
-            and stmt.module == '__future__'
-        )
-        if is_docstring or is_future:
-            insert_lineno = stmt.end_lineno + 1
-            continue
-        break
-
-    injection = (
-        '\n'
-        '# Bootstrap hook — MUST run before any framework/third-party import so\n'
-        '# observability SDKs (Sentry, OTel, Datadog) can patch libraries at load time.\n'
-        f'{_BOOTSTRAP_IMPORT_LINE}\n'
-        f'{_BOOTSTRAP_CALL_LINE}\n'
-        '\n'
-    )
-
-    lines = content.splitlines(keepends=True)
-    idx = min(insert_lineno - 1, len(lines))
-    lines.insert(idx, injection)
-
-    with open(_ASGI_FILE, 'w') as f:
-        f.write(''.join(lines))
-
-    return True
-
-
-def _apply_patches() -> list[str]:
-    applied: list[str] = []
-    try:
-        if _patch_bootstrap_hook_in_asgi():
-            applied.append('asgi.py: added bootstrap hook')
-    except Exception as e:
-        print(f"  Warning: bootstrap hook patch failed — {e}")
-    return applied
 
 
 # ---------------------------------------------------------------------------
