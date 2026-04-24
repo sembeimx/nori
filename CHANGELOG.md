@@ -4,6 +4,29 @@ All notable changes to Nori are documented here. Format follows [Keep a Changelo
 
 ---
 
+## [1.7.1] — 2026-04-24
+
+### Fixed
+- **Dockerfile now copies `requirements.nori.txt`**: with the split introduced in 1.7.0, the `Dockerfile` template was still doing `COPY requirements.txt .`, which caused `pip install -r requirements.txt` to fail in the builder stage with `ERROR: -r requirements.nori.txt not found`. The COPY line now includes both files.
+
+### Docs
+- Added a **Docker** section to `docs/dependencies.md` documenting the required `COPY` line and the one-line manual fix for sites with a pre-1.7.1 `Dockerfile`.
+
+### Upgrade note
+If your site was created on Nori ≤ 1.7.0 and you use Docker, edit your `Dockerfile` in the builder stage:
+
+```dockerfile
+# before
+COPY requirements.txt .
+
+# after
+COPY requirements.txt requirements.nori.txt ./
+```
+
+Nothing else in the build changes. The `Dockerfile` lives in user-land (not touched by `framework:update`) and is too opinionated per-site for the patch system to safely auto-edit it.
+
+---
+
 ## [1.7.0] — 2026-04-24
 
 ### Added
