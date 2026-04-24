@@ -101,7 +101,9 @@ Nori uses [Aerich](https://github.com/tortoise/aerich) for database migrations. 
 python3 nori.py migrate:init
 ```
 
-This initializes the migration system and creates the `migrations/` directory inside `rootsystem/application/`.
+This initializes the Aerich migration system, generates the initial migrations for both apps (`framework` + `models`) **against your current DB engine**, and applies them. Run it once per project.
+
+> Why "against your current engine"? Aerich emits engine-specific SQL (`AUTOINCREMENT` for SQLite, `AUTO_INCREMENT` for MySQL, `SERIAL` for PostgreSQL). A pre-generated migration cannot work across all three engines, so each site owns its own migrations under `migrations/framework/` and `migrations/models/`.
 
 ### Creating a migration
 

@@ -91,12 +91,22 @@ register_model('Article', Article)
 
 ## 3. Run Migrations
 
+If this is the first time you run migrations in the project, initialize Aerich:
+
+```bash
+python3 nori.py migrate:init
+```
+
+This generates the framework + user migrations against your current DB engine and creates the initial tables. It only needs to be run once per project.
+
+Then, every time you change a model:
+
 ```bash
 python3 nori.py migrate:make create_articles
 python3 nori.py migrate:upgrade
 ```
 
-This creates the `articles` table in your SQLite database.
+This creates the `articles` table in your database.
 
 ---
 

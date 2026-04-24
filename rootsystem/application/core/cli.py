@@ -285,15 +285,20 @@ _GITHUB_REPO = 'sembeimx/nori'
 _GITHUB_API = 'https://api.github.com'
 _CORE_DIR = os.path.join(_APP_DIR, 'core')
 _FRAMEWORK_MODELS_DIR = os.path.join(_APP_DIR, 'models', 'framework')
-_FRAMEWORK_MIGRATIONS_DIR = os.path.join(_APP_DIR, 'migrations', 'framework')
 _BACKUP_DIR = os.path.join('rootsystem', '.framework_backups')
 
 _REQUIREMENTS_NORI_FILE = 'requirements.nori.txt'
 
+# `migrations/framework/` is intentionally NOT here. Aerich emits engine-specific
+# SQL (AUTOINCREMENT vs AUTO_INCREMENT vs SERIAL), so a single pre-generated
+# migration cannot work across MySQL / Postgres / SQLite. From 1.8 onwards each
+# site owns its own framework migrations, generated against its engine via
+# `python3 nori.py migrate:init` on first install. Framework model definitions
+# (in `models/framework/`) ARE shipped — aerich diffs them against the user's
+# saved snapshot to generate engine-correct migrations on `migrate:make`.
 _FRAMEWORK_DIRS = {
     'rootsystem/application/core/': _CORE_DIR,
     'rootsystem/application/models/framework/': _FRAMEWORK_MODELS_DIR,
-    'rootsystem/application/migrations/framework/': _FRAMEWORK_MIGRATIONS_DIR,
 }
 
 # Individual files shipped by the framework that live OUTSIDE the directories
@@ -463,10 +468,9 @@ def framework_update(target_version: str | None = None, skip_backup: bool = Fals
             print(f"    ✓ {p}")
 
     print(f"\n  Updated: {current} → {version}")
-    has_migrations = _FRAMEWORK_MIGRATIONS_DIR in extracted
-    if has_migrations:
-        print(f"  New framework migrations detected.")
-        print(f"  Run: python3 nori.py migrate:upgrade --app framework")
+    print(f"  If framework models changed, generate a migration against your engine:")
+    print(f"    python3 nori.py migrate:make <name> --app framework")
+    print(f"    python3 nori.py migrate:upgrade --app framework")
 
 
 # ---------------------------------------------------------------------------

@@ -228,19 +228,24 @@ python3 nori.py framework:update --no-backup
 
 **What gets updated**:
 
-| Directory | Contents |
-|-----------|----------|
+| Path | Contents |
+|------|----------|
 | `core/` | Framework core (auth, cache, mail, queue, etc.) |
 | `models/framework/` | Framework models (AuditLog, Job, Permission, Role) |
-| `migrations/framework/` | Framework migration files |
+| `requirements.nori.txt` | Framework Python dependencies |
+
+**What is NOT touched** (user-owned):
+- `migrations/framework/` — engine-specific SQL, regenerated locally on `migrate:init` or `migrate:make`
+- `requirements.txt`, `asgi.py`, `routes.py`, `settings.py`, `models/*.py`, `commands/`, etc.
 
 **Process**:
 1. Reads current version from `core/version.py`.
 2. Queries the GitHub Releases API for the target version.
 3. Creates a timestamped backup in `rootsystem/.framework_backups/`.
 4. Downloads and extracts the release zip.
-5. Replaces all three framework directories.
-6. If new framework migrations are detected, prompts to run `migrate:upgrade --app framework`.
+5. Replaces the framework-owned directories and files.
+6. Applies idempotent patches (e.g. injects the bootstrap hook into `asgi.py` if missing).
+7. Reminds you to regenerate framework migrations with `migrate:make ... --app framework` if framework models changed.
 
 For private repositories, set `GITHUB_TOKEN` in your environment.
 
@@ -386,15 +391,24 @@ When `--app` is omitted, both `framework` and `models` are upgraded in order.
 
 ### Migration Directory Structure
 
-Nori uses two separate migration namespaces:
+Nori uses two separate migration namespaces, **both owned by your site**:
 
 ```
 migrations/
-├── framework/    ← Managed by Nori (ships with framework:update)
-└── models/       ← Managed by the developer (your models)
+├── framework/    ← Generated locally against your DB engine (Nori models: AuditLog, Job, etc.)
+└── models/       ← Your application models
 ```
 
-Framework migrations are never mixed with your application migrations. When you run `framework:update`, new framework migrations are downloaded automatically and can be applied with `migrate:upgrade --app framework`.
+Both directories are populated on `migrate:init` and grow with `migrate:make`. They are **never overwritten by `framework:update`** — Aerich emits engine-specific SQL, so a single migration cannot work across MySQL, PostgreSQL, and SQLite. Each site keeps its own.
+
+When `framework:update` brings new framework models (e.g. a new core table in a future release), regenerate the migration locally:
+
+```bash
+python3 nori.py migrate:make <name> --app framework
+python3 nori.py migrate:upgrade --app framework
+```
+
+Aerich diffs the new models against your saved snapshot and generates SQL adapted to your engine.
 
 ### Rolling Back
 
