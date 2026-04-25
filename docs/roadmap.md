@@ -19,9 +19,12 @@ Current state of Nori and what's coming next.
 | **Background Tasks** | `background()` (volatile) + `push()` (persistent job queue with memory, database, and Redis drivers; atomic locking, exponential backoff, dead letters) |
 | **WebSockets** | `WebSocketHandler` and `JsonWebSocketHandler` base classes |
 | **Architecture** | Decoupled core via `core.conf` (config provider) and `core.registry` (model registry). Framework-agnostic to application code |
-| **CLI** | `serve`, `make:controller`, `make:model`, `make:seeder`, `migrate:*`, `db:seed`, `queue:work`, `framework:update`, `framework:version` |
-| **Deployment** | Dockerfile, docker-compose, Gunicorn config, Apache/Nginx examples, MkDocs documentation site |
-| **Tests** | 519 tests (pytest + pytest-asyncio), unit + E2E with httpx |
+| **Observability** | Pre-Starlette `bootstrap.py` hook for Sentry / OpenTelemetry / Datadog SDKs that need to patch libraries at import time. Idempotent `framework:update` patch system wires it into existing sites automatically. |
+| **Dependency Management** | Split `requirements.nori.txt` (framework-owned, refreshed on update) + `requirements.txt` (user-owned, `-r`s the framework file). Engine-aware Aerich migrations generated locally per site to avoid SQLite/MySQL/Postgres drift. |
+| **CLI** | `serve`, `shell` (async REPL with models pre-loaded), `make:controller`, `make:model`, `make:seeder`, `migrate:*`, `db:seed`, `queue:work`, `framework:update`, `framework:version` |
+| **Forms** | `flash_old()` + `{{ old('field') }}` Jinja helper for re-populating forms across validation errors. Sensitive fields (passwords) auto-excluded. |
+| **Deployment** | Dockerfile, docker-compose, Gunicorn config (with `forwarded_allow_ips` defaults for proxied setups), Apache/Nginx/Caddy examples, MkDocs documentation site |
+| **Tests** | 585 tests (pytest + pytest-asyncio), unit + E2E with httpx, CLI command coverage |
 
 ---
 

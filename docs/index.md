@@ -44,6 +44,9 @@ Visit `http://localhost:8000` to see the welcome page.
 Nori follows a **7-step protocol** for adding features:
 
 ```bash
+# 0. First-time setup (once per project): generate framework + user tables for your engine
+python3 nori.py migrate:init
+
 # 1. Create a model
 python3 nori.py make:model Article
 
@@ -70,14 +73,16 @@ DEBUG=true pytest tests/
 - **Session Auth + JWT** — Login, roles, granular permissions (ACL), brute-force protection, JWT revocation, session permissions TTL
 - **OAuth2** — Google (OpenID Connect + PKCE) and GitHub drivers included
 - **Declarative Validation** — 19 built-in rules with pipe syntax: `'required|email|max:255|url|date|confirmed|nullable'`
+- **Form Re-population** — `flash_old()` + `{{ old('field') }}` Jinja helper preserves user input across validation errors, with sensitive fields auto-excluded
 - **Multi-Driver Services** — Storage, Email, Search, Cache with pluggable backends and memory backend guards
 - **Background Tasks** — Volatile (`background()`) and persistent job queues (`push()`) with database and Redis drivers
 - **WebSockets** — Handler base classes with session/JWT auth
 - **Collections** — Chainable `NoriCollection` with filtering, sorting, grouping, and aggregation
 - **Security by Default** — CSRF, security headers, magic byte upload verification, protected fields
-- **CLI + Plugin System** — Built-in generators plus custom commands in `commands/` that survive framework updates
+- **Observability Hook** — `bootstrap.py` runs before Starlette/Tortoise so Sentry, OTel, or Datadog SDKs initialize at the right time
+- **CLI + Plugin System** — Built-in generators, async `shell` REPL with models pre-loaded, plus custom commands in `commands/` that survive framework updates
 - **Testing Utilities** — Test client, model factories, session auth helpers, and assertion helpers
-- **Framework Updates** — `python3 nori.py framework:update` pulls the latest core from GitHub
+- **Framework Updates** — `python3 nori.py framework:update` pulls the latest core from GitHub. Split `requirements.nori.txt` keeps framework deps in sync without touching your `requirements.txt`.
 
 ---
 

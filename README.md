@@ -19,6 +19,7 @@ cd my-project
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example rootsystem/application/.env
+python3 nori.py migrate:init     # one-time: generate framework + user tables for your engine
 python3 nori.py serve
 ```
 
@@ -54,6 +55,7 @@ All commands run from the project root. Built-in commands live in `core/cli.py` 
 | Command | Description |
 |---------|-------------|
 | `python3 nori.py serve` | Dev server with hot reload |
+| `python3 nori.py shell` | Async REPL with Tortoise + registered models loaded |
 | `python3 nori.py make:controller Name` | Scaffold a controller |
 | `python3 nori.py make:model Name` | Scaffold a model |
 | `python3 nori.py make:seeder Name` | Scaffold a seeder |

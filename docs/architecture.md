@@ -218,10 +218,20 @@ Core modules access settings through a configuration provider instead of importi
 
 **Initialization (`asgi.py`)**:
 ```python
+# 1. Bootstrap hook — runs BEFORE any framework/third-party import so
+#    observability SDKs (Sentry, OTel, Datadog) can patch libraries at
+#    import time. Optional rootsystem/application/bootstrap.py with a
+#    bootstrap() function. Silent if absent.
+from core.bootstrap import load_bootstrap
+load_bootstrap()
+
+# 2. Settings + config provider
 import settings
 from core.conf import configure
 configure(settings)
 ```
+
+The bootstrap hook is the very first thing in `asgi.py` — before Starlette, Tortoise, httpx, or any other instrumentable library is imported. This is the only place observability SDKs can hook all of them. See [Observability](observability.md).
 
 **Usage (`core/auth/jwt.py`)**:
 ```python
