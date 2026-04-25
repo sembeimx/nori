@@ -105,6 +105,8 @@ This initializes the Aerich migration system, generates the initial migrations f
 
 > Why "against your current engine"? Aerich emits engine-specific SQL (`AUTOINCREMENT` for SQLite, `AUTO_INCREMENT` for MySQL, `SERIAL` for PostgreSQL). A pre-generated migration cannot work across all three engines, so each site owns its own migrations under `migrations/framework/` and `migrations/models/`.
 
+> ⚠️ **Dev should mirror prod**: because migrations are committed to your repo and applied by every environment, the engine you generate them against has to match production. Generating against SQLite locally and deploying to MySQL produces error 1064 on the first `migrate:upgrade`. The `docker-compose.yml` shipped with Nori bundles a MySQL service for exactly this reason — `docker compose up -d db` and point your local `.env` at `DB_HOST=localhost` (or `DB_HOST=db` from inside the app container).
+
 ### Creating a migration
 
 After modifying your models (adding fields, changing types, etc.):

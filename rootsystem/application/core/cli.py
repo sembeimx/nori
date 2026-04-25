@@ -124,10 +124,24 @@ def migrate_init() -> None:
         [sys.executable, '-m', 'aerich', 'init', '-t', 'settings.TORTOISE_ORM'],
         cwd=_APP_DIR,
     )
-    subprocess.run(
-        [sys.executable, '-m', 'aerich', 'init-db'],
-        cwd=_APP_DIR,
-    )
+    # `aerich init-db` only initializes one app per invocation (the first one
+    # in pyproject.toml). Loop over both Nori apps so a single migrate:init
+    # bootstraps the framework AND user models. Idempotent: an app that
+    # already has migration files is skipped.
+    for app in ('framework', 'models'):
+        migrations_dir = os.path.join(_APP_DIR, 'migrations', app)
+        already_inited = os.path.isdir(migrations_dir) and any(
+            f.endswith('.py') and f != '__init__.py'
+            for f in os.listdir(migrations_dir)
+        )
+        if already_inited:
+            print(f"  App '{app}' already initialized — skipping.")
+            continue
+        print(f"  Generating initial migrations and tables for app '{app}'...")
+        subprocess.run(
+            [sys.executable, '-m', 'aerich', '--app', app, 'init-db'],
+            cwd=_APP_DIR,
+        )
 
 
 def migrate_make(name: str, app: str = 'models') -> None:
