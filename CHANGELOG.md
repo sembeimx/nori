@@ -4,6 +4,16 @@ All notable changes to Nori are documented here. Format follows [Keep a Changelo
 
 ---
 
+## [1.8.1] — 2026-04-24
+
+### Fixed
+- **`migrate:init` now initializes both apps**. The previous implementation ran `aerich init-db` once with no `--app` flag, which only initialized the first app from `pyproject.toml` (`framework`) and silently left `models` without migrations or tables. The user app would appear "missing" until they manually invoked `aerich --app models init-db`. Fixed to loop over `('framework', 'models')` and run `init-db` per app. The loop is idempotent — apps with existing migration files are skipped, so re-running `migrate:init` is now safe.
+
+### Docs
+- Added an engine-consistency warning to `docs/database.md`: aerich migrations are engine-specific, so dev should mirror prod (don't generate against SQLite locally if you deploy to MySQL). Points users to the bundled `docker-compose.yml` for a local MySQL.
+
+---
+
 ## [1.8.0] — 2026-04-24
 
 ### Fixed
