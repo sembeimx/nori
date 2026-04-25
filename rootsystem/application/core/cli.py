@@ -37,6 +37,69 @@ def serve(host: str = '0.0.0.0', port: int = 8000) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Interactive shell
+# ---------------------------------------------------------------------------
+
+def shell() -> None:
+    """Open an async Python REPL with Tortoise initialized and registered models in scope.
+
+    Uses `python -m asyncio` so `await` works at the top level. Tortoise is
+    booted before the prompt appears, and every model registered in
+    `core.registry` is bound as a top-level name — so you can do:
+
+        >>> users = await User.all()
+
+    without any imports or connection setup.
+    """
+    print("Nori shell — async REPL with Tortoise + models loaded.")
+    print("Use `await` at the top level. Press Ctrl-D or type exit() to quit.\n")
+
+    startup = textwrap.dedent("""\
+        import asyncio
+        import sys
+        sys.path.insert(0, '.')
+
+        import settings
+        from tortoise import Tortoise
+        from core.registry import _models
+
+        # Boot Tortoise synchronously before the REPL prompt appears.
+        asyncio.get_event_loop().run_until_complete(
+            Tortoise.init(config=settings.TORTOISE_ORM)
+        )
+
+        # Bind every registered model as a top-level name.
+        globals().update(_models)
+
+        if _models:
+            print(f"Models in scope: {', '.join(sorted(_models))}")
+        else:
+            print("No models registered (rootsystem/application/models/__init__.py is empty).")
+        print()
+    """)
+
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
+        f.write(startup)
+        startup_path = f.name
+
+    try:
+        env = os.environ.copy()
+        env['PYTHONSTARTUP'] = startup_path
+        subprocess.run(
+            [sys.executable, '-m', 'asyncio'],
+            cwd=_APP_DIR,
+            env=env,
+        )
+    except KeyboardInterrupt:
+        pass
+    finally:
+        try:
+            os.unlink(startup_path)
+        except OSError:
+            pass
+
+
+# ---------------------------------------------------------------------------
 # Scaffolding
 # ---------------------------------------------------------------------------
 
@@ -659,6 +722,8 @@ def main() -> None:
     serve_parser.add_argument("--host", default="0.0.0.0", help="Bind address (default: 0.0.0.0)")
     serve_parser.add_argument("--port", type=int, default=8000, help="Port (default: 8000)")
 
+    subparsers.add_parser("shell", help="Open an async REPL with Tortoise + registered models loaded")
+
     parser_controller = subparsers.add_parser("make:controller", help="Create a new controller")
     parser_controller.add_argument("name", type=str, help="Entity name (e.g. Product)")
 
@@ -710,6 +775,8 @@ def main() -> None:
 
     if args.command == "serve":
         serve(host=args.host, port=args.port)
+    elif args.command == "shell":
+        shell()
     elif args.command == "make:controller":
         make_controller(args.name)
     elif args.command == "make:model":

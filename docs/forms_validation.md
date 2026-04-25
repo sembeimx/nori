@@ -164,3 +164,43 @@ Inside Jinja2, since you have fed the template back with a dictionary `{field: [
 
 </form>
 ```
+
+## Re-populating forms with `old()`
+
+When a form fails validation and you re-render the create/edit page, the user shouldn't lose what they typed. Nori provides a Rails/Laravel-style flash mechanism:
+
+**In the controller:**
+
+```python
+from core.http.old import flash_old
+
+@inject()
+async def store(self, request: Request, form: dict):
+    errors = validate(form, {'title': 'required|min:3', 'email': 'required|email'})
+    if errors:
+        flash_old(request, form)   # stash the values before re-rendering
+        return templates.TemplateResponse(
+            request, 'articles/create.html', {'errors': errors}
+        )
+    # ...
+```
+
+**In the template:**
+
+```html
+<input name="title" value="{{ old('title') }}" />
+<input name="email" value="{{ old('email') }}" />
+<textarea name="body">{{ old('body') }}</textarea>
+```
+
+`old('field')` returns the last-flashed value for that field, or an empty string if there is no flash. You can pass a fallback: `{{ old('country', 'AR') }}`.
+
+### Sensitive fields are excluded by default
+
+`flash_old()` strips `password`, `password_confirmation`, `current_password`, and `new_password` automatically — it never re-populates secrets in HTML. Override the list via the `exclude` parameter:
+
+```python
+flash_old(request, form, exclude=('credit_card_number', 'cvv'))
+```
+
+The `exclude` iterable **replaces** the default list, so include any fields you still want hidden alongside your custom ones.

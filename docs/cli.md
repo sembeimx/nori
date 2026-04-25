@@ -15,6 +15,7 @@ python3 nori.py <command> [arguments]
 | Command | Description |
 |---------|-------------|
 | `serve` | Start the development server with hot reload |
+| `shell` | Async REPL with Tortoise + registered models loaded |
 | `make:controller <Name>` | Generate a controller skeleton in `modules/` |
 | `make:model <Name>` | Generate a Tortoise ORM model in `models/` |
 | `make:seeder <Name>` | Generate a database seeder in `seeders/` |
@@ -46,6 +47,36 @@ Starts Uvicorn with hot reload enabled. Watches both Python files and the `roots
 |------|---------|-------------|
 | `--host` | `0.0.0.0` | Bind address |
 | `--port` | `8000` | Port number |
+
+---
+
+## Interactive Shell
+
+```bash
+python3 nori.py shell
+```
+
+Opens an async-aware Python REPL (`python -m asyncio`) with Tortoise pre-initialized against your `settings.TORTOISE_ORM` and every model in `core.registry` bound as a top-level name. You can `await` directly at the prompt:
+
+```python
+>>> users = await User.all()
+>>> len(users)
+42
+>>> me = await User.get(email='ada@example.com')
+>>> me.name = 'Ada Lovelace'
+>>> await me.save()
+```
+
+On startup the shell prints which models are in scope:
+
+```
+Nori shell — async REPL with Tortoise + models loaded.
+Use `await` at the top level. Press Ctrl-D or type exit() to quit.
+
+Models in scope: Article, Category, Tag, User
+```
+
+No imports, no manual `Tortoise.init()`, no event-loop boilerplate. Useful for one-off queries, debugging, prodding fixtures, or sanity-checking a model change.
 
 ---
 
