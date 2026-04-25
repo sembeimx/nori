@@ -4,6 +4,16 @@ All notable changes to Nori are documented here. Format follows [Keep a Changelo
 
 ---
 
+## [1.9.0] — 2026-04-24
+
+### Added
+- **`old()` Jinja helper for form re-population.** Pair `flash_old(request, form)` in the controller (after a failed `validate()`) with `{{ old('field') }}` in the template to keep what the user typed across validation errors. Sensitive fields (`password`, `password_confirmation`, `current_password`, `new_password`) are stripped from the flash by default; pass `exclude=` to override. Lives in `core/http/old.py`, registered as a Jinja global. See `docs/forms_validation.md`.
+- **`python3 nori.py shell`**: async REPL via `python -m asyncio` with Tortoise pre-booted against `settings.TORTOISE_ORM` and every model in `core.registry` bound as a top-level name. `await User.all()` works at the prompt with no imports or setup. See `docs/cli.md`.
+- **CLI command tests** (`tests/test_core/test_cli.py`): 16 tests covering `make:controller`, `make:model`, `make:seeder`, `migrate:init` (the regression we caught in 1.8.1), `migrate:make`, `migrate:upgrade`, `migrate:downgrade`, `migrate:fresh` DEBUG safety, and `framework:version`. Closes the test gap that let the `migrate:init` bug ship in 1.8.0. Suite: 558 → 585 total.
+- **11 new tests** for the `old()` helper covering flash, default-exclude, custom-exclude, and Jinja-global integration paths.
+
+---
+
 ## [1.8.1] — 2026-04-24
 
 ### Fixed
