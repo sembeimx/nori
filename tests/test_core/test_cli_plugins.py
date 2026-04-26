@@ -12,12 +12,29 @@ from core.cli import _load_user_commands
 
 @pytest.fixture
 def commands_dir(tmp_path, monkeypatch):
-    """Create a temporary commands/ directory and chdir into tmp_path."""
+    """Create a temp commands/ dir and anchor cli.__file__ inside tmp_path.
+
+    Since v1.10.6, `_load_user_commands` resolves its target as
+    `Path(__file__).resolve().parent.parent / 'commands'` (so the lookup is
+    CWD-independent). To make the test's tmp_path commands/ the actual lookup
+    target, we monkeypatch `cli.__file__` to a synthetic path inside tmp_path
+    whose `.parent.parent` lands on tmp_path itself.
+    """
     cmd_dir = tmp_path / 'commands'
     cmd_dir.mkdir()
     (cmd_dir / '__init__.py').touch()
-    monkeypatch.chdir(tmp_path)
-    # Ensure tmp_path is on sys.path so imports work
+
+    # Synthesize a "<tmp_path>/core/cli.py" so that:
+    #   Path(fake).resolve().parent.parent  ==  <tmp_path>
+    #   Path(fake).resolve().parent.parent / 'commands'  ==  <tmp_path>/commands
+    fake_core = tmp_path / 'core'
+    fake_core.mkdir()
+    fake_cli_file = fake_core / 'cli.py'
+    fake_cli_file.touch()
+    import core.cli as _cli_mod
+    monkeypatch.setattr(_cli_mod, '__file__', str(fake_cli_file))
+
+    monkeypatch.chdir(tmp_path)  # harmless; some tests may still rely on CWD
     sys.path.insert(0, str(tmp_path))
     yield cmd_dir
     sys.path.remove(str(tmp_path))
