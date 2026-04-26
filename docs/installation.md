@@ -36,6 +36,8 @@ python3 nori.py migrate:init
 python3 nori.py serve
 ```
 
+Fresh projects default to **SQLite** (`db.sqlite3` at the project root) — no database server needed for first run. To use MySQL or PostgreSQL, edit `rootsystem/application/.env` before running `migrate:init`. See [Deployment](deployment.md) for production database setup.
+
 ---
 
 ## Flags
