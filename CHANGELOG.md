@@ -4,6 +4,17 @@ All notable changes to Nori are documented here. Format follows [Keep a Changelo
 
 ---
 
+## [1.10.3] — 2026-04-26
+
+### Fixed
+- **`migrate:init` now actually generates migration files on fresh projects.** Removed leftover `.gitkeep` files in `rootsystem/application/migrations/framework/` and `rootsystem/application/migrations/models/`. They were committed pre-1.8.0 (back when `migrations/framework/` shipped a pre-generated SQLite-only migration) and never removed when 1.8.0 made framework migrations user-owned. The empty-but-present directories tricked aerich's `init-db` idempotent check — it concluded "already initialized" and bailed without creating the initial migration files. Tortoise's `generate_schemas()` in the asgi lifespan was silently masking the bug by creating tables on first serve, but the missing migration baseline broke the user's first `migrate:make` later in the dev cycle.
+
+  After this fix: `migrate:init` on a fresh project generates `migrations/framework/0_<ts>_init.py` and `migrations/models/0_<ts>_init.py` against the project's actual DB engine. Subsequent `migrate:make` commands diff against these baselines correctly.
+
+  **Existing projects are unaffected** — their `migrations/` directories already contain real migration files and aerich's idempotent check works as intended on them.
+
+---
+
 ## [1.10.2] — 2026-04-26
 
 ### Fixed
