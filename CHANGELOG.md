@@ -4,6 +4,31 @@ All notable changes to Nori are documented here. Format follows [Keep a Changelo
 
 ---
 
+## [1.10.6] — 2026-04-26
+
+### Fixed
+- **Auth decorators no longer hardcode `/login` and `/forbidden`.** Pre-1.10.6, `login_required`, `require_role`, `require_any_role`, and `require_permission` all redirected unauthenticated/unauthorized requests to literal `/login` and `/forbidden` URLs (7 hardcoded strings across `core/auth/decorators.py`). Projects mounting auth elsewhere — admin panels at `/admin/login`, custom `/access-denied` flows — had to ship shim routes. Now configurable via two new settings:
+
+  ```python
+  # settings.py
+  LOGIN_URL = '/admin/login'        # default: '/login'
+  FORBIDDEN_URL = '/access-denied'  # default: '/forbidden'
+  ```
+
+  Backward-compatible: projects without these settings keep the original `/login` and `/forbidden` behavior. `@token_required` is unaffected (always returns JSON 401, no redirect path).
+
+- **`_load_user_commands` now resolves `commands/` relative to the cli module file, not CWD.** Latent bug from the v1.3.0 plugin system release. `nori.py` adds `rootsystem/application` to `sys.path` but does NOT chdir into it, so `pathlib.Path('commands')` resolved against the user's CWD (typically the project root) and silently missed the real `commands/` dir at `rootsystem/application/commands/`. Custom commands never loaded; the workaround was to invoke `nori.py` from inside `rootsystem/application/`. Fixed by anchoring to `pathlib.Path(__file__).resolve().parent.parent / 'commands'`.
+
+### Added
+- **Regression tests**:
+  - `test_login_required_uses_login_url_setting` and `test_require_role_forbidden_uses_forbidden_url_setting` — assert that overriding the new settings changes the redirect target.
+  - `test_load_user_commands_resolves_relative_to_module_not_cwd` — sets up a fake project layout in `tmp_path`, monkeypatches `cli.__file__`, moves CWD elsewhere, asserts the user command is still discovered.
+
+### Docs
+- `docs/authentication.md` — added a "Customizing the redirect URLs" subsection under the decorators reference, showing how to set `LOGIN_URL` / `FORBIDDEN_URL` in `settings.py` and noting which decorators they apply to.
+
+---
+
 ## [1.10.5] — 2026-04-26
 
 ### Fixed
