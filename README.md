@@ -13,6 +13,8 @@ Built on Starlette and Tortoise ORM. Nori is for apps that live in both shapes a
 
 ## Quick Start
 
+> **Platform**: Nori is tested on Linux and macOS. Windows users should run inside [WSL2](https://learn.microsoft.com/en-us/windows/wsl/install).
+
 ```bash
 curl -fsSL https://nori.sembei.mx/install.py | python3 - my-project
 cd my-project

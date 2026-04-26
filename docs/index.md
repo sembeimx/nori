@@ -20,6 +20,8 @@ Everything you need to build that app lives in the core. Auth, validation, ORM, 
 
 ## Quick Start
 
+> **Platform**: Nori is tested on Linux and macOS. Windows users should run inside [WSL2](https://learn.microsoft.com/en-us/windows/wsl/install). See [Installation](installation.md) for full prerequisites.
+
 ```bash
 # Install
 curl -fsSL https://nori.sembei.mx/install.py | python3 - my-project
@@ -39,30 +41,42 @@ Visit `http://localhost:8000` to see the welcome page.
 
 ## Create Your First Feature
 
-Nori follows a **7-step protocol** for adding features:
+Nori follows a **7-step protocol** for adding features. Generators give you skeletons; you fill in the domain-specific parts in the editor between commands.
 
 ```bash
 # 0. First-time setup (once per project): generate framework + user tables for your engine
 python3 nori.py migrate:init
 
-# 1. Create a model
+# 1. Generate the model skeleton, then EDIT IT to add your fields
 python3 nori.py make:model Article
+# → opens rootsystem/application/models/article.py with id + name + timestamps.
+#   Replace the `name` placeholder with your actual columns
+#   (title, body, slug, published_at, etc.) before continuing.
 
-# 2. Register it in models/__init__.py (the CLI tells you)
+# 2. Register the model in rootsystem/application/models/__init__.py
+#    (the CLI prints the exact import + register_model call you need to paste)
 
-# 3. Create and run migrations
+# 3. Create and run the migration (now reflects your real schema)
 python3 nori.py migrate:make create_articles
 python3 nori.py migrate:upgrade
 
-# 4. Create a controller
+# 4. Generate the controller skeleton, then EDIT IT to add your handlers
 python3 nori.py make:controller Article
+# → opens rootsystem/application/modules/article.py with placeholder methods.
+#   Replace them with your real index/show/store/update/destroy logic.
 
-# 5. Define routes in routes.py
-# 6. Create templates in templates/article/
+# 5. Define routes in rootsystem/application/routes.py
+#    (explicit Route() entries with methods=[...] and dot-notation names)
+
+# 6. Create Jinja templates in rootsystem/templates/articles/
+#    (e.g. index.html, show.html — extend base.html, use {{ csrf_field(...) }})
+
 # 7. Run tests
 pip install -r requirements-dev.txt
 DEBUG=true pytest tests/
 ```
+
+For a full walkthrough with code examples — model fields, controller methods, templates, seeders — see the [Tutorial](getting_started.md). Builds a working blog in 5 minutes.
 
 ---
 
