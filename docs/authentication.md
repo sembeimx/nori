@@ -129,6 +129,17 @@ Depending on what the client tried to access, they act smartly (Content Negotiat
 * If the `Accept` header does **not** include `application/json` (i.e., a browser), they transparently redirect to `/login` (302) or `/forbidden` (403).
 * If the `Accept` header includes `application/json` (Fetch/AJAX), they return standard JSON responses `{"error": "Unauthorized"}` with HTTP codes `401` and `403`.
 
+**Customizing the redirect URLs:**
+The `/login` and `/forbidden` defaults can be overridden in `settings.py` for projects that mount auth elsewhere (e.g. an admin panel at `/admin/login`):
+
+```python
+# settings.py
+LOGIN_URL = '/admin/login'      # default: '/login'
+FORBIDDEN_URL = '/access-denied' # default: '/forbidden'
+```
+
+Both settings apply to all four session-aware decorators (`login_required`, `require_role`, `require_any_role`, `require_permission`). `@token_required` is unaffected — it always returns JSON 401 since it's intended for JWT-protected API endpoints.
+
 ---
 
 ## APIs and JSON Web Tokens (JWT)

@@ -103,6 +103,69 @@ def test_require_any_role_html_redirects_without_session():
 
 
 # ---------------------------------------------------------------------------
+# LOGIN_URL / FORBIDDEN_URL settings override the hardcoded defaults
+# ---------------------------------------------------------------------------
+
+def test_login_required_uses_login_url_setting(monkeypatch):
+    """A custom LOGIN_URL in settings replaces the default /login redirect.
+
+    Regression for the v1.4.0–v1.10.5 era where every redirect was hardcoded
+    to /login, breaking projects that mounted auth elsewhere (e.g. /admin/login).
+    Same `config.get('LOGIN_URL', '/login')` pattern is shared by login_required,
+    require_role, require_any_role, and require_permission — testing one
+    validates the fix for all four.
+    """
+    from types import SimpleNamespace
+    from core.conf import config
+
+    monkeypatch.setattr(config, '_settings', SimpleNamespace(LOGIN_URL='/admin/login'))
+
+    resp = client.get('/protected', headers={'accept': 'text/html'},
+                      follow_redirects=False)
+    assert resp.status_code == 302
+    assert resp.headers['location'] == '/admin/login'
+
+
+def test_require_role_forbidden_uses_forbidden_url_setting(monkeypatch):
+    """A custom FORBIDDEN_URL in settings replaces the default /forbidden redirect.
+
+    Triggered when a user has a session but lacks the required role.
+    Shared `config.get('FORBIDDEN_URL', '/forbidden')` pattern across
+    require_role, require_any_role, require_permission.
+    """
+    from types import SimpleNamespace
+    from starlette.routing import Route as R
+
+    monkeypatch.setattr(
+        'core.conf.config._settings',
+        SimpleNamespace(FORBIDDEN_URL='/access-denied', LOGIN_URL='/login'),
+    )
+
+    async def set_session_with_user_role(request: Request):
+        # Set a session with an unprivileged role so /editor triggers the
+        # /forbidden branch instead of /login
+        request.session['user_id'] = 1
+        request.session['role'] = 'user'
+        return JSONResponse({'ok': True})
+
+    test_app = Starlette(
+        routes=[
+            R('/set', endpoint=set_session_with_user_role, methods=['GET']),
+            R('/editor', endpoint=ctrl.editor_only, methods=['GET']),
+        ],
+        middleware=[
+            Middleware(SessionMiddleware, secret_key='test-secret'),
+        ],
+    )
+    test_client = TestClient(test_app)
+    test_client.get('/set')  # populate session cookie
+    resp = test_client.get('/editor', headers={'accept': 'text/html'},
+                           follow_redirects=False)
+    assert resp.status_code == 302
+    assert resp.headers['location'] == '/access-denied'
+
+
+# ---------------------------------------------------------------------------
 # E2E with session: use internal Starlette test helpers
 # ---------------------------------------------------------------------------
 

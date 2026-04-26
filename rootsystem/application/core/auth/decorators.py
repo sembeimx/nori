@@ -27,7 +27,7 @@ def login_required(func: Callable[..., Any]) -> Callable[..., Any]:
             accept = request.headers.get('accept', '')
             if 'application/json' in accept:
                 return JSONResponse({'error': 'Unauthorized'}, status_code=401)
-            return RedirectResponse('/login', status_code=302)
+            return RedirectResponse(config.get('LOGIN_URL', '/login'), status_code=302)
         return await func(self, request, *args, **kwargs)
     return wrapper
 
@@ -47,14 +47,14 @@ def require_role(role: str) -> Callable[..., Any]:
                 accept = request.headers.get('accept', '')
                 if 'application/json' in accept:
                     return JSONResponse({'error': 'Unauthorized'}, status_code=401)
-                return RedirectResponse('/login', status_code=302)
+                return RedirectResponse(config.get('LOGIN_URL', '/login'), status_code=302)
 
             user_role = request.session.get('role', 'user')
             if user_role != 'admin' and user_role != role:
                 accept = request.headers.get('accept', '')
                 if 'application/json' in accept:
                     return JSONResponse({'error': 'Forbidden'}, status_code=403)
-                return RedirectResponse('/forbidden', status_code=302)
+                return RedirectResponse(config.get('FORBIDDEN_URL', '/forbidden'), status_code=302)
 
             return await func(self, request, *args, **kwargs)
         return wrapper
@@ -76,14 +76,14 @@ def require_any_role(*roles: str) -> Callable[..., Any]:
                 accept = request.headers.get('accept', '')
                 if 'application/json' in accept:
                     return JSONResponse({'error': 'Unauthorized'}, status_code=401)
-                return RedirectResponse('/login', status_code=302)
+                return RedirectResponse(config.get('LOGIN_URL', '/login'), status_code=302)
 
             user_role = request.session.get('role', 'user')
             if user_role != 'admin' and user_role not in roles:
                 accept = request.headers.get('accept', '')
                 if 'application/json' in accept:
                     return JSONResponse({'error': 'Forbidden'}, status_code=403)
-                return RedirectResponse('/forbidden', status_code=302)
+                return RedirectResponse(config.get('FORBIDDEN_URL', '/forbidden'), status_code=302)
 
             return await func(self, request, *args, **kwargs)
         return wrapper
@@ -142,7 +142,7 @@ def require_permission(perm: str) -> Callable[..., Any]:
                 accept = request.headers.get('accept', '')
                 if 'application/json' in accept:
                     return JSONResponse({'error': 'Unauthorized'}, status_code=401)
-                return RedirectResponse('/login', status_code=302)
+                return RedirectResponse(config.get('LOGIN_URL', '/login'), status_code=302)
 
             user_role = request.session.get('role', 'user')
             if user_role == 'admin':
@@ -160,7 +160,7 @@ def require_permission(perm: str) -> Callable[..., Any]:
                 accept = request.headers.get('accept', '')
                 if 'application/json' in accept:
                     return JSONResponse({'error': 'Forbidden'}, status_code=403)
-                return RedirectResponse('/forbidden', status_code=302)
+                return RedirectResponse(config.get('FORBIDDEN_URL', '/forbidden'), status_code=302)
 
             return await func(self, request, *args, **kwargs)
         return wrapper

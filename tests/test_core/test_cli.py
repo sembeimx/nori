@@ -256,6 +256,56 @@ def test_migrate_downgrade_omits_delete_flag_by_default():
 
 
 # ---------------------------------------------------------------------------
+# User commands — discovery must be CWD-independent
+# ---------------------------------------------------------------------------
+
+def test_load_user_commands_resolves_relative_to_module_not_cwd(monkeypatch, tmp_path):
+    """`commands_dir` must be anchored to the cli module file, not CWD.
+
+    nori.py adds rootsystem/application to sys.path but does NOT chdir into
+    it. A relative `Path('commands')` would resolve against the user's CWD
+    (typically the project root) and silently miss the real commands/ dir.
+    Latent bug from the v1.3.0 plugin system release.
+    """
+    import argparse
+    import sys as _sys
+
+    # Lay out a fake project: <tmp_path>/core/cli.py + <tmp_path>/commands/foo.py
+    (tmp_path / 'core').mkdir()
+    (tmp_path / 'core' / 'cli.py').touch()  # only needs to exist for __file__ resolution
+    cmd_dir = tmp_path / 'commands'
+    cmd_dir.mkdir()
+    (cmd_dir / '__init__.py').touch()
+    (cmd_dir / 'foo.py').write_text(
+        'def register(subparsers):\n'
+        "    subparsers.add_parser('foo', help='custom user command')\n"
+        'def handle(args):\n'
+        "    print('foo handled')\n"
+    )
+
+    # Pretend the cli module lives inside this fake project
+    fake_cli_file = str(tmp_path / 'core' / 'cli.py')
+    monkeypatch.setattr(cli, '__file__', fake_cli_file)
+    # Make `commands.foo` importable
+    monkeypatch.syspath_prepend(str(tmp_path))
+    # Move CWD somewhere completely unrelated
+    monkeypatch.chdir(tmp_path.parent)
+
+    parser = argparse.ArgumentParser()
+    subparsers = parser.add_subparsers(dest='command')
+    handlers = cli._load_user_commands(subparsers)
+
+    assert 'foo' in handlers, (
+        "User commands at <module_root>/commands/ must be discovered "
+        "regardless of process CWD"
+    )
+
+    # Cleanup the import we just added
+    _sys.modules.pop('commands.foo', None)
+    _sys.modules.pop('commands', None)
+
+
+# ---------------------------------------------------------------------------
 # routes:list — must boot Nori config before importing routes
 # ---------------------------------------------------------------------------
 

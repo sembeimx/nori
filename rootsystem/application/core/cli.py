@@ -729,7 +729,11 @@ def _load_user_commands(subparsers) -> dict:
     Returns a dict mapping command names to their handle functions.
     """
     handlers: dict = {}
-    commands_dir = pathlib.Path('commands')
+    # Anchor to the cli module file, not CWD. nori.py adds rootsystem/application
+    # to sys.path but does NOT chdir into it, so a relative `Path('commands')`
+    # would resolve against the user's CWD (typically the project root) and
+    # silently miss the real commands/ dir at rootsystem/application/commands/.
+    commands_dir = pathlib.Path(__file__).resolve().parent.parent / 'commands'
 
     if not commands_dir.is_dir():
         return handlers
