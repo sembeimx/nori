@@ -4,6 +4,17 @@ All notable changes to Nori are documented here. Format follows [Keep a Changelo
 
 ---
 
+## [1.10.5] — 2026-04-26
+
+### Fixed
+- **`routes:list` now boots Nori config before importing routes.** Latent bug since v1.4.0 when the command was added: the subprocess script ran `from routes import routes` without first calling `core.conf.configure(settings)`. Fresh framework code didn't access `config` at module-import time anywhere in the routes import chain, so the bug stayed invisible. But any user module imported transitively by `routes.py` that touched `templates.env`, jinja filters, or `config.X` at import time crashed the command with `RuntimeError: Nori config not initialised`. Fixed by adding the standard `import settings; configure(settings)` prelude that other subprocess scripts (`audit:purge`, `db:seed`, `migrate:fresh`) already use.
+- **`routes:list` count line**: the trailing `print(f'  {len(rows)} route(s) registered.')` was over-escaped (`{{len(rows)}}`) in the dedented script, so it printed the literal text `{len(rows)} route(s) registered.` instead of the actual count. Cosmetic but visible on every invocation.
+
+### Added
+- **Regression test** `test_routes_list_configures_settings_before_importing_routes` asserts the subprocess script contains `configure(settings)` AND that it appears before `from routes import` in the script text. Catches re-introduction of the same bug at CI time.
+
+---
+
 ## [1.10.4] — 2026-04-26
 
 ### Changed
