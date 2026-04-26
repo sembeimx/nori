@@ -14,16 +14,18 @@ Built on Starlette and Tortoise ORM. Nori is for apps that live in both shapes a
 ## Quick Start
 
 ```bash
-git clone https://github.com/sembeimx/nori.git my-project
+curl -fsSL https://nori.sembei.mx/install.py | python3 - my-project
 cd my-project
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-cp .env.example rootsystem/application/.env
+source .venv/bin/activate
 python3 nori.py migrate:init     # one-time: generate framework + user tables for your engine
 python3 nori.py serve
 ```
 
 Open `http://localhost:8000`.
+
+The installer pulls the latest release, copies only what belongs in a fresh project (no framework dev artifacts), creates a `.venv`, installs dependencies, copies `.env`, and runs `git init`. Pass `--no-venv` or `--no-install` to opt out, or `--version 1.10.0` to pin a release.
+
+> **Contributing to Nori itself?** Clone the repo: `git clone https://github.com/sembeimx/nori.git`. The installer is for project creation, not framework development.
 
 ### Configuration (.env)
 

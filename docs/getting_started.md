@@ -7,17 +7,12 @@ Build a simple blog with Nori in 5 minutes. By the end you'll have a working app
 ## 1. Install
 
 ```bash
-git clone https://github.com/sembeimx/nori.git my-blog
+curl -fsSL https://nori.sembei.mx/install.py | python3 - my-blog
 cd my-blog
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
+source .venv/bin/activate
 ```
 
-Configure the environment:
-
-```bash
-cp .env.example rootsystem/application/.env
-```
+The installer pulls the latest release, copies only the project files (no framework dev artifacts), creates a `.venv`, installs dependencies, and runs `git init`. It also copies `.env.example` to `rootsystem/application/.env` for you.
 
 Edit `rootsystem/application/.env`:
 

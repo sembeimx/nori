@@ -21,17 +21,15 @@ Everything you need to build that app lives in the core. Auth, validation, ORM, 
 ## Quick Start
 
 ```bash
-# Clone and install
-git clone https://github.com/sembeimx/nori.git my-project
+# Install
+curl -fsSL https://nori.sembei.mx/install.py | python3 - my-project
 cd my-project
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
+source .venv/bin/activate
 
-# Configure environment
-cp .env.example rootsystem/application/.env
-# Edit .env: set DB_ENGINE=sqlite, DB_NAME=db.sqlite3
+# Edit rootsystem/application/.env if you need MySQL/Postgres (defaults to SQLite)
 
-# Start the dev server
+# Initialize the database and start the dev server
+python3 nori.py migrate:init
 python3 nori.py serve
 ```
 

@@ -1,0 +1,21 @@
+{
+  "_comment": "Whitelist of paths that belong in a fresh Nori project. Read by docs/install.py from each release zip. Add new entries here whenever the framework introduces a new file that should ship to user projects.",
+  "paths": [
+    "nori.py",
+    "requirements.txt",
+    "requirements.nori.txt",
+    "requirements-dev.txt",
+    "Dockerfile",
+    "docker-compose.yml",
+    ".env.example",
+    ".dockerignore",
+    ".gitignore",
+    "pytest.ini",
+    "gunicorn.conf.py",
+    "LICENSE",
+    "rootsystem"
+  ],
+  "empty_dirs": [
+    "tests"
+  ]
+}
