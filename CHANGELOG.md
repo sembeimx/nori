@@ -4,6 +4,19 @@ All notable changes to Nori are documented here. Format follows [Keep a Changelo
 
 ---
 
+## [1.10.0] — 2026-04-26
+
+### Added
+- **`install.py` installer.** Creates clean Nori projects without inheriting framework dev artifacts (`CHANGELOG.md`, `CONTRIBUTING.md`, `AGENTS.md`, `docs/`, `mkdocs.yml`, `.github/`, the framework's own `tests/`, etc.). Pulls the latest release zip from GitHub, extracts only the paths listed in `.starter-manifest.json`, writes a project-scoped `README.md`, copies `.env.example` to `rootsystem/application/.env`, and runs `git init` so the user's first commit is theirs (not Nori's history). Hosted at `nori.sembei.mx/install.py`.
+  - Usage: `curl -fsSL https://nori.sembei.mx/install.py | python3 - my-project`
+  - Flags: `--no-venv` (skip env entirely; implies `--no-install`), `--no-install` (env without pip install), `--version V` (pin a specific release).
+- **`.starter-manifest.json`**: declarative whitelist of files and directories that belong to a fresh project. Single source of truth for what makes up "a Nori starter" — the installer reads it from each release zip, so the manifest evolves alongside the framework.
+
+### Changed
+- **README Quick Start uses the installer instead of `git clone`.** Cloning the repo brought along framework dev files (`README.md`, `CHANGELOG.md`, `docs/`, `.github/`, `mkdocs.yml`, `tests/`, `.firebaserc`, etc.) that didn't belong in user projects, and inherited the framework's git history as the starting point. The installer is now the recommended path; cloning remains supported for framework contributors.
+
+---
+
 ## [1.9.0] — 2026-04-24
 
 ### Added
