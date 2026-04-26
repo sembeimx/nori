@@ -82,4 +82,45 @@ class User(NoriModelMixin, Model):
 - **Serialization**: Always use `.to_dict()` to leverage `protected_fields` safety.
 
 ---
+
+## 7. Operational Pitfalls (for framework changes)
+
+These are Nori-specific traps discovered the hard way. Read before changing the listed areas.
+
+### Hosting and docs deploys
+- `nori.sembei.mx` runs on **Firebase Hosting**, not a VPS. Deploy is automatic via `.github/workflows/deploy-docs.yml` on every push to `main` that touches `docs/**` or `mkdocs.yml`. No manual `firebase deploy` is needed.
+- The version badge in the docs sidebar is **client-side JavaScript** — the GitHub repo widget queries the API at page load. When it looks stale after a release, the fix is browser cache (hard reload, or unregister the service worker). Re-running the deploy workflow will NOT update it.
+- Verify the actual host with `dig +short nori.sembei.mx` before assuming. Memory of past deploys can be stale.
+
+### Releases and the installer
+- `gh release create` → `releases/latest` API has a ~30-second indexing lag. The installer (`docs/install.py`) hits `releases/latest` by default, so the first install within ~1 minute of a release may pull the previous version. For testing right after release, pass `--version VX.Y.Z` to skip the latest endpoint.
+- Always verify a release end-to-end with the installer (real `curl ... | python3 -`) before considering it shipped.
+
+### CLI subprocess scripts (`core/cli.py`)
+- When a CLI command spawns a Python subprocess that imports user code (`routes`, `modules`, `models`), the script MUST start with:
+  ```python
+  import sys
+  sys.path.insert(0, '.')
+  import settings
+  from core.conf import configure
+  configure(settings)
+  ```
+  before importing anything that may touch `config.X`, `templates.env`, or any lazy framework state. Otherwise the command crashes with `RuntimeError: Nori config not initialised` on projects whose user code touches config at module-import time. See `migrate_init`, `migrate_upgrade`, `routes_list` for the established pattern.
+- For aerich subprocesses, use `env=_quiet_env()` to suppress the `Module "X" has no models` RuntimeWarning. The same warning is filtered in-process via `core/__init__.py`.
+
+### Path resolution must be CWD-independent
+- `nori.py` adds `rootsystem/application` to `sys.path` but does NOT `chdir` into it. Code that resolves files/modules must NOT use `pathlib.Path('something')` (CWD-relative). Anchor to the module file:
+  ```python
+  pathlib.Path(__file__).resolve().parent.parent / 'something'
+  ```
+- When a function changes its path resolution or discovery contract, grep ALL test files for fixtures using `monkeypatch.chdir` or `monkeypatch.setattr` against the affected module BEFORE shipping. CI catches this but a 30-second grep avoids the red CI + follow-up commit.
+
+### Repo-state lints catch ship-time bugs that unit tests miss
+- Some bugs are not in code but in committed files (the v1.8.0 → v1.10.2 incident: leftover `.gitkeep` files that silently broke `migrate:init` for two releases). Unit tests of the affected function passed because the test environment didn't have the bad files. The right test layer is a static repo-state assertion. See `test_repo_does_not_ship_migrations_dir` for the pattern.
+- When fixing "the repo shouldn't ship X" bugs, add a regression test that asserts the file/dir doesn't exist in the source tree.
+
+### Configurable URLs / settings have defaults via `config.get(key, default)`
+- New user-overridable settings (like `LOGIN_URL`, `FORBIDDEN_URL`, `PERMISSIONS_TTL`) use `config.get('SETTING', default_value)` rather than `config.SETTING`. This keeps existing projects working when they haven't set the new key, while letting projects override via `settings.py`. Always provide a default that matches the previous hardcoded behavior — backward compatibility is non-negotiable.
+
+---
 *For deep-dives into specific modules (WebSockets, Mail, Search, etc.), refer to the [docs/](docs/) directory.*
