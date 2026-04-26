@@ -74,6 +74,35 @@ def test_make_seeder_generates_file(app_dir, capsys):
 
 
 # ---------------------------------------------------------------------------
+# Repo-state guard: fresh user projects must NOT inherit a `migrations/` dir
+# ---------------------------------------------------------------------------
+
+def test_repo_does_not_ship_migrations_dir():
+    """The framework repo must not commit `rootsystem/application/migrations/`.
+
+    The starter installer copies `rootsystem/` wholesale to new projects. If
+    the framework repo ships `migrations/framework/` or `migrations/models/`
+    (even as empty dirs held alive by `.gitkeep`), aerich's `init-db` sees the
+    directories exist and bails with "App 'X' is already initialized" without
+    generating any migration files. Tortoise.generate_schemas() in the asgi
+    lifespan masks the symptom by creating tables on first serve, but the
+    user's first `migrate:make` later breaks because there's no baseline.
+
+    This was a real bug from v1.8.0 → v1.10.2, fixed in v1.10.3 by removing
+    the leftover `.gitkeep` files. This guard prevents recurrence.
+    """
+    from pathlib import Path
+    repo_root = Path(__file__).resolve().parents[2]
+    migrations = repo_root / 'rootsystem' / 'application' / 'migrations'
+    assert not migrations.exists(), (
+        f"{migrations} is checked into the repo. Fresh user projects will "
+        f"inherit this directory and aerich init-db will bail without "
+        f"generating migration files. Migrations must be created by the "
+        f"user's first `migrate:init`, not shipped pre-existing."
+    )
+
+
+# ---------------------------------------------------------------------------
 # migrate:init
 # ---------------------------------------------------------------------------
 
@@ -81,6 +110,9 @@ def test_make_seeder_generates_file(app_dir, capsys):
 def migrations_env(tmp_path, monkeypatch):
     (tmp_path / 'migrations').mkdir()
     monkeypatch.setattr(cli, '_APP_DIR', str(tmp_path))
+    # Default app set for tests that don't care about dynamic discovery.
+    # Tests that exercise dynamic-apps behavior override this directly.
+    monkeypatch.setattr(cli, '_read_tortoise_apps', lambda: ('framework', 'models'))
     return tmp_path
 
 
@@ -106,6 +138,22 @@ def test_migrate_init_runs_init_then_init_db_per_app(migrations_env):
     init_db_calls = [c for c in calls[1:] if 'init-db' in c.args[0]]
     apps = [_aerich_arg(c, '--app') for c in init_db_calls]
     assert apps == ['framework', 'models']
+
+
+def test_migrate_init_uses_dynamic_apps_from_tortoise_orm(migrations_env, monkeypatch):
+    """migrate:init must initialize EVERY app declared in settings.TORTOISE_ORM,
+    not just the hardcoded ('framework', 'models') pair.
+    """
+    monkeypatch.setattr(
+        cli, '_read_tortoise_apps',
+        lambda: ('framework', 'models', 'analytics'),
+    )
+    with patch('subprocess.run') as mock_run:
+        cli.migrate_init()
+
+    init_db_calls = [c for c in mock_run.call_args_list if 'init-db' in c.args[0]]
+    apps = [_aerich_arg(c, '--app') for c in init_db_calls]
+    assert apps == ['framework', 'models', 'analytics']
 
 
 def test_migrate_init_skips_apps_with_existing_migrations(migrations_env, capsys):
@@ -158,13 +206,27 @@ def test_migrate_make_supports_framework_app():
     assert _aerich_arg(call, '--app') == 'framework'
 
 
-def test_migrate_upgrade_without_app_runs_both_in_order():
+def test_migrate_upgrade_without_app_runs_both_in_order(monkeypatch):
+    monkeypatch.setattr(cli, '_read_tortoise_apps', lambda: ('framework', 'models'))
     with patch('subprocess.run') as mock_run:
         cli.migrate_upgrade()
 
     apps = [_aerich_arg(c, '--app') for c in mock_run.call_args_list]
     assert apps == ['framework', 'models']
     assert all('upgrade' in c.args[0] for c in mock_run.call_args_list)
+
+
+def test_migrate_upgrade_without_app_uses_dynamic_app_list(monkeypatch):
+    """Same dynamic-app contract as migrate:init."""
+    monkeypatch.setattr(
+        cli, '_read_tortoise_apps',
+        lambda: ('framework', 'models', 'analytics'),
+    )
+    with patch('subprocess.run') as mock_run:
+        cli.migrate_upgrade()
+
+    apps = [_aerich_arg(c, '--app') for c in mock_run.call_args_list]
+    assert apps == ['framework', 'models', 'analytics']
 
 
 def test_migrate_upgrade_with_explicit_app_runs_only_that_one():

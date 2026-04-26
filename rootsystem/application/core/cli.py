@@ -198,6 +198,35 @@ def _quiet_env() -> dict[str, str]:
     return env
 
 
+_DEFAULT_APPS: tuple[str, ...] = ('framework', 'models')
+
+
+def _read_tortoise_apps() -> tuple[str, ...]:
+    """Read app names from `settings.TORTOISE_ORM['apps']` in the user project.
+
+    Returns the keys in declaration order. Falls back to ('framework', 'models')
+    if settings can't be loaded (e.g. uninstalled deps, broken settings file).
+    The fallback preserves Nori's classic two-app layout so the CLI still does
+    something sensible on a half-broken project.
+    """
+    script = (
+        "import sys; sys.path.insert(0, '.')\n"
+        "import settings\n"
+        "for app in settings.TORTOISE_ORM.get('apps', {}).keys():\n"
+        "    print(app)"
+    )
+    try:
+        out = subprocess.check_output(
+            [sys.executable, '-c', script],
+            cwd=_APP_DIR,
+            stderr=subprocess.DEVNULL,
+        ).decode().strip()
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return _DEFAULT_APPS
+    apps = tuple(line.strip() for line in out.split('\n') if line.strip())
+    return apps or _DEFAULT_APPS
+
+
 def migrate_init() -> None:
     print("Initializing Aerich migrations...")
     subprocess.run(
@@ -206,10 +235,11 @@ def migrate_init() -> None:
         env=_quiet_env(),
     )
     # `aerich init-db` only initializes one app per invocation (the first one
-    # in pyproject.toml). Loop over both Nori apps so a single migrate:init
-    # bootstraps the framework AND user models. Idempotent: an app that
-    # already has migration files is skipped.
-    for app in ('framework', 'models'):
+    # in pyproject.toml). Loop over every app declared in settings.TORTOISE_ORM
+    # so a single migrate:init bootstraps the framework, user models, and any
+    # additional apps the user has wired in. Idempotent: an app that already
+    # has migration files is skipped.
+    for app in _read_tortoise_apps():
         migrations_dir = os.path.join(_APP_DIR, 'migrations', app)
         already_inited = os.path.isdir(migrations_dir) and any(
             f.endswith('.py') and f != '__init__.py'
@@ -236,7 +266,7 @@ def migrate_make(name: str, app: str = 'models') -> None:
 
 
 def migrate_upgrade(app: str | None = None) -> None:
-    apps = [app] if app else ['framework', 'models']
+    apps = [app] if app else list(_read_tortoise_apps())
     for a in apps:
         print(f"Running migrations (upgrade) for app: {a}...")
         subprocess.run(
@@ -311,24 +341,24 @@ def migrate_fresh() -> None:
     )
     subprocess.run([sys.executable, '-c', script_drop], cwd=_APP_DIR)
 
-    # 4. Deleting application migrations (preserve framework/)
-    print("  2. Deleting application migrations (models/)...")
-    migrations_dir = os.path.join(_APP_DIR, 'migrations', 'models')
-    if os.path.exists(migrations_dir):
-        shutil.rmtree(migrations_dir)
-        print(f"     Deleted {migrations_dir}")
+    # 4. Deleting all migration files (framework + models + any extra apps).
+    #    Pre-1.8 the framework shipped its own migrations and `migrate:fresh`
+    #    deliberately preserved `migrations/framework/`. Post-1.8 framework
+    #    migrations are user-owned and engine-specific — but their content is
+    #    derived from the same framework model definitions on every machine,
+    #    so regenerating them is lossless. Wiping all apps keeps "fresh"
+    #    honest to its name.
+    print("  2. Deleting all migration files (will be regenerated)...")
+    migrations_root = os.path.join(_APP_DIR, 'migrations')
+    if os.path.exists(migrations_root):
+        shutil.rmtree(migrations_root)
+        print(f"     Deleted {migrations_root}")
 
-    # 5. Re-initialize database schema
-    print("  3. Re-initializing database schema...")
-    # Skip 'aerich init' as it may already exist in pyproject.toml
-    subprocess.run(
-        [sys.executable, '-m', 'aerich', 'init-db'],
-        cwd=_APP_DIR,
-        env=_quiet_env(),
-    )
-
-    print("  4. Restoring framework tables...")
-    migrate_upgrade(app='framework')
+    # 5. Regenerate migrations and apply them. migrate_init() reads apps from
+    #    settings.TORTOISE_ORM, so any third-party app the user has wired in
+    #    gets initialized too.
+    print("  3. Regenerating migrations and applying them...")
+    migrate_init()
 
     print("\n  Fresh database ready.")
 
