@@ -1,39 +1,14 @@
-# Getting Started
+# Tutorial: Build a Blog in 5 Minutes
 
-Build a simple blog with Nori in 5 minutes. By the end you'll have a working app with a database, controller, templates, and routes.
+By the end of this tutorial you'll have a working app with a database, controller, templates, and routes.
 
----
+> **Prerequisite:** a fresh Nori project running on `http://localhost:8000`. If you don't have one yet, follow [Installation](installation.md) first — it takes about a minute. Use `my-blog` as the project name to match the examples below.
 
-## 1. Install
-
-```bash
-curl -fsSL https://nori.sembei.mx/install.py | python3 - my-blog
-cd my-blog
-source .venv/bin/activate
-```
-
-The installer pulls the latest release, copies only the project files (no framework dev artifacts), creates a `.venv`, installs dependencies, and runs `git init`. It also copies `.env.example` to `rootsystem/application/.env` for you.
-
-Edit `rootsystem/application/.env`:
-
-```env
-DEBUG=true
-SECRET_KEY=change-me-in-production
-DB_ENGINE=sqlite
-DB_NAME=db.sqlite3
-```
-
-Start the server to confirm everything works:
-
-```bash
-python3 nori.py serve
-```
-
-Visit `http://localhost:8000`. You should see the welcome page. Stop the server with `Ctrl+C`.
+Once your project is running, stop the server with `Ctrl+C` and continue here.
 
 ---
 
-## 2. Create the Model
+## 1. Create the Model
 
 Generate the Article model:
 
@@ -84,7 +59,7 @@ register_model('Article', Article)
 
 ---
 
-## 3. Run Migrations
+## 2. Run Migrations
 
 If this is the first time you run migrations in the project, initialize Aerich:
 
@@ -105,7 +80,7 @@ This creates the `articles` table in your database.
 
 ---
 
-## 4. Create the Controller
+## 3. Create the Controller
 
 ```bash
 python3 nori.py make:controller Article
@@ -161,7 +136,7 @@ class ArticleController:
 
 ---
 
-## 5. Define Routes
+## 4. Define Routes
 
 Open `rootsystem/application/routes.py` and add the blog routes:
 
@@ -185,7 +160,7 @@ routes = [
 
 ---
 
-## 6. Create Templates
+## 5. Create Templates
 
 ### Base layout
 
@@ -243,7 +218,7 @@ Create `rootsystem/templates/blog/show.html`:
 
 ---
 
-## 7. Seed Some Data
+## 6. Seed Some Data
 
 Generate a seeder:
 
@@ -293,7 +268,7 @@ python3 nori.py db:seed
 
 ---
 
-## 8. See It Live
+## 7. See It Live
 
 Start the server:
 

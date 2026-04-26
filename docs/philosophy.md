@@ -57,3 +57,9 @@ Nori is for developers who:
 - Need async I/O without assembling dozens of packages
 - Prefer a small, auditable codebase over a massive framework
 - Are building server-rendered websites or hybrid apps (HTML + API)
+
+---
+
+## A clean start
+
+Most frameworks ask you to clone their repo to start a new project — and you inherit their `CHANGELOG.md`, `CONTRIBUTING.md`, dev artifacts, and full git history along the way. Nori ships a dedicated installer (`install.py`) so your project starts clean: no framework dev files, no inherited history, just what your application needs. The repo of a framework is for framework devs; the installer is for framework users. See [Installation](installation.md).
