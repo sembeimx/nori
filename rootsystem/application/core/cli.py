@@ -661,6 +661,9 @@ def routes_list() -> None:
     script = textwrap.dedent("""\
         import sys, os
         sys.path.insert(0, '.')
+        import settings
+        from core.conf import configure
+        configure(settings)
         from routes import routes as app_routes
         from starlette.routing import Route, Mount, WebSocketRoute
 
@@ -702,7 +705,7 @@ def routes_list() -> None:
         for row in rows:
             print(fmt.format(*row))
         print()
-        print(f'  {{len(rows)}} route(s) registered.')
+        print(f'  {len(rows)} route(s) registered.')
     """)
     subprocess.run([sys.executable, '-c', script], cwd=_APP_DIR)
 

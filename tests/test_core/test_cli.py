@@ -256,6 +256,34 @@ def test_migrate_downgrade_omits_delete_flag_by_default():
 
 
 # ---------------------------------------------------------------------------
+# routes:list — must boot Nori config before importing routes
+# ---------------------------------------------------------------------------
+
+def test_routes_list_configures_settings_before_importing_routes():
+    """The subprocess script for `routes:list` must call core.conf.configure()
+    BEFORE importing routes, otherwise modules in the routes import chain
+    that touch jinja templates / config (directly or indirectly) crash with
+    `RuntimeError: Nori config not initialised`. Latent bug since v1.4.0
+    when routes:list was added — only surfaced once user code touched
+    templates.env at module import time. v1.10.5 fix.
+    """
+    with patch('subprocess.run') as mock_run:
+        cli.routes_list()
+
+    script = mock_run.call_args.args[0][-1]  # last arg is the -c script
+    assert 'configure(settings)' in script, (
+        "routes:list must initialise Nori config before importing routes"
+    )
+    configure_idx = script.index('configure(settings)')
+    routes_idx = script.index('from routes import')
+    assert configure_idx < routes_idx, (
+        "configure(settings) must run BEFORE 'from routes import' — otherwise "
+        "any module in the import chain that touches config/templates.env at "
+        "import time will crash"
+    )
+
+
+# ---------------------------------------------------------------------------
 # migrate:fresh — DEBUG-only safety check
 # ---------------------------------------------------------------------------
 
