@@ -1,4 +1,4 @@
 """Nori version."""
 from __future__ import annotations
 
-__version__ = '1.10.0'
+__version__ = '1.10.1'

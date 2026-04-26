@@ -4,6 +4,16 @@ All notable changes to Nori are documented here. Format follows [Keep a Changelo
 
 ---
 
+## [1.10.1] — 2026-04-26
+
+### Changed
+- **`.env.example` defaults to SQLite** instead of MySQL. Fresh projects now boot with no external services required — `migrate:init` and `serve` work out of the box on any machine that has Python. MySQL/PostgreSQL connection settings remain in `.env.example` (commented as alternates) for users who switch later. Aligns Nori with Django/Rails/Laravel, which all default to SQLite for first run. Only affects new projects (existing projects have their own `.env` and are unaffected).
+
+### Docs
+- `docs/installation.md` notes the SQLite default and points to `docs/deployment.md` for switching to MySQL/PostgreSQL.
+
+---
+
 ## [1.10.0] — 2026-04-26
 
 ### Added
