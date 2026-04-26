@@ -35,7 +35,7 @@ CSRF is on. Security headers are on. Protected fields exclude sensitive data fro
 Cache, mail, storage, search, and rate limiting all follow the same pattern: a default backend that works out of the box, a registration function to add custom drivers, and a per-call override. The interface never changes; only the backend does.
 
 ### 5. Small core, big surface
-The entire framework is ~3,400 lines. Every line is tested. Adding features is welcome; adding complexity is not. A feature earns its place by being used in most projects, not by being clever.
+The framework is small enough to read end-to-end. Every line is tested. Adding features is welcome; adding complexity is not. A feature earns its place by being used in most projects, not by being clever.
 
 A framework you can read in an afternoon is a framework you can trust. If you can't understand how your auth works by reading the source, something is wrong.
 
