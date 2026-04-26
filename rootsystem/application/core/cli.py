@@ -181,11 +181,29 @@ async def run() -> None:
 # Migrations
 # ---------------------------------------------------------------------------
 
+def _quiet_env() -> dict[str, str]:
+    """Subprocess env that silences Tortoise's `Module "X" has no models` noise.
+
+    Tortoise emits a RuntimeWarning whenever a configured app contains no
+    `Model` subclasses. In Nori's layout this is normal — the user's `models`
+    app is empty on fresh projects, and aerich invokes Tortoise.init() during
+    migrations. The warning isn't actionable, so we suppress RuntimeWarning in
+    the aerich subprocess. Real registration bugs surface as failed queries
+    or missing tables, not as this warning.
+    """
+    env = os.environ.copy()
+    extra = 'ignore::RuntimeWarning'
+    existing = env.get('PYTHONWARNINGS', '')
+    env['PYTHONWARNINGS'] = f'{extra},{existing}' if existing else extra
+    return env
+
+
 def migrate_init() -> None:
     print("Initializing Aerich migrations...")
     subprocess.run(
         [sys.executable, '-m', 'aerich', 'init', '-t', 'settings.TORTOISE_ORM'],
         cwd=_APP_DIR,
+        env=_quiet_env(),
     )
     # `aerich init-db` only initializes one app per invocation (the first one
     # in pyproject.toml). Loop over both Nori apps so a single migrate:init
@@ -204,6 +222,7 @@ def migrate_init() -> None:
         subprocess.run(
             [sys.executable, '-m', 'aerich', '--app', app, 'init-db'],
             cwd=_APP_DIR,
+            env=_quiet_env(),
         )
 
 
@@ -212,6 +231,7 @@ def migrate_make(name: str, app: str = 'models') -> None:
     subprocess.run(
         [sys.executable, '-m', 'aerich', '--app', app, 'migrate', '--name', name],
         cwd=_APP_DIR,
+        env=_quiet_env(),
     )
 
 
@@ -222,6 +242,7 @@ def migrate_upgrade(app: str | None = None) -> None:
         subprocess.run(
             [sys.executable, '-m', 'aerich', '--app', a, 'upgrade'],
             cwd=_APP_DIR,
+            env=_quiet_env(),
         )
 
 
@@ -230,7 +251,7 @@ def migrate_downgrade(steps: int = 1, delete: bool = False, app: str = 'models')
     cmd = [sys.executable, '-m', 'aerich', '--app', app, 'downgrade', '-v', str(steps)]
     if delete:
         cmd.append('-d')
-    subprocess.run(cmd, cwd=_APP_DIR)
+    subprocess.run(cmd, cwd=_APP_DIR, env=_quiet_env())
 
 
 def migrate_fix() -> None:
@@ -238,6 +259,7 @@ def migrate_fix() -> None:
     subprocess.run(
         [sys.executable, '-m', 'aerich', 'fix-migrations'],
         cwd=_APP_DIR,
+        env=_quiet_env(),
     )
 
 
@@ -302,6 +324,7 @@ def migrate_fresh() -> None:
     subprocess.run(
         [sys.executable, '-m', 'aerich', 'init-db'],
         cwd=_APP_DIR,
+        env=_quiet_env(),
     )
 
     print("  4. Restoring framework tables...")

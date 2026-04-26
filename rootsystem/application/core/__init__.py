@@ -1,3 +1,17 @@
+import warnings as _warnings
+
+# Suppress Tortoise's `Module "X" has no models` RuntimeWarning. In Nori the
+# user's `models` app is intentionally empty on fresh projects (and may stay
+# empty in apps that only consume framework models). The warning isn't
+# actionable; real registration bugs surface as failed queries or missing
+# tables. Filter applies to in-process callers (serve, shell, tests). Aerich
+# subprocesses get the same suppression via PYTHONWARNINGS in core.cli.
+_warnings.filterwarnings(
+    'ignore',
+    message=r'Module ".+" has no models',
+    category=RuntimeWarning,
+)
+
 from core.collection import NoriCollection, collect
 from core.pagination import paginate
 from core.logger import get_logger
