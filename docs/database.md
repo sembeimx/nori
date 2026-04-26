@@ -6,9 +6,7 @@ We chose Tortoise because it's async from the ground up — not an async wrapper
 
 ## Connection and Configuration
 
-The engines (MySQL, PostgreSQL, SQLite) are defined in the `.env` file. The framework parses the requested engine in the central configuration file `rootsystem/application/settings.py`.
-
-Make sure to document and register your Models inside `settings.py` (in the `TORTOISE_ORM['apps']['models']['models']` dictionary) so that Tortoise locates them immediately and allows inter-relationships.
+The engines (MySQL, PostgreSQL, SQLite) are defined in the `.env` file. The framework parses the requested engine in the central configuration file `rootsystem/application/settings.py`. Models are registered separately — see [Registering a Model](#registering-a-model) below.
 
 ## Defining a Model
 
@@ -41,14 +39,20 @@ class User(NoriModelMixin, Model):
 
 ### Registering a Model
 
-After creating a model, **import it** in `rootsystem/application/models/__init__.py` so Tortoise ORM discovers it for migrations and relationships:
+After creating a model, two things must happen in `rootsystem/application/models/__init__.py` for it to participate in migrations, queries, and Nori's registry-driven features (the `shell` REPL, test factories, framework hooks):
 
 ```python
-# models/__init__.py
-from models.user import User  # ← add your model here
+# rootsystem/application/models/__init__.py
+from models.user import User
+from core.registry import register_model
+
+register_model('User', User)
 ```
 
-Forgetting this step causes silent migration failures — Aerich won't detect the new model.
+1. **Import the model class** — Tortoise ORM only discovers models that are imported. Without the import, Aerich won't pick the model up for migrations.
+2. **Call `register_model('Name', Class)`** — populates `core.registry` so the rest of Nori (`shell`, test client factories, future framework features) can look the model up by name.
+
+Forgetting the import causes silent migration failures (Aerich generates an empty migration). Forgetting the `register_model` call causes registry-driven features to report "model not found" at runtime. The `make:model` CLI command reminds you of both steps after generating the skeleton.
 
 ### NoriModelMixin (`to_dict` + `protected_fields`)
 Inheriting this mixin alongside `Model` adds the `.to_dict()` method and `protected_fields` security. It strips ORM metadata and resolves everything into JSON-serializable primitives.

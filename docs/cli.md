@@ -394,7 +394,7 @@ python3 nori.py migrate:init
 
 This does two things:
 1. Initializes Aerich configuration (reads `settings.TORTOISE_ORM`)
-2. Creates the initial database schema from your current models
+2. Creates the initial database schema for **every app** declared in `settings.TORTOISE_ORM['apps']` — typically `framework` and `models`, plus any extra apps you've wired in (e.g. an `analytics` schema with its own models). Each app gets its own `migrations/<app>/` directory and initial migration file. The loop is idempotent: apps that already have migration files are skipped.
 
 ### Creating Migrations
 
@@ -413,12 +413,12 @@ This compares your models against the last migration state and generates a migra
 ### Applying Migrations
 
 ```bash
-python3 nori.py migrate:upgrade                   # Both apps (framework + models)
+python3 nori.py migrate:upgrade                   # All apps in settings.TORTOISE_ORM (declaration order)
 python3 nori.py migrate:upgrade --app models       # User models only
 python3 nori.py migrate:upgrade --app framework    # Framework models only
 ```
 
-When `--app` is omitted, both `framework` and `models` are upgraded in order.
+When `--app` is omitted, every app declared in `settings.TORTOISE_ORM['apps']` is upgraded in declaration order — `framework` first, then `models`, then any extras.
 
 ### Migration Directory Structure
 
