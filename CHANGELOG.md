@@ -4,6 +4,18 @@ All notable changes to Nori are documented here. Format follows [Keep a Changelo
 
 ---
 
+## [1.10.4] — 2026-04-26
+
+### Changed
+- **`migrate:init` and `migrate:upgrade` now discover apps dynamically** from `settings.TORTOISE_ORM['apps']` instead of hardcoding `('framework', 'models')`. Users who wire a third app (e.g. an `analytics` schema with its own models) get it initialized and upgraded along with the standard pair, with no extra CLI flags. Existing two-app projects behave identically. Falls back to `('framework', 'models')` if `settings.py` can't be loaded for any reason.
+- **`migrate:fresh` now wipes ALL migration files** (framework + models + extras), then delegates to `migrate:init` to regenerate everything against the current DB engine. Previously preserved `migrations/framework/` — that was correct pre-1.8.0 when framework migrations shipped pre-generated, but post-1.8.0 framework migrations are user-owned and engine-specific. Their content is derived from the same framework model definitions on every machine, so regenerating is lossless. Keeps "fresh" honest to its name.
+
+### Added
+- **Repo-state lint test** (`test_repo_does_not_ship_migrations_dir`): asserts the framework repo never commits `rootsystem/application/migrations/`. The leftover `.gitkeep` files that caused the 1.8.0 → 1.10.2 silent breakage of `migrate:init` would have been caught at commit time by this test. CI fails immediately if anyone re-introduces a `migrations/` dir to the repo.
+- **Dynamic-apps test** (`test_migrate_init_uses_dynamic_apps_from_tortoise_orm`, `test_migrate_upgrade_without_app_uses_dynamic_app_list`): assert that custom apps declared in `settings.TORTOISE_ORM` flow through `migrate:init` and `migrate:upgrade`.
+
+---
+
 ## [1.10.3] — 2026-04-26
 
 ### Fixed
