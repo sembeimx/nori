@@ -4,6 +4,15 @@ All notable changes to Nori are documented here. Format follows [Keep a Changelo
 
 ---
 
+## [1.10.2] — 2026-04-26
+
+### Fixed
+- **Silenced Tortoise's `RuntimeWarning: Module "X" has no models`** during `serve`, `shell`, tests, and all `migrate:*` commands. The warning is fired by Tortoise whenever a configured app has no `Model` subclasses — which is normal-by-design in Nori for fresh projects (the user's `models` app starts empty) and for apps that only consume framework models. The warning isn't actionable: real registration bugs surface as failed queries or missing tables, not as this warning. Clean boot output.
+  - In-process suppression: `core/__init__.py` registers a `warnings.filterwarnings()` for the specific `Module ".+" has no models` message (RuntimeWarning category).
+  - Subprocess suppression: `core/cli.py` adds a `_quiet_env()` helper that injects `PYTHONWARNINGS=ignore::RuntimeWarning` into every `aerich` subprocess call (`migrate:init`, `migrate:make`, `migrate:upgrade`, `migrate:downgrade`, `migrate:fresh`, `migrate:fix`).
+
+---
+
 ## [1.10.1] — 2026-04-26
 
 ### Changed
