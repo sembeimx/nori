@@ -41,3 +41,29 @@ ignore = [
 [tool.ruff.format]
 quote-style = "single"
 indent-style = "space"
+
+[tool.coverage.run]
+source = ["rootsystem/application"]
+branch = true
+omit = [
+    # Aerich-generated files; engine-specific SQL, not framework logic.
+    "rootsystem/application/migrations/*",
+    # Template files shipped to user projects — they are meant to be edited,
+    # not exercised by framework tests.
+    "rootsystem/application/seeders/example_seeder.py",
+    "rootsystem/application/commands/_example.py",
+]
+
+[tool.coverage.report]
+fail_under = 75
+show_missing = true
+skip_covered = false
+precision = 1
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.:",
+    # Defensive guards in CLI subprocess scripts that only run in error paths.
+    "raise AssertionError",
+]

@@ -19,7 +19,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
           allow-prereleases: true
       - run: pip install -r requirements-dev.txt
-      - run: pytest tests/ -q
+      - run: pytest tests/ -q --cov --cov-report=term
         env:
           DEBUG: 'true'
           DB_ENGINE: sqlite
