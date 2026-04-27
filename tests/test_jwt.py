@@ -79,3 +79,58 @@ def test_invalid_header_encoding():
 def test_empty_bearer_token():
     """Empty string token returns None."""
     assert verify_token('') is None
+
+
+def test_corrupt_payload_returns_none():
+    """A token with valid header+sig shape but garbage payload encoding returns None."""
+    # Valid header (HS256), invalid base64url for payload, fake signature.
+    import json
+
+    from core.auth.jwt import _sign
+
+    header = _base64url_encode(json.dumps({'alg': 'HS256', 'typ': 'JWT'}, separators=(',', ':')).encode())
+    bad_payload = '!!!not-base64!!!'
+    # Forge a real signature so we get past compare_digest and reach the payload-decode try/except
+    from core.auth.jwt import _get_secret
+
+    sig = _sign(f'{header}.{bad_payload}', _get_secret())
+    assert verify_token(f'{header}.{bad_payload}.{sig}') is None
+
+
+def test_get_secret_returns_jwt_secret_when_configured():
+    """When JWT_SECRET is set distinct from SECRET_KEY, _get_secret returns it (no fallback)."""
+    from unittest.mock import patch
+
+    from core.auth.jwt import _get_secret
+
+    with patch('core.auth.jwt.config') as mock_config:
+        mock_config.SECRET_KEY = 'session-key'
+        mock_config.get.return_value = 'distinct-jwt-secret'
+        assert _get_secret() == 'distinct-jwt-secret'
+
+
+def test_revoke_token_raises_without_jti():
+    """revoke_token must reject payloads that have no jti claim."""
+    import asyncio
+
+    import pytest
+    from core.auth.jwt import revoke_token
+
+    async def go():
+        with pytest.raises(ValueError, match='jti'):
+            await revoke_token({'user_id': 1, 'exp': 9999999999})
+
+    asyncio.run(go())
+
+
+def test_revoke_token_silently_ignores_invalid_token_string():
+    """revoke_token of an invalid/expired token string is a no-op (does not raise)."""
+    import asyncio
+
+    from core.auth.jwt import revoke_token
+
+    async def go():
+        # 'gibberish' is not a valid JWT — verify_token returns None, revoke returns silently
+        await revoke_token('gibberish')  # must not raise
+
+    asyncio.run(go())
