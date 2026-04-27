@@ -4,6 +4,46 @@ All notable changes to Nori are documented here. Format follows [Keep a Changelo
 
 ---
 
+## [1.11.0] — 2026-04-26
+
+### Removed (BREAKING)
+
+- **Python 3.9 support dropped.** Minimum supported Python is now **3.10**. Python 3.9 reached end-of-life on 2025-10-31 and was blocking 6 of 7 outstanding security fixes (`python-multipart`, `python-dotenv`, `pytest`, `filelock`, `requests`) whose patched versions all require Python 3.10+. CI test matrix is now `['3.10', '3.12', '3.14']`. `pyproject.toml`: `target-version = "py310"`, `[tool.mypy] python_version = "3.10"`.
+
+### Added
+
+- **Fail-fast verification of network-backed cache & throttle at startup.** When `CACHE_BACKEND=redis` or `THROTTLE_BACKEND=redis` is configured but Redis is unreachable, the application now aborts startup with a clear `RuntimeError` naming the unreachable URL — rather than silently falling back to an in-process `MemoryBackend` and serving requests against an unshared cache. New `verify()` method on `CacheBackend` and `ThrottleBackend` ABCs (no-op default; Redis backends override with `ping()`). `asgi.py` lifespan calls both before accepting traffic. The previous silent fallback hid Redis outages from operators and produced inconsistent rate-limit/cache state across workers.
+
+- **Request-ID auto-propagation via `contextvars.ContextVar`.** `RequestIdMiddleware` now stores the current request's ID in a `ContextVar` (`core.http.request_id.request_id_var`) in addition to `request.state.request_id`. Because `asyncio.create_task` copies the running context at spawn time, background tasks created inside a request handler (`audit`, `queue`, `push`, `background`) automatically inherit the request_id without threading it through call signatures. A `_RequestIdFilter` attached to the `nori` logger's handlers injects `record.request_id` on every log record emitted under a request — observability via JSON logs (`request_id` field) and text logs (`[req=<short>]` suffix) requires no application code changes. New helper `core.http.request_id.get_request_id()` returns the current ID or `None` outside an HTTP context. 5 new tests in `tests/test_core/test_request_id.py` cover the ContextVar lifecycle, background-task inheritance, and log-record injection.
+
+### Fixed
+
+- **Security: 6 CVEs cleared by the dependency bumps that 3.9 EOL was blocking.**
+  - `python-multipart>=0.0.26` — fixes GHSA-wp53-j4wj-2cfg (arbitrary file write, CVE-2026-24486) and GHSA-mj87-hwqh-73pj (DoS via large multipart preamble/epilogue, CVE-2026-40347).
+  - `python-dotenv>=1.2.2` — fixes GHSA-mf9w-mj56-hr94 (symlink-following in `set_key`, CVE-2026-28684).
+  - `pytest>=9.0.3` — fixes GHSA-6w46-j5rx-g56g.
+  - `filelock>=3.20.3` — fixes GHSA-w853-jp5j-5j7f and GHSA-qmgc-5h2g-mvrw.
+  - `requests` was also flagged (GHSA-gc5v-m9x4-r6x2) but per upstream the vector ("Standard usage of the Requests library is not affected — only direct callers of `extract_zipped_paths()`") doesn't apply to Nori.
+
+  The `pip-audit` ignore list shrunk from **9 entries to 2** — only `GHSA-qhqw-rrw9-25rm` (asyncmy SQL injection vector that doesn't apply to Tortoise ORM usage) and `PYSEC-2022-42969` (the abandoned `py` package) remain. Both have permanent justifications documented in `.github/workflows/audit.yml`.
+
+### Changed
+
+- **Modernized typing imports per PEP 585.** 9 files migrated from `from typing import Callable` to `from collections.abc import Callable` (the canonical location since 3.9). This is the form ruff `UP035` enforces under `target-version = "py310"`. No runtime behavior change.
+
+### Compatibility (BREAKING)
+
+- **Action required for projects pinned to Python 3.9**: bump the local interpreter to 3.10+ before upgrading. Nori's CI now tests against 3.10 / 3.12 / 3.14 only.
+- **Action required for projects setting `CACHE_BACKEND=redis` or `THROTTLE_BACKEND=redis`**: ensure the configured `REDIS_URL` is reachable at startup. A previously-silent misconfiguration will now refuse to boot. The recommended migration is to verify your container's Redis service starts before the app and that `REDIS_URL` resolves correctly. Deployments without Redis configured (the default `memory` backend) are unaffected — `verify()` is a no-op for memory backends.
+- No changes to public APIs (`core.http.request_id.RequestIdMiddleware` constructor signature is unchanged; `request.state.request_id` continues to work).
+
+### Notes
+
+- The two remaining `pip-audit` ignores have no upstream fix and neither vulnerability vector applies to Nori. The audit workflow is now genuinely close to its original goal: any new CVE that lands in the dependency tree fails CI immediately.
+- For projects that want to read the request_id outside the request handler (e.g. inside a service module called from a background task), use `from core.http.request_id import get_request_id` — it returns the inherited ID for tasks spawned inside a request, or `None` outside an HTTP context.
+
+---
+
 ## [1.10.10] — 2026-04-26
 
 ### Added
