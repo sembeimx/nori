@@ -22,6 +22,8 @@ All notable changes to Nori are documented here. Format follows [Keep a Changelo
   - `validation.py`: 4 `raise ValueError(...)` inside `except` clauses now use `from None` to suppress the noisy `int()`/`float()` chain. The framework's message ("Invalid parameter for 'min' rule: 'abc'") is self-contained; the suppressed chain keeps developer-facing tracebacks clean.
   - `inject.py`: 2 `param.annotation == dict` checks changed to `param.annotation is dict`. Semantically equivalent for class-object checks, more idiomatic, and avoids any custom `__eq__` weirdness on type objects.
 
+- **`tests/test_core/test_queue_redis.py::test_redis_worker_processes_job` order dependency.** Pre-existing test that failed when run in isolation but passed in the full suite. Root cause: the test serializes a job referencing `tests.test_core.test_queue_redis:_dummy_task` and the queue worker calls `importlib.import_module('tests.test_core.test_queue_redis')`. The `tests/conftest.py` inserted `tests/` and `rootsystem/application/` on `sys.path` but not the project root — so the `tests` package itself wasn't importable. Fixed by also inserting the project root in conftest.py. Other tests that need the same dotted-path resolution now work consistently regardless of run order.
+
 ### Added
 - **Ruff configured framework-wide.** New `pyproject.toml` at the repo root with a conservative lint selection (`E, W, F, I, UP, B`) and `quote-style = "single"` matching the existing 3000+ string-literal convention in the codebase. `ruff>=0.6` added to `requirements-dev.txt`. The `pyproject.toml` ships to fresh projects via the starter manifest, so new Nori projects come pre-configured with the same lint/format setup. Per-file-ignores document the legitimate `E402` cases (`asgi.py` bootstrap, `core/__init__.py` filterwarnings, `settings.py` load_dotenv, `tests/**/*.py` setup patterns) — see comments in `pyproject.toml`.
 
@@ -29,9 +31,6 @@ All notable changes to Nori are documented here. Format follows [Keep a Changelo
 
 ### Changed
 - **Codebase passed through `ruff check --fix`** — 153 mechanical fixes across 76 files: isort import ordering, removed unused imports (excluding `__init__.py` re-exports), trimmed trailing whitespace on blank lines, dropped empty f-string prefixes (`f""` → `""`), minor pyupgrade modernizations. No behavioral changes.
-
-### Known Issues
-- `tests/test_core/test_queue_redis.py::test_redis_worker_processes_job` fails when run in isolation (`pytest path::name`) but passes in the full suite. Pre-existing test-order dependency: the test calls `importlib.import_module('tests.test_core.test_queue_redis')` and relies on some earlier test putting the project root on `sys.path`. Surfaced during this release's test runs but not introduced by it. Tracked for follow-up.
 
 ---
 

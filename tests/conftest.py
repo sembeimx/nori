@@ -5,11 +5,15 @@ import sys
 os.environ['DB_ENGINE'] = 'sqlite'
 os.environ['DB_NAME'] = ':memory:'
 
-# Add rootsystem/application and tests/ to Python path
+# Add project root, rootsystem/application, and tests/ to Python path.
+# The project root is needed so importlib.import_module('tests.x.y') resolves
+# in tests that exercise the queue worker's dotted-path import logic.
 _tests_dir = os.path.dirname(__file__)
 _app_dir = os.path.abspath(os.path.join(_tests_dir, '../rootsystem/application'))
+_project_root = os.path.abspath(os.path.join(_tests_dir, '..'))
 sys.path.insert(0, _app_dir)
 sys.path.insert(0, _tests_dir)
+sys.path.insert(0, _project_root)
 
 import pytest_asyncio
 import settings
