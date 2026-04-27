@@ -576,3 +576,89 @@ async def test_validate_async_without_unique_rules():
         {'name': 'required|min:2', 'email': 'required|email'},
     )
     assert errors == {}
+
+
+# --- password_strength ---
+
+
+def test_password_strength_default_min_length_8():
+    """Without params, default min length is 8."""
+    assert validate({'p': 'short'}, {'p': 'password_strength'}) != {}
+    assert validate({'p': 'longenough'}, {'p': 'password_strength'}) == {}
+
+
+def test_password_strength_custom_min_length():
+    assert validate({'p': 'a' * 11}, {'p': 'password_strength:12'}) != {}
+    assert validate({'p': 'a' * 12}, {'p': 'password_strength:12'}) == {}
+
+
+def test_password_strength_upper_required():
+    assert 'p' in validate({'p': 'alllowercase'}, {'p': 'password_strength:8,upper'})
+    assert validate({'p': 'HasUpper'}, {'p': 'password_strength:8,upper'}) == {}
+
+
+def test_password_strength_lower_required():
+    assert 'p' in validate({'p': 'ALLUPPERCASE'}, {'p': 'password_strength:8,lower'})
+    assert validate({'p': 'HasLower'}, {'p': 'password_strength:8,lower'}) == {}
+
+
+def test_password_strength_digit_required():
+    assert 'p' in validate({'p': 'NoDigitsHere'}, {'p': 'password_strength:8,digit'})
+    assert validate({'p': 'Digits1Here'}, {'p': 'password_strength:8,digit'}) == {}
+
+
+def test_password_strength_special_required():
+    assert 'p' in validate({'p': 'NoSpecial1'}, {'p': 'password_strength:8,special'})
+    assert validate({'p': 'HasSpecial!'}, {'p': 'password_strength:8,special'}) == {}
+
+
+def test_password_strength_all_classes_required():
+    """Strong password covering all four classes passes."""
+    errors = validate({'p': 'Abc1!xyz'}, {'p': 'password_strength:8,upper,lower,digit,special'})
+    assert errors == {}
+
+
+def test_password_strength_combined_violations_one_message():
+    """Multiple violations are combined into ONE error message."""
+    errors = validate({'p': 'ab'}, {'p': 'password_strength:8,upper,digit,special'})
+    assert 'p' in errors
+    assert len(errors['p']) == 1
+    msg = errors['p'][0]
+    # Expect length AND classes mentioned in one message.
+    assert 'at least 8' in msg
+    assert 'uppercase' in msg
+    assert 'digit' in msg
+    assert 'special' in msg
+
+
+def test_password_strength_skips_empty_value():
+    """Empty values pass — pair with `required` to enforce non-emptiness."""
+    assert validate({'p': ''}, {'p': 'password_strength:8,upper,digit'}) == {}
+
+
+def test_password_strength_with_required():
+    """Pairing with `required` makes empty values an error."""
+    errors = validate({'p': ''}, {'p': 'required|password_strength:8'})
+    assert 'p' in errors
+
+
+def test_password_strength_invalid_min_length_raises():
+    """Non-numeric first param raises ValueError at validate time."""
+    with pytest.raises(ValueError, match='Invalid min_length'):
+        validate({'p': 'something'}, {'p': 'password_strength:abc'})
+
+
+def test_password_strength_unicode_classes():
+    """Class checks are Unicode-aware (str.isupper / islower / isdigit)."""
+    # Ñ counts as uppercase, ñ as lowercase
+    assert validate({'p': 'Ñoñoño1!'}, {'p': 'password_strength:8,upper,lower,digit,special'}) == {}
+
+
+def test_password_strength_custom_message():
+    """Custom message override works the same as other rules."""
+    errors = validate(
+        {'p': 'ab'},
+        {'p': 'password_strength:12'},
+        {'p.password_strength': 'Password too weak'},
+    )
+    assert errors['p'] == ['Password too weak']

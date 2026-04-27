@@ -62,7 +62,65 @@ _DEFAULT_MESSAGES = {
     'file_max': '{field} exceeds maximum size of {size}',
     'file_types': '{field} must be of type: {types}',
     'unique': '{field} has already been taken',
+    'password_strength': '{field} must {requirements}',
 }
+
+
+def _check_password_strength(
+    field: str,
+    value: str,
+    param: str,
+    messages: dict[str, str] | None,
+) -> str | None:
+    """Check value against length + character-class requirements.
+
+    Param grammar (comma-separated, all positional):
+
+        password_strength                 → min length 8, no class flags
+        password_strength:12              → min length 12, no class flags
+        password_strength:12,upper        → min length 12, must contain uppercase
+        password_strength:12,upper,lower,digit,special   → all classes required
+
+    Class flags (any subset, in any order):
+        upper    → at least one A-Z (Unicode-aware via str.isupper)
+        lower    → at least one a-z (Unicode-aware via str.islower)
+        digit    → at least one 0-9 (Unicode-aware via str.isdigit)
+        special  → at least one non-alphanumeric character
+
+    Empty values are skipped — pair with ``required`` to enforce non-emptiness.
+    NIST SP 800-63B Rev. 3 deprecates mandatory complexity rules in favour of
+    length and breach-corpus checks; this rule supports both styles so projects
+    can pick what their auth policy requires.
+    """
+    parts = [p.strip() for p in param.split(',')] if param else []
+    try:
+        min_length = int(parts[0]) if parts and parts[0] else 8
+    except ValueError:
+        raise ValueError(f"Invalid min_length parameter for 'password_strength' rule: '{parts[0]}'") from None
+
+    flags = set(parts[1:])
+    requirements: list[str] = []
+
+    if len(value) < min_length:
+        requirements.append(f'be at least {min_length} characters')
+
+    class_violations: list[str] = []
+    if 'upper' in flags and not any(c.isupper() for c in value):
+        class_violations.append('an uppercase letter')
+    if 'lower' in flags and not any(c.islower() for c in value):
+        class_violations.append('a lowercase letter')
+    if 'digit' in flags and not any(c.isdigit() for c in value):
+        class_violations.append('a digit')
+    if 'special' in flags and not any(not c.isalnum() for c in value):
+        class_violations.append('a special character')
+
+    if class_violations:
+        requirements.append(f'contain {", ".join(class_violations)}')
+
+    if not requirements:
+        return None
+
+    return _msg(field, 'password_strength', messages, requirements=' and '.join(requirements))
 
 
 def _parse_size(size_str: str) -> int:
@@ -248,6 +306,10 @@ def _check_rule(
     elif rule == 'regex':
         if value and not re.match(param, value):
             return _msg(field, rule, messages)
+
+    elif rule == 'password_strength':
+        if value:
+            return _check_password_strength(field, value, param, messages)
 
     # File validation rules (operate on value_raw)
     elif rule == 'file':

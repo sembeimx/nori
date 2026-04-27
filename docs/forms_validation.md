@@ -90,6 +90,27 @@ async def process_form(self, request: Request):
 | `file_max:5mb` | Maximum file size. Accepts `mb`, `kb` suffixes or raw bytes (e.g. `file_max:500kb`, `file_max:10485760`). Invalid size values are rejected gracefully. |
 | `file_types:jpg,png` | Restricts the file extension to the given comma-separated list. |
 | `unique:table,column` | Checks the value does not already exist in the database. Requires `validate_async()`. Optionally pass a third parameter to exclude a row by ID on updates: `unique:users,email,42`. |
+| `password_strength:N[,upper,lower,digit,special]` | Length + optional character-class checks. `password_strength` alone defaults to min length 8 with no class flags. `password_strength:12,upper,lower,digit,special` requires 12+ chars and all four classes. Combined violations are reported in a single error message. Skips empty values — pair with `required`. |
+
+#### Password strength examples
+
+```python
+# NIST-aligned: length only, no complexity tax (the modern recommendation).
+validate(form, {'password': 'required|password_strength:12'})
+
+# Classic complexity policy.
+validate(form, {'password': 'required|password_strength:8,upper,lower,digit,special'})
+
+# Strong password covering all four classes:
+#   'Abc1!xyz'  → no errors
+#
+# Weak password violating multiple requirements:
+#   'ab' against 'password_strength:8,upper,digit,special'
+#   →  'password must be at least 8 characters and contain
+#       an uppercase letter, a digit, a special character'
+```
+
+The character-class checks are Unicode-aware (`str.isupper`, `str.islower`, `str.isdigit`); `special` matches any non-alphanumeric character per `str.isalnum`.
 
 ### Custom Error Messages
 
