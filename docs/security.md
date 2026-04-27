@@ -18,8 +18,62 @@ Every security feature in Nori is enabled by default. We don't trust developers 
 | `Referrer-Policy` | `strict-origin-when-cross-origin` | Information leakage via referrer |
 | `Permissions-Policy` | `camera=(), microphone=(), geolocation=()` | Unauthorized device access |
 | `Strict-Transport-Security` | `max-age=31536000; includeSubDomains` (1 year) | Downgrade attacks (HSTS) |
+| `Content-Security-Policy-Report-Only` | A strict default policy (since v1.13.0) | XSS, content injection, exfiltration |
 
-HSTS is enabled by default. To disable it (e.g., during development without HTTPS), pass `hsts=False` to `SecurityHeadersMiddleware` in `asgi.py`. Optional `Content-Security-Policy` (CSP) can be configured by passing `csp='...'` to the middleware constructor.
+HSTS is enabled by default. To disable it (e.g., during development without HTTPS), pass `hsts=False` to `SecurityHeadersMiddleware` in `asgi.py`.
+
+### Content Security Policy (CSP)
+
+Since v1.13.0 Nori ships a sensible default CSP in **report-only** mode. Browsers evaluate the policy and log violations to the console (or a configured report endpoint) **without blocking content**, so existing pages render unchanged while you discover what would break under enforcement.
+
+The default policy (`core.http.security_headers.DEFAULT_CSP`):
+
+```
+default-src 'self';
+script-src 'self';
+style-src 'self' 'unsafe-inline';
+img-src 'self' data:;
+font-src 'self' data:;
+connect-src 'self';
+frame-ancestors 'none';
+base-uri 'self';
+form-action 'self'
+```
+
+`'unsafe-inline'` for styles is included because Jinja templates routinely use inline style attributes. Scripts are kept strict (`'self'` only) — no inline `<script>` blocks, no `onclick=` handlers. The default is conservative on purpose; relax it only when you've observed which directives your templates actually need.
+
+#### Migration path
+
+1. **Stage 1 — observe** (default). Ship report-only, watch your browser console / report endpoint for violations. Real-world apps almost always need to relax `style-src` further or whitelist a CDN under `script-src` / `img-src`.
+2. **Stage 2 — tighten**. Pass a custom `csp='...'` matching what your app actually needs.
+3. **Stage 3 — enforce**. Flip `csp_report_only=False` to switch from `Content-Security-Policy-Report-Only` to `Content-Security-Policy`. Browsers now BLOCK violating content.
+
+#### Configuration in `asgi.py`
+
+```python
+Middleware(
+    SecurityHeadersMiddleware,
+    csp='default',                    # default: ship Nori's DEFAULT_CSP. Pass a string to override.
+    csp_report_only=True,             # default: report mode. Flip to False to enforce.
+    csp_report_uri='/csp-violations', # default: None (browsers log to console only).
+)
+```
+
+To **opt out entirely** (e.g., for an API-only service that doesn't render HTML): `csp=None` or `csp=False`.
+
+#### Receiving violation reports
+
+If you set `csp_report_uri='/csp-violations'`, browsers POST a JSON payload to that endpoint. A minimal handler:
+
+```python
+@inject()
+async def report(self, request: Request, json: dict):
+    log = get_logger('security.csp')
+    log.warning('CSP violation: %s', json.get('csp-report', json))
+    return JSONResponse({'received': True}, status_code=204)
+```
+
+Then route it: `Route('/csp-violations', csp.report, methods=['POST'])`. Make sure to exempt it from CSRF (browser-originated, no session) — the `core/auth/csrf.py` exempt list is the place.
 
 ---
 

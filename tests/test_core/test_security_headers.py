@@ -83,20 +83,70 @@ async def test_custom_hsts_max_age():
 
 
 @pytest.mark.asyncio
-async def test_csp_header():
+async def test_custom_csp_enforced():
+    """csp=<string> with csp_report_only=False sends the enforcement header."""
     csp = "default-src 'self'; script-src 'self'"
-    app = SecurityHeadersMiddleware(_dummy_app, csp=csp)
+    app = SecurityHeadersMiddleware(_dummy_app, csp=csp, csp_report_only=False)
     headers = await _capture_headers(app, _make_scope())
 
     assert headers['content-security-policy'] == csp
+    assert 'content-security-policy-report-only' not in headers
 
 
 @pytest.mark.asyncio
-async def test_no_csp_by_default():
+async def test_default_csp_report_only():
+    """By default, ship DEFAULT_CSP as Content-Security-Policy-Report-Only."""
     app = SecurityHeadersMiddleware(_dummy_app)
     headers = await _capture_headers(app, _make_scope())
 
+    assert 'content-security-policy-report-only' in headers
+    policy = headers['content-security-policy-report-only']
+    assert "default-src 'self'" in policy
+    assert "script-src 'self'" in policy
+    assert "frame-ancestors 'none'" in policy
+    # Enforcement header NOT present when report-only.
     assert 'content-security-policy' not in headers
+
+
+@pytest.mark.asyncio
+async def test_csp_opt_out_with_none():
+    """csp=None disables the CSP header entirely."""
+    app = SecurityHeadersMiddleware(_dummy_app, csp=None)
+    headers = await _capture_headers(app, _make_scope())
+
+    assert 'content-security-policy' not in headers
+    assert 'content-security-policy-report-only' not in headers
+
+
+@pytest.mark.asyncio
+async def test_csp_opt_out_with_false():
+    """csp=False disables the CSP header entirely."""
+    app = SecurityHeadersMiddleware(_dummy_app, csp=False)
+    headers = await _capture_headers(app, _make_scope())
+
+    assert 'content-security-policy' not in headers
+    assert 'content-security-policy-report-only' not in headers
+
+
+@pytest.mark.asyncio
+async def test_csp_report_uri_appended():
+    """csp_report_uri appends a report-uri directive to the policy."""
+    app = SecurityHeadersMiddleware(_dummy_app, csp_report_uri='/csp-report')
+    headers = await _capture_headers(app, _make_scope())
+
+    policy = headers['content-security-policy-report-only']
+    assert 'report-uri /csp-report' in policy
+
+
+@pytest.mark.asyncio
+async def test_default_csp_can_be_enforced():
+    """csp='default' + csp_report_only=False sends DEFAULT_CSP as enforcement."""
+    app = SecurityHeadersMiddleware(_dummy_app, csp_report_only=False)
+    headers = await _capture_headers(app, _make_scope())
+
+    assert 'content-security-policy' in headers
+    assert 'content-security-policy-report-only' not in headers
+    assert "default-src 'self'" in headers['content-security-policy']
 
 
 @pytest.mark.asyncio
