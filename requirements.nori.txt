@@ -3,7 +3,7 @@
 # Your site's dependencies go in requirements.txt, which already `-r`s this file.
 starlette>=1.0.0
 uvicorn[standard]>=0.29
-tortoise-orm>=0.25
+tortoise-orm>=0.25,<1.0  # aerich 0.9.x incompatible with tortoise 1.x — revisit when aerich drops the <1.0 pin
 aerich>=0.8
 tomlkit>=0.13         # used by aerich for migrate:init / pyproject.toml; not declared as a transitive dep
 asyncmy>=0.2
