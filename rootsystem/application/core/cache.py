@@ -143,7 +143,12 @@ class RedisCacheBackend(CacheBackend):
     async def verify(self) -> None:
         """Ping Redis to fail fast at startup if unreachable."""
         try:
-            await self._redis.ping()
+            # redis-py's ping() stub unions Awaitable[bool] | bool for the sync/async overload.
+            # On the asyncio client we always get a coroutine; cast narrows it for mypy.
+            from collections.abc import Awaitable
+            from typing import cast
+
+            await cast(Awaitable[bool], self._redis.ping())
         except Exception as exc:
             raise RuntimeError(f'CACHE_BACKEND=redis but Redis at {self._redis_url} is not reachable: {exc}') from exc
 
