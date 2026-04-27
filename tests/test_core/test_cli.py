@@ -476,6 +476,52 @@ def test_get_current_version_returns_unknown_when_no_dunder(tmp_path, monkeypatc
 
 
 # ---------------------------------------------------------------------------
+# _has_existing_migrations
+# ---------------------------------------------------------------------------
+
+
+def test_has_existing_migrations_false_when_dir_missing(tmp_path, monkeypatch):
+    monkeypatch.setattr(cli, '_APP_DIR', str(tmp_path))
+    assert cli._has_existing_migrations() is False
+
+
+def test_has_existing_migrations_false_when_dir_empty(tmp_path, monkeypatch):
+    (tmp_path / 'migrations').mkdir()
+    monkeypatch.setattr(cli, '_APP_DIR', str(tmp_path))
+    assert cli._has_existing_migrations() is False
+
+
+def test_has_existing_migrations_false_when_only_init_py(tmp_path, monkeypatch):
+    app = tmp_path / 'migrations' / 'models'
+    app.mkdir(parents=True)
+    (app / '__init__.py').write_text('')
+    monkeypatch.setattr(cli, '_APP_DIR', str(tmp_path))
+    assert cli._has_existing_migrations() is False
+
+
+def test_has_existing_migrations_true_when_app_has_migration(tmp_path, monkeypatch):
+    app = tmp_path / 'migrations' / 'models'
+    app.mkdir(parents=True)
+    (app / '__init__.py').write_text('')
+    (app / '0_20260101_initial.py').write_text('# migration')
+    monkeypatch.setattr(cli, '_APP_DIR', str(tmp_path))
+    assert cli._has_existing_migrations() is True
+
+
+def test_has_existing_migrations_true_when_any_app_has_migrations(tmp_path, monkeypatch):
+    """Returns True even if only one of multiple apps has real migration files."""
+    framework = tmp_path / 'migrations' / 'framework'
+    framework.mkdir(parents=True)
+    (framework / '__init__.py').write_text('')
+    models = tmp_path / 'migrations' / 'models'
+    models.mkdir(parents=True)
+    (models / '__init__.py').write_text('')
+    (models / '0_20260101_initial.py').write_text('# migration')
+    monkeypatch.setattr(cli, '_APP_DIR', str(tmp_path))
+    assert cli._has_existing_migrations() is True
+
+
+# ---------------------------------------------------------------------------
 # _github_api / _download_zip — HTTP helpers for framework:update
 # ---------------------------------------------------------------------------
 
