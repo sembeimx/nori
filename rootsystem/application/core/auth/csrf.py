@@ -4,9 +4,14 @@ Validates tokens on state-changing requests (POST, PUT, DELETE, PATCH).
 Must be placed AFTER SessionMiddleware in the stack.
 """
 
+from __future__ import annotations
+
 import hmac
 from html import escape as _html_escape
+from typing import Any
 from urllib.parse import parse_qs
+
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from core.auth.security import Security
 from core.logger import get_logger
@@ -21,11 +26,11 @@ _MAX_BODY_SIZE = 10 * 1024 * 1024  # 10 MB — DoS limit
 class CsrfMiddleware:
     """ASGI middleware that enforces CSRF tokens."""
 
-    def __init__(self, app, exempt_paths=None):
+    def __init__(self, app: ASGIApp, exempt_paths: list[str] | None = None) -> None:
         self.app = app
         self.exempt_paths = set(exempt_paths or [])
 
-    async def __call__(self, scope, receive, send):
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope['type'] != 'http':
             return await self.app(scope, receive, send)
 
@@ -74,7 +79,7 @@ class CsrfMiddleware:
         # Replay body so downstream can read it multiple times
         body_sent = False
 
-        async def replay_receive():
+        async def replay_receive() -> Message:
             nonlocal body_sent
             if not body_sent:
                 body_sent = True
@@ -83,7 +88,7 @@ class CsrfMiddleware:
 
         await self.app(scope, replay_receive, send)
 
-    def _extract_form_token(self, body, content_type):
+    def _extract_form_token(self, body: bytes, content_type: str) -> str | None:
         """Extract _csrf_token from body (url-encoded or multipart)."""
         if 'multipart/form-data' in content_type:
             return self._parse_multipart_token(body, content_type)
@@ -94,14 +99,14 @@ class CsrfMiddleware:
         except Exception:
             return None
 
-    def _parse_multipart_token(self, body, content_type):
+    def _parse_multipart_token(self, body: bytes, content_type: str) -> str | None:
         """Extract _csrf_token from multipart form data."""
         try:
             boundary = None
-            for part in content_type.split(';'):
-                part = part.strip()
-                if part.startswith('boundary='):
-                    boundary = part[len('boundary=') :]
+            for seg in content_type.split(';'):
+                seg = seg.strip()
+                if seg.startswith('boundary='):
+                    boundary = seg[len('boundary=') :]
                     # Strip quotes per RFC 2046
                     if len(boundary) >= 2 and boundary[0] in ('"', "'") and boundary[-1] == boundary[0]:
                         boundary = boundary[1:-1]
@@ -124,19 +129,20 @@ class CsrfMiddleware:
             return None
         return None
 
-    async def _read_body(self, receive):
+    async def _read_body(self, receive: Receive) -> bytes:
         """Read the ASGI request body with size limit to prevent DoS."""
-        body = b''
+        body: bytes = b''
         while True:
             message = await receive()
-            body += message.get('body', b'')
+            chunk: bytes = message.get('body', b'')
+            body += chunk
             if len(body) > _MAX_BODY_SIZE:
                 raise ValueError(f'Body exceeds max size ({_MAX_BODY_SIZE} bytes)')
             if not message.get('more_body', False):
                 break
         return body
 
-    async def _send_403(self, send):
+    async def _send_403(self, send: Send) -> None:
         await send(
             {
                 'type': 'http.response.start',
@@ -151,7 +157,7 @@ class CsrfMiddleware:
             }
         )
 
-    async def _send_413(self, send):
+    async def _send_413(self, send: Send) -> None:
         """Send a 413 Payload Too Large response."""
         await send(
             {
@@ -168,12 +174,13 @@ class CsrfMiddleware:
         )
 
 
-def csrf_field(session):
+def csrf_field(session: dict[str, Any]) -> str:
     """Return HTML hidden input with the CSRF token (XSS-safe)."""
     token = _html_escape(session.get(_CSRF_SESSION_KEY, ''))
     return f'<input type="hidden" name="_csrf_token" value="{token}">'
 
 
-def csrf_token(session):
+def csrf_token(session: dict[str, Any]) -> str:
     """Return the raw CSRF token string."""
-    return session.get(_CSRF_SESSION_KEY, '')
+    token: str = session.get(_CSRF_SESSION_KEY, '')
+    return token

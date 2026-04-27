@@ -17,6 +17,7 @@ import hmac
 import json
 import secrets
 import time
+from typing import Any
 
 from core.conf import config
 from core.logger import get_logger
@@ -26,10 +27,11 @@ _log = get_logger('jwt')
 
 def _get_secret() -> str:
     """Return JWT secret, warning if it falls back to SECRET_KEY."""
-    secret = config.get('JWT_SECRET', None)
-    if not secret or secret == config.SECRET_KEY:
+    secret: str | None = config.get('JWT_SECRET', None)
+    fallback: str = config.SECRET_KEY
+    if not secret or secret == fallback:
         _log.warning('JWT_SECRET not set; falling back to SECRET_KEY')
-        return config.SECRET_KEY
+        return fallback
     return secret
 
 
@@ -97,7 +99,7 @@ def create_token(payload: dict, *, expires_in: int | None = None) -> str:
     return f'{header_payload}.{signature}'
 
 
-def verify_token(token: str) -> dict | None:
+def verify_token(token: str) -> dict[str, Any] | None:
     """
     Verify and decode a JWT token.
 
@@ -127,7 +129,7 @@ def verify_token(token: str) -> dict | None:
         return None
 
     try:
-        payload = json.loads(_base64url_decode(parts[1]))
+        payload: dict[str, Any] = json.loads(_base64url_decode(parts[1]))
     except (json.JSONDecodeError, ValueError):
         _log.debug('Invalid JWT payload encoding')
         return None

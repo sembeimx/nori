@@ -26,6 +26,7 @@ import base64
 import hashlib
 import hmac
 import secrets
+from typing import Any
 
 _STATE_SESSION_KEY = '_oauth_state'
 _PKCE_SESSION_KEY = '_oauth_pkce_verifier'
@@ -88,7 +89,7 @@ def generate_pkce_verifier(session: dict) -> tuple[str, str]:
     return verifier, challenge
 
 
-def get_pkce_verifier(session: dict) -> str | None:
+def get_pkce_verifier(session: dict[str, Any]) -> str | None:
     """Retrieve and consume the PKCE code_verifier from the session.
 
     Returns ``None`` if no verifier was stored (e.g. the provider does
@@ -101,4 +102,5 @@ def get_pkce_verifier(session: dict) -> str | None:
     Returns:
         The code_verifier string, or ``None``.
     """
-    return session.pop(_PKCE_SESSION_KEY, None)
+    verifier: str | None = session.pop(_PKCE_SESSION_KEY, None)
+    return verifier

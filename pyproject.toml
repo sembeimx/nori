@@ -112,6 +112,9 @@ pretty = true
 module = [
     "core.auth.security",
     "core.auth.login_guard",
+    "core.auth.csrf",
+    "core.auth.jwt",
+    "core.auth.oauth",
     "core.http.validation",
 ]
 disallow_untyped_defs = true
