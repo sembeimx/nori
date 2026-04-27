@@ -1,0 +1,7 @@
+# Commits to ignore in `git blame`.
+# Enable for this repo with:
+#   git config blame.ignoreRevsFile .git-blame-ignore-revs
+#
+# Format: one full-length SHA per line, optional comment after.
+
+c7c4067f8a55978ecc8ac0fe8b998bdb8548e0ea  # style: ruff format pass across codebase (v1.10.7)
