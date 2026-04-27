@@ -648,14 +648,14 @@ def audit_purge(days: int, export: bool = False, dry_run: bool = False) -> None:
         from core.conf import configure
         configure(settings)
         from tortoise import Tortoise
-        from datetime import datetime, timedelta
+        from datetime import datetime, timedelta, timezone
 
         async def _purge():
             await Tortoise.init(config=settings.TORTOISE_ORM)
             from core.registry import get_model
             AuditLog = get_model('AuditLog')
 
-            cutoff = datetime.utcnow() - timedelta(days={days})
+            cutoff = datetime.now(timezone.utc) - timedelta(days={days})
             qs = AuditLog.filter(created_at__lt=cutoff)
             count = await qs.count()
 
@@ -671,7 +671,7 @@ def audit_purge(days: int, export: bool = False, dry_run: bool = False) -> None:
 
             if {export}:
                 entries = await qs.order_by('created_at').all()
-                filename = f"audit_log_export_{{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}}.csv"
+                filename = f"audit_log_export_{{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}}.csv"
                 with open(filename, 'w', newline='') as f:
                     writer = csv.writer(f)
                     writer.writerow(['id', 'user_id', 'action', 'model_name', 'record_id', 'changes', 'ip_address', 'request_id', 'created_at'])

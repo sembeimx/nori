@@ -60,7 +60,7 @@ def _sign_aws4(
     from urllib.parse import urlparse
 
     parsed = urlparse(url)
-    now = datetime.datetime.utcnow()
+    now = datetime.datetime.now(datetime.timezone.utc)
     datestamp = now.strftime('%Y%m%d')
     amz_date = now.strftime('%Y%m%dT%H%M%SZ')
 
