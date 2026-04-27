@@ -4,6 +4,38 @@ All notable changes to Nori are documented here. Format follows [Keep a Changelo
 
 ---
 
+## [1.14.2] — 2026-04-27
+
+### Test coverage
+
+The biggest single coverage push since the framework started measuring it. Three formerly under-tested surfaces moved into well-covered territory; the project floor was raised to lock in the new baseline.
+
+- **`core/cache.py` — `RedisCacheBackend`: 65.7% → 96.7%.** 14 new tests in `tests/test_core/test_cache.py` exercise the Redis-backed cache via `fakeredis` (an in-memory drop-in for `redis-py`'s asyncio interface). Covered: `set`/`get` round-trip for strings and dicts, missing-key returns `None`, ttl=0 stores without expiry while ttl>0 applies `setex`, `delete`, prefix-aware `flush` (SCAN-based, leaves unrelated keys alone), JSON default serialization for `datetime`/`Decimal`/`UUID`, `TypeError` on unsupported types, bytes-fallback for non-JSON payloads, `verify()` success and `RuntimeError` naming the URL on connection failure, `shutdown()` closing the connection pool, and `get_backend()` selecting Redis when `CACHE_BACKEND=redis`.
+
+- **`core/http/throttle_backends.py` — `RedisBackend`: 64.6% → 100.0%.** 8 new tests in `tests/test_throttle_backends.py` covering the sorted-set timestamp store: `add_timestamp` + `get_timestamps` round-trip, automatic pruning of entries older than the window, `cleanup` dropping below-cutoff entries, `verify` success/failure paths, `shutdown` closing the pool, `get_backend` selecting Redis when `THROTTLE_BACKEND=redis`, and the `MemoryBackend` lazy global cleanup running at the `_CLEANUP_EVERY` threshold.
+
+- **`core/cli.py`: 32.5% → 64.5%** — almost doubled. 37 new tests in `tests/test_core/test_cli.py` covering: subprocess wrappers (`serve` driving uvicorn with the right flags + Ctrl-C handling, `shell` setting `PYTHONSTARTUP` + cleaning up the temp file, `db_seed` running the inline seed script, `queue_work` baking the queue name into the script, `audit_purge` formatting `--days`/`--export`/`--dry-run` into the embedded script, `check_deps` propagating non-zero exit codes via `sys.exit`); helpers (`make_seeder` overwrite refusal, `_get_current_version` reading `__version__` with `'unknown'` fallback, `_github_api` sending the correct `User-Agent`/`Accept` headers and adding `Authorization: Bearer` when `GITHUB_TOKEN` is set, `_download_zip` streaming bytes to disk); and the `main()` argparse dispatcher across all 19 subcommands. The 130-line `framework_update` flow (download → extract → backup → migrate) is left for a future integration-style pass — unit-mocking every step would be more brittle than the function it tests.
+
+**Project total: 78.2% → 86.2%** (over two releases — v1.14.1 contributed 78.2 → 79.5; v1.14.2 contributed 79.5 → 86.2). Test count: 642 → **723**.
+
+### Changed
+
+- **Coverage floor raised from 75% to 82%** (`pyproject.toml`'s `[tool.coverage.report]`). Current baseline is 86.2%, so the gate has a ~4-point buffer for routine churn — tight enough that a meaningful regression flips it, loose enough that an unrelated PR adding a few untested lines doesn't break the build. Documented in `docs/code_quality.md` and `docs/roadmap.md`.
+
+### Fixed
+
+- **`redis-py`'s `ping()` stub union now narrowed via `cast`** in both `core/cache.py:RedisCacheBackend.verify()` and `core/http/throttle_backends.py:RedisBackend.verify()`. The stub types `ping()` as `Awaitable[bool] | bool` to cover the sync/async overload split; on the asyncio client the result is always a coroutine. `cast(Awaitable[bool], self._redis.ping())` narrows it for `mypy --strict` (now active on `auth.csrf` etc., where this was surfacing as a transitive error). Behavior unchanged.
+
+### Added
+
+- **`fakeredis>=2.20`** in `requirements-dev.txt`. Used by the Redis backend tests above; transparent to runtime code (framework `requirements.nori.txt` keeps `redis` as the actual Redis client).
+
+### Compatibility
+
+- Pure additions. No public API changes, no settings keys added or renamed, no runtime dependency changes. The coverage threshold bump only affects projects that copy the framework's `pyproject.toml` `[tool.coverage.report]` section into their own — projects on lower coverage still control their own threshold.
+
+---
+
 ## [1.14.1] — 2026-04-27
 
 ### Fixed
