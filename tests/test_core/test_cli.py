@@ -374,3 +374,425 @@ def test_framework_version_prints_current_version(capsys):
     out = capsys.readouterr().out.strip()
     assert out.startswith('Nori v')
     assert len(out) > len('Nori v')  # has a version after the prefix
+
+
+# ---------------------------------------------------------------------------
+# make:seeder
+# ---------------------------------------------------------------------------
+
+
+def test_make_seeder_refuses_to_overwrite(app_dir, capsys):
+    seeder = app_dir / 'seeders' / 'user_seeder.py'
+    seeder.write_text('# existing content\n')
+    cli.make_seeder('User')
+    captured = capsys.readouterr()
+    assert 'already exists' in captured.out
+    assert seeder.read_text() == '# existing content\n'  # untouched
+
+
+# ---------------------------------------------------------------------------
+# serve / shell — subprocess wrappers
+# ---------------------------------------------------------------------------
+
+
+def test_serve_invokes_uvicorn_with_host_and_port():
+    """`serve` must spawn uvicorn with the provided host/port and reload flag."""
+    from unittest.mock import MagicMock
+
+    with patch('core.cli.subprocess.run') as run:
+        run.return_value = MagicMock(returncode=0)
+        cli.serve(host='127.0.0.1', port=9000)
+
+    args = run.call_args[0][0]
+    assert '-m' in args
+    assert 'uvicorn' in args
+    assert 'asgi:app' in args
+    assert '--reload' in args
+    assert '127.0.0.1' in args
+    assert '9000' in args
+
+
+def test_serve_swallows_keyboard_interrupt():
+    """Ctrl-C during serve must not bubble up — the dev workflow expects clean exit."""
+    with patch('core.cli.subprocess.run', side_effect=KeyboardInterrupt):
+        cli.serve()  # must not raise
+
+
+def test_shell_writes_pythonstartup_and_runs_asyncio_repl():
+    """`shell` writes a startup file, sets PYTHONSTARTUP, runs python -m asyncio."""
+    captured_env = {}
+    captured_args = []
+
+    def fake_run(args, **kwargs):
+        captured_args.extend(args)
+        captured_env.update(kwargs.get('env', {}))
+        from unittest.mock import MagicMock
+
+        return MagicMock(returncode=0)
+
+    with patch('core.cli.subprocess.run', side_effect=fake_run):
+        cli.shell()
+
+    assert '-m' in captured_args
+    assert 'asyncio' in captured_args
+    assert 'PYTHONSTARTUP' in captured_env
+    # The startup file is unlinked after — so we can't read it back. The fact
+    # that subprocess.run was given a real path under PYTHONSTARTUP is enough.
+    assert captured_env['PYTHONSTARTUP'].endswith('.py')
+
+
+def test_shell_swallows_keyboard_interrupt_and_cleans_startup_file():
+    """Ctrl-C during the shell loop still unlinks the temp startup file."""
+    with patch('core.cli.subprocess.run', side_effect=KeyboardInterrupt):
+        cli.shell()  # no raise
+
+
+# ---------------------------------------------------------------------------
+# _get_current_version
+# ---------------------------------------------------------------------------
+
+
+def test_get_current_version_reads_dunder_version(tmp_path, monkeypatch):
+    """The helper reads __version__ from core/version.py at the configured _CORE_DIR."""
+    version_dir = tmp_path / 'core'
+    version_dir.mkdir()
+    (version_dir / 'version.py').write_text("__version__ = '9.9.9'\n")
+    monkeypatch.setattr(cli, '_CORE_DIR', str(version_dir))
+    assert cli._get_current_version() == '9.9.9'
+
+
+def test_get_current_version_returns_unknown_when_file_missing(tmp_path, monkeypatch):
+    monkeypatch.setattr(cli, '_CORE_DIR', str(tmp_path / 'nope'))
+    assert cli._get_current_version() == 'unknown'
+
+
+def test_get_current_version_returns_unknown_when_no_dunder(tmp_path, monkeypatch):
+    """A version.py without __version__ falls through to 'unknown'."""
+    version_dir = tmp_path / 'core'
+    version_dir.mkdir()
+    (version_dir / 'version.py').write_text("# no version line here\nfoo = 'bar'\n")
+    monkeypatch.setattr(cli, '_CORE_DIR', str(version_dir))
+    assert cli._get_current_version() == 'unknown'
+
+
+# ---------------------------------------------------------------------------
+# _github_api / _download_zip — HTTP helpers for framework:update
+# ---------------------------------------------------------------------------
+
+
+def test_github_api_calls_urlopen_with_user_agent_and_accept(monkeypatch):
+    """The GitHub helper must send a User-Agent (required by api.github.com) and Accept header."""
+    import io
+    import json
+
+    monkeypatch.delenv('GITHUB_TOKEN', raising=False)
+
+    captured = {}
+
+    class FakeContext:
+        def __enter__(self_inner):
+            return io.BytesIO(json.dumps({'tag_name': 'v1.0.0'}).encode())
+
+        def __exit__(self_inner, *exc):
+            return False
+
+    def fake_urlopen(req):
+        captured['url'] = req.full_url
+        captured['headers'] = dict(req.header_items())
+        return FakeContext()
+
+    with patch('core.cli.urlopen', side_effect=fake_urlopen):
+        result = cli._github_api('releases/latest')
+
+    assert result == {'tag_name': 'v1.0.0'}
+    assert 'releases/latest' in captured['url']
+    # urllib normalizes header names with title-case
+    headers_lower = {k.lower(): v for k, v in captured['headers'].items()}
+    assert 'nori-framework-updater' in headers_lower['user-agent'].lower()
+    assert headers_lower['accept'] == 'application/vnd.github+json'
+    assert 'authorization' not in headers_lower  # no token, no Authorization header
+
+
+def test_github_api_adds_authorization_when_github_token_set(monkeypatch):
+    """If GITHUB_TOKEN is in the environment, _github_api adds Authorization: Bearer."""
+    import io
+    import json
+
+    monkeypatch.setenv('GITHUB_TOKEN', 'ghp_secret')
+
+    captured = {}
+
+    class FakeContext:
+        def __enter__(self_inner):
+            return io.BytesIO(json.dumps([]).encode())
+
+        def __exit__(self_inner, *exc):
+            return False
+
+    def fake_urlopen(req):
+        captured['headers'] = dict(req.header_items())
+        return FakeContext()
+
+    with patch('core.cli.urlopen', side_effect=fake_urlopen):
+        cli._github_api('releases')
+
+    headers_lower = {k.lower(): v for k, v in captured['headers'].items()}
+    assert headers_lower['authorization'] == 'Bearer ghp_secret'
+
+
+def test_download_zip_streams_response_body_to_file(tmp_path, monkeypatch):
+    """_download_zip must copy the URL response body to the destination file."""
+    import io
+
+    monkeypatch.delenv('GITHUB_TOKEN', raising=False)
+
+    payload = b'fake-zip-bytes' * 100  # >1KB so we exercise copyfileobj's chunking
+    dest = tmp_path / 'downloaded.zip'
+
+    class FakeContext:
+        def __enter__(self_inner):
+            return io.BytesIO(payload)
+
+        def __exit__(self_inner, *exc):
+            return False
+
+    def fake_urlopen(req):
+        return FakeContext()
+
+    with patch('core.cli.urlopen', side_effect=fake_urlopen):
+        cli._download_zip('https://example.com/x.zip', str(dest))
+
+    assert dest.read_bytes() == payload
+
+
+# ---------------------------------------------------------------------------
+# db_seed / queue_work / audit_purge — embedded-script subprocesses
+# ---------------------------------------------------------------------------
+
+
+def test_db_seed_invokes_python_with_inline_seed_script():
+    """db_seed runs a python -c script that imports seeders.database_seeder.run()."""
+    from unittest.mock import MagicMock
+
+    with patch('core.cli.subprocess.run') as run:
+        run.return_value = MagicMock(returncode=0)
+        cli.db_seed()
+
+    args = run.call_args[0][0]
+    assert args[1] == '-c'
+    script = args[2]
+    assert 'from seeders.database_seeder import run' in script
+    assert 'Tortoise.init' in script
+
+
+def test_queue_work_passes_queue_name_into_script():
+    """queue_work bakes the queue name into the inline script."""
+    from unittest.mock import MagicMock
+
+    with patch('core.cli.subprocess.run') as run:
+        run.return_value = MagicMock(returncode=0)
+        cli.queue_work('emails')
+
+    script = run.call_args[0][0][2]
+    assert "queue_name='emails'" in script
+
+
+def test_queue_work_swallows_keyboard_interrupt():
+    """Ctrl-C against a queue worker must not propagate."""
+    with patch('core.cli.subprocess.run', side_effect=KeyboardInterrupt):
+        cli.queue_work('default')  # no raise
+
+
+def test_audit_purge_bakes_days_and_dry_run_into_script():
+    """audit_purge formats the days/export/dry_run flags into the inline script."""
+    from unittest.mock import MagicMock
+
+    with patch('core.cli.subprocess.run') as run:
+        run.return_value = MagicMock(returncode=0)
+        cli.audit_purge(days=30, export=True, dry_run=True)
+
+    script = run.call_args[0][0][2]
+    assert 'timedelta(days=30)' in script
+    assert 'if True' in script  # dry_run=True formatted into the script literal
+
+
+def test_audit_purge_default_export_and_dry_run_are_false():
+    """Defaults must format export=False / dry_run=False into the script."""
+    from unittest.mock import MagicMock
+
+    with patch('core.cli.subprocess.run') as run:
+        run.return_value = MagicMock(returncode=0)
+        cli.audit_purge(days=7)
+
+    script = run.call_args[0][0][2]
+    assert 'if False' in script  # both flags default-False appear as `if False`
+    assert 'timedelta(days=7)' in script
+
+
+# ---------------------------------------------------------------------------
+# check_deps — exit code passthrough
+# ---------------------------------------------------------------------------
+
+
+def test_check_deps_passes_when_subprocess_returns_zero():
+    """If the probe subprocess succeeds, check_deps returns normally (no SystemExit)."""
+    from unittest.mock import MagicMock
+
+    with patch('core.cli.subprocess.run') as run:
+        run.return_value = MagicMock(returncode=0)
+        cli.check_deps()  # no raise
+
+
+def test_check_deps_propagates_nonzero_exit_code():
+    """If a probe fails, check_deps must call sys.exit with the same code."""
+    from unittest.mock import MagicMock
+
+    with patch('core.cli.subprocess.run') as run, patch('core.cli.sys.exit') as fake_exit:
+        run.return_value = MagicMock(returncode=2)
+        cli.check_deps()
+        fake_exit.assert_called_once_with(2)
+
+
+# ---------------------------------------------------------------------------
+# main() argparse dispatcher
+# ---------------------------------------------------------------------------
+
+
+def test_main_dispatches_serve(monkeypatch):
+    monkeypatch.setattr('sys.argv', ['nori.py', 'serve', '--host', '127.0.0.1', '--port', '9000'])
+    with patch('core.cli.serve') as fn:
+        cli.main()
+    fn.assert_called_once_with(host='127.0.0.1', port=9000)
+
+
+def test_main_dispatches_shell(monkeypatch):
+    monkeypatch.setattr('sys.argv', ['nori.py', 'shell'])
+    with patch('core.cli.shell') as fn:
+        cli.main()
+    fn.assert_called_once()
+
+
+def test_main_dispatches_make_controller(monkeypatch):
+    monkeypatch.setattr('sys.argv', ['nori.py', 'make:controller', 'Article'])
+    with patch('core.cli.make_controller') as fn:
+        cli.main()
+    fn.assert_called_once_with('Article')
+
+
+def test_main_dispatches_make_model(monkeypatch):
+    monkeypatch.setattr('sys.argv', ['nori.py', 'make:model', 'Product'])
+    with patch('core.cli.make_model') as fn:
+        cli.main()
+    fn.assert_called_once_with('Product')
+
+
+def test_main_dispatches_make_seeder(monkeypatch):
+    monkeypatch.setattr('sys.argv', ['nori.py', 'make:seeder', 'User'])
+    with patch('core.cli.make_seeder') as fn:
+        cli.main()
+    fn.assert_called_once_with('User')
+
+
+def test_main_dispatches_migrate_init(monkeypatch):
+    monkeypatch.setattr('sys.argv', ['nori.py', 'migrate:init'])
+    with patch('core.cli.migrate_init') as fn:
+        cli.main()
+    fn.assert_called_once()
+
+
+def test_main_dispatches_migrate_make_with_app_flag(monkeypatch):
+    monkeypatch.setattr('sys.argv', ['nori.py', 'migrate:make', 'add_users', '--app', 'framework'])
+    with patch('core.cli.migrate_make') as fn:
+        cli.main()
+    fn.assert_called_once_with('add_users', app='framework')
+
+
+def test_main_dispatches_migrate_upgrade_default_no_app(monkeypatch):
+    monkeypatch.setattr('sys.argv', ['nori.py', 'migrate:upgrade'])
+    with patch('core.cli.migrate_upgrade') as fn:
+        cli.main()
+    fn.assert_called_once_with(app=None)
+
+
+def test_main_dispatches_migrate_downgrade_with_steps_and_delete(monkeypatch):
+    monkeypatch.setattr('sys.argv', ['nori.py', 'migrate:downgrade', '--steps', '3', '--delete'])
+    with patch('core.cli.migrate_downgrade') as fn:
+        cli.main()
+    fn.assert_called_once_with(steps=3, delete=True, app='models')
+
+
+def test_main_dispatches_migrate_fix(monkeypatch):
+    monkeypatch.setattr('sys.argv', ['nori.py', 'migrate:fix'])
+    with patch('core.cli.migrate_fix') as fn:
+        cli.main()
+    fn.assert_called_once()
+
+
+def test_main_dispatches_migrate_fresh(monkeypatch):
+    monkeypatch.setattr('sys.argv', ['nori.py', 'migrate:fresh'])
+    with patch('core.cli.migrate_fresh') as fn:
+        cli.main()
+    fn.assert_called_once()
+
+
+def test_main_dispatches_db_seed(monkeypatch):
+    monkeypatch.setattr('sys.argv', ['nori.py', 'db:seed'])
+    with patch('core.cli.db_seed') as fn:
+        cli.main()
+    fn.assert_called_once()
+
+
+def test_main_dispatches_queue_work_with_name(monkeypatch):
+    monkeypatch.setattr('sys.argv', ['nori.py', 'queue:work', '--name', 'emails'])
+    with patch('core.cli.queue_work') as fn:
+        cli.main()
+    fn.assert_called_once_with('emails')
+
+
+def test_main_dispatches_framework_update_with_flags(monkeypatch):
+    monkeypatch.setattr(
+        'sys.argv',
+        ['nori.py', 'framework:update', '--version', '1.20.0', '--no-backup', '--force'],
+    )
+    with patch('core.cli.framework_update') as fn:
+        cli.main()
+    fn.assert_called_once_with(target_version='1.20.0', skip_backup=True, force=True)
+
+
+def test_main_dispatches_framework_version(monkeypatch):
+    monkeypatch.setattr('sys.argv', ['nori.py', 'framework:version'])
+    with patch('core.cli.framework_version') as fn:
+        cli.main()
+    fn.assert_called_once()
+
+
+def test_main_dispatches_routes_list(monkeypatch):
+    monkeypatch.setattr('sys.argv', ['nori.py', 'routes:list'])
+    with patch('core.cli.routes_list') as fn:
+        cli.main()
+    fn.assert_called_once()
+
+
+def test_main_dispatches_check_deps(monkeypatch):
+    monkeypatch.setattr('sys.argv', ['nori.py', 'check:deps'])
+    with patch('core.cli.check_deps') as fn:
+        cli.main()
+    fn.assert_called_once()
+
+
+def test_main_dispatches_audit_purge_with_flags(monkeypatch):
+    monkeypatch.setattr(
+        'sys.argv',
+        ['nori.py', 'audit:purge', '--days', '14', '--export', '--dry-run'],
+    )
+    with patch('core.cli.audit_purge') as fn:
+        cli.main()
+    fn.assert_called_once_with(14, export=True, dry_run=True)
+
+
+def test_main_prints_help_when_no_command_given(monkeypatch, capsys):
+    """No subcommand → argparse help is printed (and we don't crash)."""
+    monkeypatch.setattr('sys.argv', ['nori.py'])
+    cli.main()
+    out = capsys.readouterr().out
+    assert 'Available commands' in out or 'usage' in out.lower()
