@@ -4,6 +4,26 @@ All notable changes to Nori are documented here. Format follows [Keep a Changelo
 
 ---
 
+## [1.15.1] — 2026-04-27
+
+### Test coverage
+
+`framework:update` was the largest single uncovered surface left after v1.14.2 (the 130-line download → extract → backup → replace → patch flow had been deferred as "more brittle to mock than the function it tests"). v1.15.1 closes it with an integration-style test: mock only the network boundary (`_github_api`, `_download_zip`), let the rest run on the real filesystem against `tmp_path`. The same approach catches regressions in the actual update flow rather than asserting the mocks are called.
+
+- **`core/cli.py`: 64.5% → 91.1%** (over two releases — v1.14.2 took 32.5% → 64.5%; v1.15.1 takes it to 91.1%). 14 new `framework_update` tests in `tests/test_core/test_cli.py` covering: happy-path file replacement + backup creation, `releases/latest` vs `releases/tags/v{X}` endpoint selection, already-up-to-date short-circuit, `--force` re-install, 404 with vs without `--version` (specific vs generic error message), `URLError` on the GitHub API call (connection error), `URLError` on the download (download-failed error), zip missing `rootsystem/application/core/` (abort with original files preserved), `--no-backup` skipping backup creation, non-dict release shape (defensive abort), HTTP non-404 errors re-raised so the caller sees the real failure, and the conditional `migrate:fix` reminder firing when `migrations/<app>/` contains real migration files. Plus 3 small additions: `_has_existing_migrations` skipping non-directory entries under `migrations/`, `make_model` overwrite refusal (parallel to the existing controller/seeder coverage), and the HTTP non-404 reraise.
+
+- **Project total: 86.2% → 89.9%.** Test count: 723 → **744**.
+
+### Changed
+
+- **Coverage floor raised from 82% to 86%** (`pyproject.toml`'s `[tool.coverage.report]`). Current baseline 89.9%, ~4-point buffer — same posture as the v1.14.2 75→82 bump. Floor history is now documented in the file.
+
+### Compatibility
+
+- Pure additions. No public API changes, no settings keys added or renamed, no runtime dependency changes.
+
+---
+
 ## [1.15.0] — 2026-04-27
 
 ### Upgrade notes — read first
