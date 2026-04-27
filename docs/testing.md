@@ -279,3 +279,96 @@ class TestArticleController:
         })
         assert_redirects(resp, '/articles')
 ```
+
+---
+
+## Property-based testing
+
+Example-based tests check specific cases. Property-based tests check **invariants** — facts that should hold across the entire input space. Nori uses [Hypothesis](https://hypothesis.readthedocs.io/) to generate hundreds of inputs per run, automatically shrinking failures to the minimal reproduction.
+
+The framework's own `core/http/validation` module ships with property tests in `tests/test_core/test_validation_properties.py` — a worked reference for the patterns below. Add `hypothesis>=6.150` to `requirements-dev.txt` to use them in your project.
+
+### When to reach for property tests
+
+Property tests pay off when:
+
+- The function has a **clear invariant** ("validate is idempotent", "round-tripping `serialize → parse` returns the original", "the parser accepts every output the printer produces").
+- The input space is large enough that example-based coverage feels arbitrary (string lengths, numeric boundaries, optional/nullable fields, regex matchers).
+- A bug would be hard to spot from a handful of examples but trivial under random input (off-by-one boundaries, Unicode edge cases, empty-collection handling).
+
+They are not a replacement for example tests — they complement them. Use example tests for happy paths and named regressions; use property tests to harden the parts of the input space you would never enumerate by hand.
+
+### Anatomy of a property test
+
+```python
+from hypothesis import given, settings, strategies as st
+from core.http.validation import validate
+
+
+@given(value=st.text(min_size=5, max_size=10))
+@settings(max_examples=200, deadline=500)
+def test_min_5_accepts_strings_at_or_above_5_chars(value):
+    """Boundary property: min:5 accepts every string of length >= 5."""
+    errors = validate({'name': value}, {'name': 'min:5'})
+    assert errors == {}
+```
+
+Three pieces:
+
+1. **A strategy** (`st.text(min_size=5, max_size=10)`) that generates valid inputs. The standard library covers most needs: `st.text`, `st.integers`, `st.floats`, `st.emails`, `st.dictionaries`, `st.sampled_from`, `st.booleans`, `st.lists`. Compose them with `.filter(...)` and `.map(...)` when the shape is more specific.
+2. **The invariant** as an assertion — what must hold for every input the strategy produces.
+3. **`@settings`** to cap the run. `max_examples=200` is a reasonable default for most properties; `deadline=500` (milliseconds per example) catches accidental quadratic behavior without spurious flakes on slow CI hardware.
+
+When the invariant breaks, Hypothesis prints the **shrunk** failing input — the smallest case that still triggers the bug:
+
+```
+Falsifying example: test_email_accepts_valid(local='a', domain='', tld='b')
+```
+
+That output is the regression test you would have written by hand, except Hypothesis found it for you.
+
+### Documenting intentional contract limits
+
+Some validators are intentionally pragmatic — Nori's `email` regex, like Django's and Rails's, rejects quoted local parts, IDN/Punycode TLDs (`xn--…`), and local parts starting with non-alphanumeric characters. Those are deliberate trade-offs, not bugs.
+
+When a property test surfaces such a limit, encode the limit in the strategy's filter and add a comment explaining **why** — so the next contributor reading the test knows it is a contract, not a missing edge case:
+
+```python
+@given(
+    local=st.text(
+        alphabet=st.characters(whitelist_categories=('Lu', 'Ll', 'Nd')),
+        min_size=1, max_size=20,
+    ).filter(lambda s: s[0].isalnum()),  # contract: no leading punctuation
+    tld=st.text(
+        alphabet=st.characters(whitelist_categories=('Lu', 'Ll')),
+        min_size=2, max_size=4,
+    ).filter(lambda s: s.isalpha()),     # contract: no IDN/Punycode TLDs
+)
+def test_email_accepts_valid_addresses(local, tld):
+    ...
+```
+
+The filter then doubles as documentation. A contributor who later expands the regex to support IDN domains will see the filter, know it is the spot to revisit, and can drop it as part of the same change.
+
+### Running property tests
+
+Property tests are pytest tests — they run as part of the standard suite:
+
+```bash
+pytest tests/                                       # everything
+pytest tests/test_core/test_validation_properties.py -q   # just the properties
+pytest --hypothesis-show-statistics                 # per-test example counts and shrinking stats
+```
+
+For CI, set the `--hypothesis-seed` flag to make a flaky property reproducible:
+
+```bash
+pytest --hypothesis-seed=12345 tests/test_core/test_validation_properties.py
+```
+
+Hypothesis caches the failing example database under `.hypothesis/` — committing that directory is not recommended (treat it like `.pytest_cache`).
+
+### See also
+
+- [Hypothesis documentation](https://hypothesis.readthedocs.io/) — strategies, settings, profiles, custom shrinkers
+- The framework's own `tests/test_core/test_validation_properties.py` — 24 worked properties covering idempotence, boundaries, the `in` rule, nullable/required short-circuit, whitespace, the email contract, and `password_strength` length-only equivalence to `min`
