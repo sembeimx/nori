@@ -4,6 +4,30 @@ All notable changes to Nori are documented here. Format follows [Keep a Changelo
 
 ---
 
+## [1.15.2] — 2026-04-27
+
+### Added
+
+- **`framework:update` pre-flight message** (`core/cli.py`). Before downloading the release zip, the command now prints the list of paths it is about to replace, derived live from `_FRAMEWORK_DIRS` / `_FRAMEWORK_FILES` (so the output stays in sync if those constants change). When backups are enabled, the backup destination is printed alongside, formatted as `rootsystem/.framework_backups/v<current>_<timestamp>/`. With `--no-backup`, the path-list still appears but the backup notice is suppressed. Closes the most common upgrade footgun: editing framework code, then losing those edits silently. Now you see the replacement list before the download starts and can Ctrl-C if needed.
+
+- **"File Ownership" section in `docs/architecture.md`**. Authoritative table mapping every path in a Nori project to its owner (Framework / You) and whether `framework:update` replaces it. Three rules of thumb — `core/`, `models/framework/`, and `requirements.nori.txt` are framework-owned; everything else under `rootsystem/application/` is yours. The page also explains the recovery path (the `rootsystem/.framework_backups/` directory) and the right extension points (controllers, service drivers, the config provider) for the cases where users would otherwise reach for `core/`.
+
+- **One-line ownership pointer comment in `core/__init__.py`** linking to the new docs section. Greppable, one place, no banner-spam in individual `core/*.py` files.
+
+### Test coverage
+
+- 1 new `framework_update` test (`test_framework_update_preflight_lists_replaced_paths_and_backup_location`) asserting the pre-flight lists every entry in `_FRAMEWORK_DIRS` / `_FRAMEWORK_FILES` (not a literal copy — the assertion iterates the constants), plus the backup-path hint with the current version embedded. The existing `test_framework_update_skip_backup_does_not_create_backup_dir` was extended to assert the pre-flight still appears but the backup-location notice is suppressed.
+
+### Compatibility
+
+- Pure additions. No public API changes, no settings keys added or renamed, no runtime dependency changes. The pre-flight message adds ~6 lines to `framework:update` output but does not change any side effects (no pause, no prompt, no extra IO). The new `core/__init__.py` comment is two lines of `#` and has no runtime effect.
+
+### Related
+
+- Resolves [#18](https://github.com/sembeimx/nori/issues/18). Companion to [#17](https://github.com/sembeimx/nori/issues/17) (open: `framework:check-config` for `pyproject.toml` drift detection).
+
+---
+
 ## [1.15.1] — 2026-04-27
 
 ### Test coverage

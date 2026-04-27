@@ -1,3 +1,6 @@
+# This directory is framework-owned. `framework:update` replaces it wholesale.
+# See https://nori.sembei.mx/architecture/#file-ownership
+
 import warnings as _warnings
 
 # Suppress Tortoise's `Module "X" has no models` RuntimeWarning. In Nori the

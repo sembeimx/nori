@@ -18,6 +18,46 @@ Everything else — authentication, validation, CSRF, JWT, collections, job queu
 
 ---
 
+## File Ownership
+
+A Nori project is a mix of **framework-owned** files (replaced wholesale on `framework:update`) and **site-owned** files (preserved across updates). Knowing the boundary up front prevents the most common upgrade footgun: editing framework code, then losing those edits on the next update.
+
+| Path | Owner | Replaced on `framework:update` |
+|------|-------|--------------------------------|
+| `rootsystem/application/core/**` | Framework | **Yes** — wholesale |
+| `rootsystem/application/models/framework/**` | Framework | **Yes** — wholesale |
+| `requirements.nori.txt` | Framework | **Yes** |
+| `rootsystem/application/asgi.py` | You | No (idempotent patches injected by `core._patches`) |
+| `rootsystem/application/settings.py` | You | No |
+| `rootsystem/application/routes.py` | You | No |
+| `rootsystem/application/modules/**` (controllers) | You | No |
+| `rootsystem/application/models/*.py` (your models — NOT in `framework/`) | You | No |
+| `rootsystem/application/seeders/**` | You | No |
+| `rootsystem/application/services/**` (mail, storage, search drivers) | You | No |
+| `rootsystem/application/commands/**` (your custom CLI commands) | You | No |
+| `requirements.txt`, `requirements-dev.txt` | You | No (`-r requirements.nori.txt` injected once by `core._patches`) |
+| `pyproject.toml`, `pytest.ini`, `Dockerfile`, `gunicorn.conf.py` | You (with framework seed at install time) | No |
+
+**Rule of thumb**: if a file lives under `core/` or `models/framework/`, or is named `requirements.nori.txt`, treat it as read-only. Everything else under `rootsystem/application/` is yours.
+
+### What happens if you edit a framework file anyway
+
+`framework:update` always backs up the framework directories before replacing them, in `rootsystem/.framework_backups/v<previous>_<timestamp>/`. So a lost edit is recoverable — but you have to know to look in the backup directory. The pre-flight message in `framework:update` lists the paths it is about to replace, so you can Ctrl-C if needed.
+
+If you find yourself wanting to patch framework behavior, the right pattern is almost always:
+
+- **Override at the controller layer** — add or replace a controller method in `modules/`.
+- **Add a service driver** — `services/storage_*.py`, `services/mail_*.py`, `services/search_*.py` are the integration points for swapping backends.
+- **Use the registered config provider** — `core.conf.config.MY_SETTING` reads from `settings.py`, so adding a setting + reading it from your code is preferred over editing `core/`.
+
+If none of those work, open an issue — that's a signal Nori is missing an extension point.
+
+### Authoritative source
+
+The lists above are derived from `_FRAMEWORK_DIRS` and `_FRAMEWORK_FILES` in `core/cli.py` and the `paths` array in `.starter-manifest.json`. If those change, this table changes — they are the source of truth. The `framework:update` pre-flight prints the live values from `_FRAMEWORK_DIRS` / `_FRAMEWORK_FILES`, so the runtime output stays in sync even if this page drifts.
+
+---
+
 ## Request Lifecycle
 
 Every HTTP request flows through this pipeline:
