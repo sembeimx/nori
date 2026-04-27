@@ -4,6 +4,32 @@ All notable changes to Nori are documented here. Format follows [Keep a Changelo
 
 ---
 
+## [1.12.0] — 2026-04-26
+
+### Added
+
+- **Deep `/health` endpoint.** The existing health check now also probes the cache and throttle backends via the `verify()` methods introduced in v1.11.0 — not just the database. The response shape gains `cache` and `throttle` keys (`"ok"` or `"error"`), and the endpoint returns `503` if **any** dependency is down. Memory backends always report `"ok"` (their `verify()` is a no-op); Redis backends ping. This is the runtime-readable counterpart to v1.11.0's startup-time fail-fast — orchestrators (Kubernetes, Docker Swarm, load balancers) can pull a node out of rotation if Redis goes down post-boot. Tests in `tests/test_health.py` cover the cache-down and throttle-down cases.
+
+- **New CLI command `python3 nori.py check:deps`.** Probes the same three dependencies (DB, cache backend, throttle backend) from the command line, exit code 0 if all reachable, exit 1 otherwise. Pretty per-dep output with ✓/✗ marks. Designed as a pre-deploy / CI check after v1.11.0's fail-fast Redis change: instead of finding out at app boot that `REDIS_URL` is wrong, run this against your settings to verify dependency reachability up front.
+
+  ```text
+  $ python3 nori.py check:deps
+
+    ✓ Database (postgres)
+    ✓ Cache (redis)
+    ✗ Throttle (redis): Connection refused
+
+    1 dependency check(s) failed.
+  ```
+
+- **Comprehensive observability documentation** (`docs/observability.md`). The bootstrap hook has existed since v1.6, but the docs only carried a Sentry recipe and one-line mentions of OpenTelemetry and Datadog. v1.12.0 ships full worked recipes for all three, plus a new section on **correlating Request-ID with traces** — using `core.http.request_id.get_request_id()` (added in v1.11.0) to copy the request_id onto OTel span attributes or Sentry tags so logs ↔ spans ↔ external service calls all join on the same ID. The obsolete v1.5 → v1.6 upgrade notes were removed from the page.
+
+### Compatibility
+
+- Pure additions. `/health` continues to return `200` with `status: "ok"` when all deps are healthy (the previous behavior); the response gains two keys but does not change shape for existing consumers. The new CLI command and docs do not affect existing projects. Adoption: `framework:update` will pick up the enriched `modules/health.py` and the new `core/cli.py` command automatically.
+
+---
+
 ## [1.11.0] — 2026-04-26
 
 ### Removed (BREAKING)
