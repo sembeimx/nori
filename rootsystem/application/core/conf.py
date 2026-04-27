@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """
 Configuration provider — single access point for settings within the core.
 
@@ -18,6 +16,8 @@ Core modules then read values without importing ``settings`` directly::
     secret = config.SECRET_KEY
     db     = config.get('DB_ENGINE', 'sqlite')
 """
+
+from __future__ import annotations
 
 from typing import Any
 

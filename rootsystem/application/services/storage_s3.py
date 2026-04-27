@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """
 S3-compatible storage driver for Nori.
 
@@ -20,11 +18,13 @@ Requires in settings/.env:
     S3_URL_PREFIX    — (optional) public URL prefix, defaults to https://{bucket}.s3.{region}.amazonaws.com
 """
 
-import httpx
+from __future__ import annotations
+
+import datetime
 import hashlib
 import hmac
-import datetime
 
+import httpx
 from core.conf import config
 from core.http.upload import register_storage_driver
 

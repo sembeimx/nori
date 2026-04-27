@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """
 Google OAuth2 / OpenID Connect driver for Nori.
 
@@ -37,13 +35,13 @@ Usage in a controller::
             # Create or link user, populate session, redirect...
 """
 
+from __future__ import annotations
+
 from urllib.parse import urlencode
 
 import httpx
-
+from core.auth.oauth import generate_pkce_verifier, generate_state, get_pkce_verifier, validate_state
 from core.conf import config
-from core.auth.oauth import generate_state, validate_state
-from core.auth.oauth import generate_pkce_verifier, get_pkce_verifier
 
 _AUTHORIZE_URL = 'https://accounts.google.com/o/oauth2/v2/auth'
 _TOKEN_URL = 'https://oauth2.googleapis.com/token'

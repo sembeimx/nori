@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """
 OAuth2 security helpers — state parameter management and PKCE utilities.
 
@@ -21,6 +19,8 @@ Usage from a service driver::
         raise ValueError('Invalid OAuth state')
     code_verifier = get_pkce_verifier(session)
 """
+
+from __future__ import annotations
 
 import base64
 import hashlib

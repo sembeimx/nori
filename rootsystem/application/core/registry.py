@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """
 Model registry — decouples the core from concrete model imports.
 
@@ -17,6 +15,8 @@ Core modules retrieve them by name without importing from ``models/``::
     AuditLog = get_model('AuditLog')
     await AuditLog.create(...)
 """
+
+from __future__ import annotations
 
 from typing import Any
 

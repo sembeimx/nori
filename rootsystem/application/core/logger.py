@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """
 Nori Logger -- production-grade logging with rotation and optional JSON output.
 
@@ -13,6 +11,9 @@ Usage:
     log = get_logger('mymodule')
     log.info('Hello %s', 'world')
 """
+
+from __future__ import annotations
+
 import json as _json
 import logging
 import logging.handlers

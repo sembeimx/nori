@@ -1,14 +1,15 @@
-from __future__ import annotations
-
 """
 Health check endpoint for monitoring and orchestration (k8s, load balancers).
 
     GET /health  ->  {"status": "ok", "db": "ok"} | 503
 """
+
+from __future__ import annotations
+
+import settings
+from core.logger import get_logger
 from starlette.requests import Request
 from starlette.responses import JSONResponse
-from core.logger import get_logger
-import settings
 
 _log = get_logger('health')
 

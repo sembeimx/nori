@@ -1,8 +1,9 @@
+"""Echo WebSocket handler — example/demo."""
+
 from __future__ import annotations
 
-"""Echo WebSocket handler — example/demo."""
-from starlette.websockets import WebSocket
 from core.ws import WebSocketHandler
+from starlette.websockets import WebSocket
 
 
 class EchoHandler(WebSocketHandler):

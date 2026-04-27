@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """
 GitHub OAuth2 driver for Nori.
 
@@ -38,12 +36,13 @@ Usage in a controller::
             # profile = {id, email, name, avatar_url, login, raw}
 """
 
+from __future__ import annotations
+
 from urllib.parse import urlencode
 
 import httpx
-
-from core.conf import config
 from core.auth.oauth import generate_state, validate_state
+from core.conf import config
 
 _AUTHORIZE_URL = 'https://github.com/login/oauth/authorize'
 _TOKEN_URL = 'https://github.com/login/oauth/access_token'

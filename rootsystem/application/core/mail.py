@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """
 Multi-driver email dispatcher.
 
@@ -30,6 +28,8 @@ Multi-driver email dispatcher.
 
     register_mail_driver('custom', my_driver)
 """
+
+from __future__ import annotations
 
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText

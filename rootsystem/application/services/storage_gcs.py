@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """
 Google Cloud Storage driver for Nori.
 
@@ -30,16 +28,16 @@ Notes:
           pip install cryptography
 """
 
+from __future__ import annotations
+
 import asyncio
 import base64
 import json
 import time
 
 import httpx
-
 from core.conf import config
 from core.http.upload import register_storage_driver
-
 
 _TOKEN_SCOPE = 'https://www.googleapis.com/auth/devstorage.read_write'
 
@@ -67,7 +65,7 @@ def _load_credentials() -> dict:
     creds_json = config.get('GCS_CREDENTIALS_JSON', None)
 
     if creds_file:
-        with open(creds_file, 'r', encoding='utf-8') as f:
+        with open(creds_file, encoding='utf-8') as f:
             return json.load(f)
     if creds_json:
         return json.loads(creds_json)
