@@ -316,27 +316,40 @@ The comment is non-negotiable. With `warn_unused_ignores = true`, mypy will flag
 4. Run `mypy` — read the report, fix or silence each error.
 5. Optionally, copy `.github/workflows/typecheck.yml` to gate future PRs.
 
-### Stricter modes
+### Per-module strict mode
 
-The defaults are pragmatic. To tighten:
+The framework ships gradual mode globally and applies `--strict`-equivalent flags **per-module** to a small set of high-stakes surfaces — modules where a type bug has security or correctness consequences. The current strict list lives in `pyproject.toml`:
 
 ```toml
-[tool.mypy]
-# ... existing config ...
-disallow_untyped_defs = true       # require every function to have signature annotations
-disallow_incomplete_defs = true    # require all params if any param is annotated
-warn_return_any = true             # flag functions that return Any when a real type is declared
-strict_equality = true             # x == y where x and y can never be equal is suspicious
+[[tool.mypy.overrides]]
+module = [
+    "core.auth.security",      # PBKDF2 hashing, token generation
+    "core.auth.login_guard",   # rate-limited login + lockout
+    "core.http.validation",    # the input gate
+]
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+no_implicit_optional = true
+warn_return_any = true
 ```
 
-Or all-in:
+Why per-module instead of global strict? Most of `core/` is correctly typed in gradual mode and converting wholesale would generate noise without finding bugs. Strict mode is reserved for modules where an unannotated function is a real risk — auth (anything that touches credentials, sessions, or tokens) and validation (the trust boundary between user input and the rest of the framework).
+
+**Adding a new strict module** is one entry in the override list:
+
+1. Add the dotted module path to the `module = [...]` array.
+2. Run `mypy` and triage the new errors — annotate signatures, return types, optional dereferences.
+3. Land the change in the same release (don't ship a half-strict module).
+
+**Going fully strict**, if your project warrants it:
 
 ```toml
 [tool.mypy]
 strict = true
 ```
 
-Run `mypy` after each tightening to triage the new errors. Loosen per-module with `[[tool.mypy.overrides]]` blocks where strict mode doesn't fit (e.g. tests, migration scripts).
+Loosen per-module with `[[tool.mypy.overrides]]` blocks where strict mode doesn't fit (e.g. tests, migration scripts, modules wrapping un-typed third-party libs).
 
 ---
 
@@ -374,6 +387,83 @@ pip-audit -r requirements.nori.txt    # local check
 
 ---
 
+## Automated dependency updates
+
+`pip-audit` is the **passive** half of dependency hygiene — it fails the build when a CVE lands on a pinned version. The **active** half is [Dependabot](https://docs.github.com/en/code-security/dependabot), which opens the PR that fixes it. Together they close the loop.
+
+The framework ships a `.github/dependabot.yml` configured for two ecosystems:
+
+```yaml
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: America/Argentina/Buenos_Aires
+    groups:
+      dev-tooling:
+        patterns: ["pytest*", "ruff", "mypy", "pre-commit", "pip-audit", "interrogate", "filelock", "hypothesis"]
+    open-pull-requests-limit: 5
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+```
+
+The pip ecosystem follows the `-r` chain transitively, so `requirements.txt` → `requirements.nori.txt` → `requirements-dev.txt` are all watched from a single entry. Dev tooling is grouped into one PR per week to avoid noise; framework runtime deps land as individual PRs so each can be reviewed on its own merits.
+
+To adopt in an existing Nori project: copy `.github/dependabot.yml` from the framework repo. No further setup is needed — GitHub picks it up automatically once the file is on the default branch.
+
+---
+
+## Secrets scanning
+
+The `Secrets` workflow at `.github/workflows/secrets.yml` runs [gitleaks](https://github.com/gitleaks/gitleaks) on every push and PR to `main`, scanning the **full git history** (not just the diff). Any high-confidence detection — AWS access keys, Stripe keys, JWT bearer tokens, PEM-encoded private keys, etc. — fails the build.
+
+Why scan history instead of just the diff? A secret committed once and "fixed" by a follow-up commit is still in `git log`. Anyone who clones the repo has it. The scan ensures nothing slipped in before the gate was added, and that nothing slips in after.
+
+```bash
+# Local scan against the full history
+gitleaks detect --source . --no-banner --redact --verbose
+```
+
+Findings come with file path, commit SHA, and a redacted preview of the match. If a flagged value is a deliberate test fixture (e.g. a fake key in a test asset), document it via `.gitleaks.toml`'s `allowlist` section with a comment explaining why — the same justification rule as `pip-audit` ignores.
+
+If a real secret is found in history, **rotate it first**, then scrub the commit (`git filter-repo` or BFG). The scan will keep failing until the bad commit is rewritten and force-pushed — that is the point. Nori does not ship a "skip this finding" backdoor.
+
+---
+
+## Software Bill of Materials (SBOM)
+
+The `SBOM` workflow at `.github/workflows/sbom.yml` generates a [CycloneDX](https://cyclonedx.org/) 1.6 JSON document on every push to `main` listing every direct and transitive Python dependency with its resolved version, license, and PURL identifier. The artifact is uploaded to the workflow run (90-day retention) and **automatically attached to GitHub releases on publish** — required for SOC 2 and supply-chain audit work.
+
+```yaml
+# Excerpted from sbom.yml
+- run: python -m venv sbom-env
+- run: sbom-env/bin/pip install -r requirements.nori.txt
+- run: sbom-env/bin/pip install cyclonedx-bom
+- run: sbom-env/bin/cyclonedx-py environment sbom-env --output-format json --output-reproducible -o sbom.json
+```
+
+Two design choices worth noting:
+
+- **Clean virtualenv.** The SBOM is built from `requirements.nori.txt` only — no dev tooling, no `cyclonedx-bom` itself. The output reflects what a user installs in production, not what a contributor has on their dev box.
+- **`--output-reproducible`.** Re-running the workflow against the same lockstep produces a byte-identical JSON file (modulo the per-build `serialNumber` UUID). Diff-based change detection in supply-chain tooling becomes trivial: any non-UUID byte change means a dependency moved.
+
+For local generation:
+
+```bash
+python -m venv .sbom-env
+.sbom-env/bin/pip install -r requirements.nori.txt cyclonedx-bom
+.sbom-env/bin/cyclonedx-py environment .sbom-env --output-format json -o sbom.json
+```
+
+---
+
 ## Docstring coverage
 
 The `Docstrings` workflow at `.github/workflows/docstrings.yml` enforces a minimum docstring coverage via [interrogate](https://github.com/econchick/interrogate). The v1.10.7 incident — 17 module docstrings silently lost when `from __future__ import annotations` was placed before the docstring — is exactly the kind of regression this gate prevents.
@@ -407,5 +497,8 @@ The floor is intentionally a few points below the current baseline to absorb chu
 - [mypy documentation](https://mypy.readthedocs.io/)
 - [pip-audit documentation](https://pypi.org/project/pip-audit/)
 - [interrogate documentation](https://interrogate.readthedocs.io/)
+- [gitleaks documentation](https://github.com/gitleaks/gitleaks)
+- [Dependabot documentation](https://docs.github.com/en/code-security/dependabot)
+- [CycloneDX SBOM specification](https://cyclonedx.org/)
 - [Dependencies](dependencies.md) — how `requirements-dev.txt` works alongside framework deps
-- [Testing](testing.md) — pytest setup for Nori projects
+- [Testing](testing.md) — pytest setup for Nori projects, including property-based tests
