@@ -14,5 +14,5 @@ python-dotenv>=1.2.2
 httpx>=0.27
 itsdangerous>=2.2.0
 typing-extensions>=4.0
-gunicorn>=22.0
+gunicorn>=25.3.0
 aiosmtplib>=3.0
