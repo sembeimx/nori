@@ -24,8 +24,8 @@ Current state of Nori and what's coming next.
 | **CLI** | `serve`, `shell` (async REPL with models pre-loaded), `make:controller`, `make:model`, `make:seeder`, `migrate:*`, `db:seed`, `queue:work`, `framework:update`, `framework:version`, `routes:list`, `audit:purge`, `check:deps` |
 | **Forms** | `flash_old()` + `{{ old('field') }}` Jinja helper for re-populating forms across validation errors. Sensitive fields (passwords) auto-excluded. |
 | **Deployment** | Dockerfile, docker-compose, Gunicorn config (with `forwarded_allow_ips` defaults for proxied setups), Apache/Nginx/Caddy examples, MkDocs documentation site |
-| **Tests** | 601 tests (pytest + pytest-asyncio), unit + E2E with httpx, CLI command coverage |
-| **Code Quality Gates** | Lint (ruff E/W/F/I/UP/B/S/C90), format (ruff), type checking (mypy gradual), test coverage ≥75%, dependency vulnerability scanning (pip-audit), docstring coverage ≥70% (interrogate). All wired to CI on push and PR to main. |
+| **Tests** | 720+ tests (pytest + pytest-asyncio + Hypothesis property-based tests on `core/http/validation`), unit + E2E with httpx, CLI command coverage |
+| **Code Quality Gates** | Lint (ruff E/W/F/I/UP/B/S/C90), format (ruff), type checking (mypy gradual + per-module strict on `auth.security` / `auth.login_guard` / `auth.csrf` / `auth.jwt` / `auth.oauth` / `http.validation`), test coverage ≥82%, dependency vulnerability scanning (pip-audit), docstring coverage ≥70% (interrogate), secrets scanning (gitleaks), supply-chain SBOM (CycloneDX). All wired to CI on push and PR to main. |
 
 ---
 

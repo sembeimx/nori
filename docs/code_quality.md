@@ -226,7 +226,7 @@ Coverage configuration lives in `pyproject.toml` under `[tool.coverage]`. Branch
 
 ### Threshold
 
-`fail_under = 75` is the floor. Drops below 75% fail CI. The threshold is intentionally below today's baseline so room to refactor exists, but it should rise as the project grows. Bump it any time the project sustains a higher number for a few releases.
+`fail_under = 82` is the floor. Drops below 82% fail CI. The framework's current baseline is ~86%, leaving a ~4-point buffer for routine churn — tight enough that a meaningful regression flips the gate, loose enough that an unrelated PR adding a few lines without immediate tests doesn't break the build. The floor was raised from 75 to 82 in v1.14.2 after a focused coverage push on `core/cli.py` and the Redis backends; raise it again whenever the project sustains a higher number for a few releases.
 
 ### What is excluded
 

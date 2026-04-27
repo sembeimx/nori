@@ -162,7 +162,10 @@ omit = [
 ]
 
 [tool.coverage.report]
-fail_under = 75
+# Floor lifted from 75 → 82 in v1.14.2 after the cli.py / Redis-backend
+# coverage push (current baseline: 86.2%). 4-percentage-point buffer absorbs
+# churn from unrelated PRs without making the gate ceremonial.
+fail_under = 82
 show_missing = true
 skip_covered = false
 precision = 1
