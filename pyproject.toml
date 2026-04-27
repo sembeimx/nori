@@ -24,7 +24,19 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"__init__.py" = ["F401"]  # re-exports are fine in package init files
+# Re-exports from submodules are intentional in package __init__.py files.
+"__init__.py" = ["F401"]
+# Bootstrap hook MUST run before framework/third-party imports so observability
+# SDKs (Sentry, OTel, Datadog) can patch instrumentable libraries at load time.
+"rootsystem/application/asgi.py" = ["E402"]
+# warnings.filterwarnings must precede framework imports — suppresses the
+# Tortoise "Module 'X' has no models" RuntimeWarning fired during registration.
+"rootsystem/application/core/__init__.py" = ["E402"]
+# load_dotenv() must run before any module that reads env vars at import time.
+"rootsystem/application/settings.py" = ["E402"]
+# Test setup commonly needs sys.path edits, env var injection, or importlib
+# patches before importing the module under test.
+"tests/**/*.py" = ["E402"]
 
 [tool.ruff.format]
 quote-style = "single"
