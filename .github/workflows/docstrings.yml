@@ -1,0 +1,19 @@
+name: Docstrings
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  docstrings:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.9'
+          cache: pip
+      - run: pip install interrogate
+      - run: interrogate
