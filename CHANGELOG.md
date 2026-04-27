@@ -4,6 +4,44 @@ All notable changes to Nori are documented here. Format follows [Keep a Changelo
 
 ---
 
+## [1.14.0] — 2026-04-27
+
+### Added
+
+- **Hypothesis property-based tests for `core/http/validation`** (`tests/test_core/test_validation_properties.py`, 24 properties). Properties cover idempotence, pipe-vs-list-grammar parity, length and numeric boundaries (including exact-equality), `in` membership, nullable/required short-circuit, whitespace handling, the email regex contract, and `password_strength` length-only equivalence to `min`. The property-test input filters self-document the email regex's intentional limits (no quoted local parts, no IP-literal hosts, no IDN/Punycode TLDs, no leading punctuation in the local part) — same pragmatic posture as Django/Rails/Laravel. New dev dependency: `hypothesis>=6.150`. Documented in `docs/testing.md` with a worked anatomy of a property test, the contract-encoding-via-filter pattern, and how to run them.
+
+- **`password_strength` validation rule.** Pipe rule combining length + optional character-class checks: `password_strength` (default min length 8, no class flags), `password_strength:12` (min 12), `password_strength:12,upper,lower,digit,special` (all four classes). Aligned with NIST SP 800-63B Rev. 3 — length is the primary control; class flags are opt-in for projects whose policy still requires them. Combined violations produce one readable message: `"must be at least 8 characters and contain an uppercase letter, a digit, a special character"`. Character-class checks are Unicode-aware (`str.isupper`/`islower`/`isdigit`; `special` = any non-`isalnum`). Empty values are skipped so the rule composes cleanly with `required`. 13 example tests + 2 property tests cover defaults, custom min length, each class flag individually, combined classes, custom messages, invalid `min_length`, Unicode characters, and empty-value short-circuit. Documented in `docs/forms_validation.md` with the rule reference row and two worked examples (NIST-aligned vs classic complexity policy).
+
+- **Per-module `mypy --strict` for high-stakes surfaces** (`pyproject.toml`). Strict typing applied selectively to modules where a type bug has security or correctness consequences: `core.auth.security` (PBKDF2 hashing, token generation), `core.auth.login_guard` (rate-limited login + lockout), `core.http.validation` (the input gate). Strict flags enabled per-module: `disallow_untyped_defs`, `disallow_incomplete_defs`, `check_untyped_defs`, `no_implicit_optional`, `warn_return_any`. Global default stays gradual on purpose — most of `core/` is correctly typed in gradual mode and converting wholesale would generate noise without finding bugs. Adding a new strict module is one entry in the override list. Verified by introducing a deliberate untyped function in `security.py`: mypy raised `[no-untyped-def]` as expected, then reverted. mypy currently clean across all 66 source files.
+
+### Fixed
+
+- **Installer + docs Python floor was still 3.9** even though v1.11.0 dropped Python 3.9 support five releases ago. `docs/install.py:32` set `MIN_PYTHON = (3, 9)` so the pre-flight check would let a Python 3.9 user proceed past the gate, then `pip install -r requirements.nori.txt` (or worse, framework code using PEP 604 unions and `match` statements) would fail with cryptic errors. Bumped the installer floor to `(3, 10)` and aligned the surrounding docs: `README.md` badge, `CONTRIBUTING.md`, `docs/installation.md` (prerequisite + troubleshooting), `docs/code_quality.md` (ruff `target-version`, mypy `python_version`, rule list, removed past-tense pip-audit ignore note that referred to v1.11.0 in the future tense). No requirements pin changes — the framework already needed 3.10+; this just stops lying about it.
+
+### Documentation
+
+- **`docs/code_quality.md` backfill** for four shipped CI gates that were never user-facing:
+  - **Per-module mypy strict** — replaced the generic "Stricter modes" subsection with the actual current configuration (auth + validation modules), the rationale for per-module vs global strict, and a "how to add a new strict module" recipe.
+  - **Automated dependency updates (Dependabot)** — documents `.github/dependabot.yml` shipped in v1.12.1: pip + github-actions ecosystems, weekly schedule, dev-tooling group, transitive `-r` chain. Pairs with the existing pip-audit section as the active half of the dependency-hygiene loop.
+  - **Secrets scanning (gitleaks)** — documents `.github/workflows/secrets.yml` shipped in v1.12.1: full git-history scan, the rotate-then-scrub remediation protocol, and why Nori does not ship a "skip this finding" backdoor.
+  - **Software Bill of Materials (SBOM)** — documents `.github/workflows/sbom.yml` shipped in v1.13.0: CycloneDX 1.6 JSON, clean virtualenv from `requirements.nori.txt` only, `--output-reproducible` for byte-stable diffs, auto-attach to GitHub releases.
+
+- **`docs/forms_validation.md`** now spells out the `email` rule's pragmatic contract (the five categories of input it intentionally rejects), so contributors don't discover the limits via a failing test.
+
+- **`docs/testing.md`** gains a section on property-based testing with Hypothesis — when to reach for it, the anatomy of a property, how to encode contract limits in strategy filters, and a pointer to the framework's own `tests/test_core/test_validation_properties.py` as a 24-property worked reference.
+
+### Compatibility
+
+- Pure additions on the framework code surface. No settings keys, dependencies, or runtime behavior changed for existing projects. Upgrade is drop-in; the new `password_strength` rule is opt-in.
+- The Python floor bump is **a documentation/installer fix, not a breaking change** — projects already on Python 3.10+ are unaffected. Projects still on 3.9 had been silently broken since v1.11.0 (October 2025) and would not have made it past first import; the installer change just surfaces that gate at the right layer.
+
+### Notes
+
+- Hypothesis runs as part of the standard `pytest tests/` invocation. No separate workflow step is required.
+- Per-module mypy strict runs as part of the standard `mypy` invocation wired into CI. Adding a new strict module to `auth.security`/`auth.login_guard`/`http.validation` (or extending the override list) makes CI fail locally with a precise error code (`[no-untyped-def]`, `[no-untyped-call]`, etc.) — type bugs surface at PR time, not at runtime.
+
+---
+
 ## [1.13.0] — 2026-04-26
 
 ### Added
