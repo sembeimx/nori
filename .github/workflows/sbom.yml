@@ -1,0 +1,59 @@
+name: SBOM
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  release:
+    types: [published]
+
+# Generates a CycloneDX 1.6 SBOM (Software Bill of Materials) for the framework's
+# pinned dependencies. Uploaded as a workflow artifact on every push (90-day
+# retention) and attached to GitHub releases on publish.
+#
+# The SBOM is built from a clean virtualenv with ONLY requirements.nori.txt
+# installed (no dev tools, no cyclonedx-bom itself), so it reflects exactly
+# what a downstream user gets when they install the framework.
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # needed to attach the SBOM to the release on publish
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.10'
+          cache: pip
+
+      - name: Install cyclonedx-bom
+        run: pip install cyclonedx-bom
+
+      - name: Build framework venv (requirements.nori.txt only)
+        run: |
+          python -m venv .sbom-venv
+          .sbom-venv/bin/pip install --upgrade pip
+          .sbom-venv/bin/pip install -r requirements.nori.txt
+
+      - name: Generate SBOM (CycloneDX 1.6, JSON)
+        run: |
+          python -m cyclonedx_py environment .sbom-venv/bin/python \
+            --of json \
+            --output-reproducible \
+            -o sbom-framework.json
+          echo "--- summary ---"
+          jq '{format: .bomFormat, version: .specVersion, components: (.components | length)}' sbom-framework.json
+
+      - name: Upload SBOM as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-${{ github.sha }}
+          path: sbom-framework.json
+          retention-days: 90
+
+      - name: Attach SBOM to GitHub release
+        if: github.event_name == 'release'
+        run: gh release upload "${{ github.event.release.tag_name }}" sbom-framework.json --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
