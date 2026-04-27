@@ -1,3 +1,5 @@
+"""URL route definitions for the Nori application."""
+
 from __future__ import annotations
 
 from modules.echo import EchoHandler

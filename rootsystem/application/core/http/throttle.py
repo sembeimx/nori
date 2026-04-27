@@ -1,3 +1,5 @@
+"""Request rate limiting middleware with pluggable backends (memory, Redis)."""
+
 from __future__ import annotations
 
 import time

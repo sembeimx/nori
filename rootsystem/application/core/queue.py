@@ -1,3 +1,5 @@
+"""Background job queue dispatcher with pluggable drivers (memory, Redis, db)."""
+
 from __future__ import annotations
 
 import asyncio

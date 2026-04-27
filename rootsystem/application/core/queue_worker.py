@@ -1,3 +1,5 @@
+"""Queue worker loop: pulls jobs from the configured driver and executes them."""
+
 from __future__ import annotations
 
 import asyncio

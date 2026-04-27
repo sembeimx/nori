@@ -1,3 +1,5 @@
+"""Framework AuditLog model: who did what, when, on which record (used by core.audit)."""
+
 from __future__ import annotations
 
 from core.mixins.model import NoriModelMixin

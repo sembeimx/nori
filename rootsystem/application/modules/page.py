@@ -1,3 +1,5 @@
+"""Default home page controller — example for user projects."""
+
 from __future__ import annotations
 
 import sys

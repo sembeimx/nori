@@ -1,3 +1,5 @@
+"""Framework Permission model: granular ACL entries attached to roles."""
+
 from __future__ import annotations
 
 from core.mixins.model import NoriModelMixin

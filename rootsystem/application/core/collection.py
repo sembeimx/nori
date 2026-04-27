@@ -1,3 +1,5 @@
+"""NoriCollection: list with chainable map/filter/pluck/sum/group_by helpers."""
+
 from __future__ import annotations
 
 from collections.abc import Iterable

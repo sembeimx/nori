@@ -1,3 +1,5 @@
+"""NoriTreeMixin: adjacency-list tree structures with recursive CTE queries."""
+
 from __future__ import annotations
 
 from collections.abc import Sequence

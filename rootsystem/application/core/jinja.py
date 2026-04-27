@@ -1,3 +1,5 @@
+"""Jinja2 template environment configuration and shared globals/filters."""
+
 from __future__ import annotations
 
 from starlette.templating import Jinja2Templates

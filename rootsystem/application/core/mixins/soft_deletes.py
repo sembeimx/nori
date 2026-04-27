@@ -1,3 +1,5 @@
+"""NoriSoftDeletes mixin: logical deletion via deleted_at timestamp."""
+
 from __future__ import annotations
 
 from typing import Any

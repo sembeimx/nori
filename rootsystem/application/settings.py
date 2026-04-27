@@ -1,3 +1,5 @@
+"""Application configuration loaded from environment + .env at import time."""
+
 from __future__ import annotations
 
 import os

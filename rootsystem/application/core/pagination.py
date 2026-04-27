@@ -1,3 +1,5 @@
+"""Pagination helpers: page-based and cursor-based navigation over QuerySets."""
+
 from __future__ import annotations
 
 import math

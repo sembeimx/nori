@@ -1,3 +1,5 @@
+"""Framework Job model: persistent queue entries (used when QUEUE_DRIVER=db)."""
+
 from __future__ import annotations
 
 from core.mixins.model import NoriModelMixin

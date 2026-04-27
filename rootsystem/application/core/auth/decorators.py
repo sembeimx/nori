@@ -1,3 +1,5 @@
+"""Route auth decorators: login_required, require_role, require_permission, token_required."""
+
 from __future__ import annotations
 
 import time

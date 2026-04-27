@@ -1,3 +1,5 @@
+"""NoriModelMixin: shared Tortoise model base with to_dict / protected_fields support."""
+
 from __future__ import annotations
 
 from typing import Any

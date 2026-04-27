@@ -1,3 +1,5 @@
+"""Framework Role model: named role with M2M to Permission, attached to users."""
+
 from __future__ import annotations
 
 from core.mixins.model import NoriModelMixin

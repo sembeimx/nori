@@ -1,3 +1,5 @@
+"""@inject() decorator for declarative DI of request, form, json, query, path values."""
+
 from __future__ import annotations
 
 import functools

@@ -1,3 +1,5 @@
+"""Password hashing (PBKDF2-HMAC-SHA256) and secure token generation."""
+
 from __future__ import annotations
 
 import hashlib
