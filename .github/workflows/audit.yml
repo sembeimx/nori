@@ -41,7 +41,8 @@ jobs:
             --ignore-vuln GHSA-6w46-j5rx-g56g \
             --ignore-vuln GHSA-w853-jp5j-5j7f \
             --ignore-vuln GHSA-qmgc-5h2g-mvrw \
-            --ignore-vuln GHSA-gc5v-m9x4-r6x2
+            --ignore-vuln GHSA-gc5v-m9x4-r6x2 \
+            --ignore-vuln PYSEC-2022-42969
 
 # Documented exceptions (keep in sync with the --ignore-vuln flags above):
 #
@@ -74,3 +75,9 @@ jobs:
 #                      — only direct callers of extract_zipped_paths(). Nori
 #                      and pip-audit (transitive consumer of requests) do not
 #                      call it. Fixed in 2.33.0 (requires Python >=3.10).
+# PYSEC-2022-42969     py 1.11.0 (CVE-2022-42969) — ReDoS in py.path.svnurl.info
+#                      via crafted Subversion repository data. The `py` package
+#                      is essentially abandoned (last release 2022) so no fix
+#                      will ship. Vector requires invoking SVN parsing on
+#                      attacker-controlled data — neither Nori nor pytest does
+#                      this; py is a transitive dep. Permanent ignore.
