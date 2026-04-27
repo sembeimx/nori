@@ -496,6 +496,21 @@ def _download_zip(url: str, dest: str) -> None:
         shutil.copyfileobj(resp, f)
 
 
+def _has_existing_migrations() -> bool:
+    """True if the project has user-generated migrations under ``migrations/<app>/``."""
+    migrations_root = os.path.join(_APP_DIR, 'migrations')
+    if not os.path.isdir(migrations_root):
+        return False
+    for app in os.listdir(migrations_root):
+        app_dir = os.path.join(migrations_root, app)
+        if not os.path.isdir(app_dir):
+            continue
+        for f in os.listdir(app_dir):
+            if f.endswith('.py') and f != '__init__.py':
+                return True
+    return False
+
+
 def framework_update(target_version: str | None = None, skip_backup: bool = False, force: bool = False) -> None:
     """Update the framework core from a GitHub release."""
     current = _get_current_version()
@@ -632,6 +647,10 @@ def framework_update(target_version: str | None = None, skip_backup: bool = Fals
     print('  If framework models changed, generate a migration against your engine:')
     print('    python3 nori.py migrate:make <name> --app framework')
     print('    python3 nori.py migrate:upgrade --app framework')
+    if _has_existing_migrations():
+        print('\n  If upgrading from a Nori version with aerich <0.9.2, fill MODELS_STATE in')
+        print('  existing migration files (one-time, idempotent):')
+        print('    python3 nori.py migrate:fix')
 
 
 # ---------------------------------------------------------------------------
