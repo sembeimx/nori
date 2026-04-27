@@ -1,9 +1,18 @@
 from __future__ import annotations
 
+from typing import Any
+
 from tortoise import fields
 from tortoise.manager import Manager
 from tortoise.models import Model
 from tortoise.queryset import QuerySet
+
+# Tortoise's QuerySet/Model stubs do not preserve subclass identity through
+# .filter()/._clone() (the chainables return the base QuerySet type), and
+# Model.save/delete declare using_db with a tortoise-internal type that this
+# module cannot reference without coupling to private API. The # type: ignore
+# blocks below silence those stub gaps; runtime behavior is correct because
+# qs.__class__ is rebound to the subclass.
 
 
 class SoftDeleteQuerySet(QuerySet):
@@ -12,21 +21,21 @@ class SoftDeleteQuerySet(QuerySet):
     def _clone(self) -> SoftDeleteQuerySet:
         qs = super()._clone()
         qs.__class__ = self.__class__
-        return qs
+        return qs  # type: ignore[return-value]
 
 
 class SoftDeleteManager(Manager):
     """Default Manager: only active records."""
 
     def get_queryset(self) -> SoftDeleteQuerySet:
-        return SoftDeleteQuerySet(self._model).filter(deleted_at__isnull=True)
+        return SoftDeleteQuerySet(self._model).filter(deleted_at__isnull=True)  # type: ignore[return-value]
 
 
 class TrashedManager(Manager):
     """Manager for deleted records only."""
 
     def get_queryset(self) -> SoftDeleteQuerySet:
-        return SoftDeleteQuerySet(self._model).filter(deleted_at__isnull=False)
+        return SoftDeleteQuerySet(self._model).filter(deleted_at__isnull=False)  # type: ignore[return-value]
 
 
 class AllObjectsManager(Manager):
@@ -66,7 +75,7 @@ class NoriSoftDeletes(Model):
     class Meta:
         abstract = True
 
-    async def delete(self, using_db: object = None) -> None:
+    async def delete(self, using_db: Any = None) -> None:
         """Soft delete: marks deleted_at with current timestamp."""
         from tortoise.timezone import now
 
@@ -77,10 +86,10 @@ class NoriSoftDeletes(Model):
         """Restores a soft-deleted record. No-op if already active."""
         if self.deleted_at is None:
             return
-        self.deleted_at = None
+        self.deleted_at = None  # type: ignore[assignment]  # field is null=True
         await self.save(update_fields=['deleted_at'])
 
-    async def force_delete(self, using_db: object = None) -> None:
+    async def force_delete(self, using_db: Any = None) -> None:
         """Hard delete: permanently removes from the DB."""
         await super().delete(using_db=using_db)
 
@@ -92,7 +101,7 @@ class NoriSoftDeletes(Model):
     @classmethod
     def with_trashed(cls) -> SoftDeleteQuerySet:
         """Returns QuerySet that includes deleted records."""
-        return cls.all_objects.get_queryset()
+        return cls.all_objects.get_queryset()  # type: ignore[return-value]
 
     @classmethod
     def only_trashed(cls) -> SoftDeleteQuerySet:

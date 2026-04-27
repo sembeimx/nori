@@ -65,7 +65,7 @@ class NoriModelMixin:
         if not include_protected:
             exclude_set.update(getattr(self, 'protected_fields', []))
         result: dict[str, Any] = {}
-        for field in self._meta.fields_map:
+        for field in self._meta.fields_map:  # type: ignore[attr-defined]  # Tortoise attaches _meta dynamically; not in stubs
             if field in exclude_set:
                 continue
             if field.startswith('_'):

@@ -104,11 +104,13 @@ class NoriCollection(list[T]):
 
     def min(self, key: str) -> Any | None:
         vals = [getattr(i, key, None) for i in self if getattr(i, key, None) is not None]
-        return _builtin_min(vals) if vals else None
+        # vals is filtered to non-None at the comprehension level; mypy still sees
+        # Optional from getattr's default arg.
+        return _builtin_min(vals) if vals else None  # type: ignore[type-var]
 
     def max(self, key: str) -> Any | None:
         vals = [getattr(i, key, None) for i in self if getattr(i, key, None) is not None]
-        return _builtin_max(vals) if vals else None
+        return _builtin_max(vals) if vals else None  # type: ignore[type-var]
 
     def to_list(self) -> list[Any]:
         """Convert to list of dicts (JSON serializable)."""
