@@ -1110,8 +1110,39 @@ def test_framework_update_skip_backup_does_not_create_backup_dir(update_env, mon
 
     out = capsys.readouterr().out
     assert 'Backing up' not in out
+    # Pre-flight should still appear, but the backup-location notice should not.
+    assert 'Will replace' in out
+    assert 'backed up to' not in out
     backups_root = update_env['tmp_path'] / 'rootsystem' / '.framework_backups'
     assert not backups_root.exists()
+
+
+def test_framework_update_preflight_lists_replaced_paths_and_backup_location(update_env, monkeypatch, capsys):
+    """Before downloading, the user sees what will be replaced and where the backup lands."""
+
+    def fake_download(url, dest):
+        _make_release_zip(
+            dest,
+            root='nori-1.99.0',
+            dirs=_release_dirs(),
+            files={'requirements.nori.txt': '# new\n'},
+        )
+
+    monkeypatch.setattr(cli, '_github_api', lambda endpoint: {'tag_name': 'v1.99.0'})
+    monkeypatch.setattr(cli, '_download_zip', fake_download)
+
+    cli.framework_update(target_version='1.99.0')
+
+    out = capsys.readouterr().out
+    assert 'Will replace:' in out
+    # Derived from _FRAMEWORK_DIRS / _FRAMEWORK_FILES — the assertion is about
+    # the data, not literal copy, so renaming the constants stays caught.
+    for zip_path in cli._FRAMEWORK_DIRS:
+        assert zip_path in out
+    for file_name in cli._FRAMEWORK_FILES:
+        assert file_name in out
+    assert 'backed up to' in out
+    assert f'v{"1.0.0"}_' in out  # current version embedded in the backup-path hint
 
 
 def test_framework_update_non_dict_release_aborts(update_env, monkeypatch, capsys):

@@ -546,6 +546,15 @@ def framework_update(target_version: str | None = None, skip_backup: bool = Fals
         print('\n  Already up to date. Use --force to re-install.')
         return
 
+    print('\n  Will replace:')
+    for zip_path in _FRAMEWORK_DIRS:
+        print(f'    {zip_path}')
+    for file_name in _FRAMEWORK_FILES:
+        print(f'    {file_name}')
+    if not skip_backup:
+        print('\n  Your local edits in those paths will be backed up to')
+        print(f'  {_BACKUP_DIR}/v{current}_<timestamp>/')
+
     zip_url = f'https://github.com/{_GITHUB_REPO}/archive/refs/tags/{tag}.zip'
     print(f'\n  Downloading {tag}...')
 
