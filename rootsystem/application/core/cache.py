@@ -26,13 +26,11 @@ import collections
 import json
 import time
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from functools import wraps
-from typing import Any, Callable
+from typing import Any
 
 from core.conf import config
-from core.logger import get_logger
-
-_log = get_logger('cache')
 
 __all__ = [
     'CacheBackend',
@@ -65,6 +63,14 @@ class CacheBackend(ABC):
 
     @abstractmethod
     async def flush(self) -> None: ...
+
+    async def verify(self) -> None:
+        """Probe backend connectivity. Default: no-op (always reachable).
+
+        Backends that depend on a network service (e.g. Redis) override this
+        to fail fast at startup rather than at first request.
+        """
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -130,8 +136,18 @@ class RedisCacheBackend(CacheBackend):
     def __init__(self, redis_url: str) -> None:
         import redis.asyncio as aioredis
 
+        self._redis_url = redis_url
         self._redis = aioredis.from_url(redis_url, socket_connect_timeout=5)
         self._prefix = 'cache:'
+
+    async def verify(self) -> None:
+        """Ping Redis to fail fast at startup if unreachable."""
+        try:
+            await self._redis.ping()
+        except Exception as exc:
+            raise RuntimeError(
+                f'CACHE_BACKEND=redis but Redis at {self._redis_url} is not reachable: {exc}'
+            ) from exc
 
     async def get(self, key: str) -> Any | None:
         raw = await self._redis.get(f'{self._prefix}{key}')
@@ -200,11 +216,7 @@ def get_backend() -> CacheBackend:
 
     if backend_type == 'redis':
         redis_url = config.get('REDIS_URL', 'redis://localhost:6379')
-        try:
-            _backend = RedisCacheBackend(redis_url)
-        except Exception:
-            _log.warning('Redis cache unavailable, falling back to memory')
-            _backend = MemoryCacheBackend()
+        _backend = RedisCacheBackend(redis_url)
     else:
         max_keys = int(config.get('CACHE_MAX_KEYS', 10_000))
         _backend = MemoryCacheBackend(max_keys=max_keys)

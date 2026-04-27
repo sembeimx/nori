@@ -30,6 +30,14 @@ class ThrottleBackend(ABC):
     async def cleanup(self, key: str, window: int) -> None:
         """Remove expired timestamps for the given key."""
 
+    async def verify(self) -> None:
+        """Probe backend connectivity. Default: no-op (always reachable).
+
+        Backends that depend on a network service (e.g. Redis) override this
+        to fail fast at startup rather than at first request.
+        """
+        return None
+
 
 class MemoryBackend(ThrottleBackend):
     """In-memory rate limiting (single process) with asyncio lock."""
@@ -84,8 +92,18 @@ class RedisBackend(ThrottleBackend):
     def __init__(self, redis_url: str) -> None:
         import redis.asyncio as aioredis
 
+        self._redis_url = redis_url
         self._redis = aioredis.from_url(redis_url, socket_connect_timeout=5)
         self._prefix = 'throttle:'
+
+    async def verify(self) -> None:
+        """Ping Redis to fail fast at startup if unreachable."""
+        try:
+            await self._redis.ping()
+        except Exception as exc:
+            raise RuntimeError(
+                f'THROTTLE_BACKEND=redis but Redis at {self._redis_url} is not reachable: {exc}'
+            ) from exc
 
     async def get_timestamps(self, key: str, window: int) -> list[float]:
         cutoff = time.time() - window
@@ -124,10 +142,7 @@ def get_backend() -> ThrottleBackend:
 
     if backend_type == 'redis':
         redis_url = config.get('REDIS_URL', 'redis://localhost:6379')
-        try:
-            _backend = RedisBackend(redis_url)
-        except Exception:
-            _backend = MemoryBackend()
+        _backend = RedisBackend(redis_url)
     else:
         _backend = MemoryBackend()
 

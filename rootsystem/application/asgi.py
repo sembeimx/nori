@@ -57,6 +57,15 @@ async def lifespan(app):
                 'across workers. Set THROTTLE_BACKEND=redis.'
             )
 
+    # Fail-fast: verify network-backed backends are reachable. RuntimeError
+    # here aborts startup so misconfigured deployments don't silently serve
+    # requests against a broken cache/throttle.
+    from core.cache import get_backend as _get_cache_backend
+    from core.http.throttle_backends import get_backend as _get_throttle_backend
+
+    await _get_cache_backend().verify()
+    await _get_throttle_backend().verify()
+
     if settings.DB_ENABLED:
         await Tortoise.init(config=settings.TORTOISE_ORM)
         if settings.DEBUG:
