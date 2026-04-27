@@ -4,6 +4,37 @@ All notable changes to Nori are documented here. Format follows [Keep a Changelo
 
 ---
 
+## [1.10.7] — 2026-04-26
+
+### Fixed
+- **Module docstrings restored on 17 framework files.** Placing `from __future__ import annotations` BEFORE the module docstring is syntactically valid Python but breaks docstring detection — Python only treats a string literal as the module docstring when it is the FIRST expression in the module. With the future import first, `module.__doc__` was `None`, making the docstring invisible to `help()`, `pydoc`, IDE tooltips, and doc-gen tools. Fixed by moving the future import after the docstring on:
+  - `core/conf.py`, `core/logger.py`, `core/mail.py`, `core/registry.py`
+  - `core/auth/oauth.py`, `core/http/security_headers.py`
+  - `services/{mail_resend,oauth_github,oauth_google,search_meilisearch,storage_gcs,storage_s3}.py`
+  - `modules/echo.py`, `modules/health.py`
+  - `asgi.py`, `seeders/database_seeder.py`, `seeders/example_seeder.py`
+
+  Most notable: `asgi.py.__doc__` was `None` despite the file being explicitly singled out in `AGENTS.md` for its bootstrap pattern. The docstring documenting the uvicorn invocation was invisible to all tooling.
+
+- **Silent test in `tests/test_core/test_settings_validation.py`.** The test `test_validate_settings_warns_missing_db_user` was named "warns" but its setup used `DEBUG=True`, where DB credential warnings are intentionally skipped per the validation logic. It called `validate_settings()`, assigned the result to a `warnings` local, and never asserted anything. Renamed to `test_validate_settings_skips_db_check_in_debug`, removed a dead `pass`-only `with` block, and added the assert that the inline comment implied. Would catch any regression in the DEBUG-skip behavior.
+
+- **Minor exception/comparison cleanup in `core/http/`.**
+  - `validation.py`: 4 `raise ValueError(...)` inside `except` clauses now use `from None` to suppress the noisy `int()`/`float()` chain. The framework's message ("Invalid parameter for 'min' rule: 'abc'") is self-contained; the suppressed chain keeps developer-facing tracebacks clean.
+  - `inject.py`: 2 `param.annotation == dict` checks changed to `param.annotation is dict`. Semantically equivalent for class-object checks, more idiomatic, and avoids any custom `__eq__` weirdness on type objects.
+
+### Added
+- **Ruff configured framework-wide.** New `pyproject.toml` at the repo root with a conservative lint selection (`E, W, F, I, UP, B`) and `quote-style = "single"` matching the existing 3000+ string-literal convention in the codebase. `ruff>=0.6` added to `requirements-dev.txt`. The `pyproject.toml` ships to fresh projects via the starter manifest, so new Nori projects come pre-configured with the same lint/format setup. Per-file-ignores document the legitimate `E402` cases (`asgi.py` bootstrap, `core/__init__.py` filterwarnings, `settings.py` load_dotenv, `tests/**/*.py` setup patterns) — see comments in `pyproject.toml`.
+
+  **Existing projects are unaffected** — `framework:update` does not touch user-owned `requirements-dev.txt` or repo-root config files. To adopt: add `ruff>=0.6` to your `requirements-dev.txt`, copy `pyproject.toml` from the framework repo, and run `.venv/bin/pip install -r requirements-dev.txt`.
+
+### Changed
+- **Codebase passed through `ruff check --fix`** — 153 mechanical fixes across 76 files: isort import ordering, removed unused imports (excluding `__init__.py` re-exports), trimmed trailing whitespace on blank lines, dropped empty f-string prefixes (`f""` → `""`), minor pyupgrade modernizations. No behavioral changes.
+
+### Known Issues
+- `tests/test_core/test_queue_redis.py::test_redis_worker_processes_job` fails when run in isolation (`pytest path::name`) but passes in the full suite. Pre-existing test-order dependency: the test calls `importlib.import_module('tests.test_core.test_queue_redis')` and relies on some earlier test putting the project root on `sys.path`. Surfaced during this release's test runs but not introduced by it. Tracked for follow-up.
+
+---
+
 ## [1.10.6] — 2026-04-26
 
 ### Fixed
