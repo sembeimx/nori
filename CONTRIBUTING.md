@@ -12,7 +12,7 @@ Thank you for your interest in contributing to Nori.
 
 ## Requirements
 
-- Python 3.9 or higher.
+- Python 3.10 or higher.
 - Type hints are mandatory for all function signatures.
 - Use `from __future__ import annotations` at the top of modules.
 

@@ -13,10 +13,10 @@ A single `pyproject.toml` at the project root holds the lint and format setup:
 ```toml
 [tool.ruff]
 line-length = 120
-target-version = "py39"
+target-version = "py310"
 
 [tool.ruff.lint]
-select = ["E", "W", "F", "I", "UP", "B"]
+select = ["E", "W", "F", "I", "UP", "B", "S", "C90"]
 ignore = ["E501"]
 
 [tool.ruff.format]
@@ -32,6 +32,7 @@ indent-style = "space"
 | `UP` | pyupgrade — modernize syntax to your declared `target-version` |
 | `B` | flake8-bugbear — likely bugs (mutable defaults, misuse of `assert`, etc.) |
 | `S` | flake8-bandit — security checks (hardcoded secrets, SQL injection, weak hashes, insecure subprocess, etc.) |
+| `C90` | mccabe — caps cyclomatic complexity at 10; see [the section below](#cyclomatic-complexity) |
 
 `E501` (line-too-long) is delegated to the formatter. The format defaults are `single` quotes (matching the dominant convention in framework code) and 4-space indentation.
 
@@ -254,7 +255,7 @@ Type checking is gradual, not strict. The aim is to catch real bugs (Optional de
 
 ```toml
 [tool.mypy]
-python_version = "3.9"
+python_version = "3.10"
 files = ["rootsystem/application"]
 exclude = [
     "rootsystem/application/migrations",
@@ -268,7 +269,7 @@ pretty = true
 
 | Option | Why |
 |--------|-----|
-| `python_version = "3.9"` | matches the framework's lower bound; older syntax is allowed via `from __future__ import annotations` |
+| `python_version = "3.10"` | matches the framework's lower bound (raised in v1.11.0 when Python 3.9 reached EOL) |
 | `ignore_missing_imports = true` | most third-party libs (Tortoise, Starlette, Jinja2) ship without complete stubs — treat them as `Any` rather than failing the run |
 | `show_error_codes = true` | every error is reported with its code (e.g. `[arg-type]`), so it can be silenced precisely with `# type: ignore[code]` |
 | `warn_unused_ignores = true` | flags `# type: ignore` comments that no longer apply — keeps the baseline honest as upstream stubs improve |
@@ -362,8 +363,7 @@ The `Audit` workflow at `.github/workflows/audit.yml` runs `pip-audit` against b
 Each `--ignore-vuln` flag in the workflow has a documented justification — usually one of:
 
 1. **No upstream fix yet.** Document the actual risk vector; revisit each release.
-2. **Fix requires Python ≥ 3.10.** Will be removed in v1.11.0 (drops Python 3.9, EOL since 2025-10-31).
-3. **Vulnerable function not used by Nori or its callers.** Document which function and why we don't reach it.
+2. **Vulnerable function not used by Nori or its callers.** Document which function and why we don't reach it.
 
 A bare ignore without justification is a bug — `pip-audit` is only useful as a gate when the ignore list is honest.
 

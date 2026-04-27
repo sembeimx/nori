@@ -7,7 +7,7 @@ This page covers how to create a new Nori project. If you want a hands-on walkth
 ## Prerequisites
 
 - **Operating system**: Linux or macOS. Windows users should use [WSL2](https://learn.microsoft.com/en-us/windows/wsl/install) — Nori runs cleanly inside it. Native Windows is not currently tested or supported (Gunicorn, the production server, doesn't run on Windows).
-- **Python 3.9+** — check with `python3 --version`
+- **Python 3.10+** — check with `python3 --version`
 - **git** — required for the installer's `git init` step
 - **(production only)** MySQL 8+ or PostgreSQL 14+ — SQLite is fine for development
 
@@ -130,9 +130,9 @@ This brings the framework's dev artifacts (`CHANGELOG.md`, `docs/`, `mkdocs.yml`
 
 ## Troubleshooting
 
-**`Python 3.9+ required`**
+**`Python 3.10+ required`**
 
-The installer needs Python 3.9 or newer. Check with `python3 --version`. On macOS: `brew install python`. On Linux: install from your distro repos or use `pyenv`.
+The installer needs Python 3.10 or newer. Check with `python3 --version`. On macOS: `brew install python`. On Linux: install from your distro repos or use `pyenv`.
 
 **`No releases found`** or **`Could not reach GitHub`**
 

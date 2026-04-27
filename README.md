@@ -2,7 +2,7 @@
 
 [![Tests](https://github.com/sembeimx/nori/actions/workflows/tests.yml/badge.svg)](https://github.com/sembeimx/nori/actions/workflows/tests.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org)
 [![Version](https://img.shields.io/github/v/release/sembeimx/nori)](https://github.com/sembeimx/nori/releases)
 
 **The async Python framework where server-rendered pages and JSON APIs are first-class peers.**

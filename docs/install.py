@@ -29,7 +29,7 @@ from urllib.request import Request, urlopen
 
 GITHUB_REPO = 'sembeimx/nori'
 GITHUB_API = 'https://api.github.com'
-MIN_PYTHON = (3, 9)
+MIN_PYTHON = (3, 10)
 MIN_NORI_VERSION = '1.10.0'
 
 
