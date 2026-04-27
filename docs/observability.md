@@ -8,7 +8,7 @@ That extension point is the **bootstrap hook**.
 
 ## Why timing matters
 
-Observability SDKs work by patching third-party libraries at import time — Sentry hooks into `httpx`, `asyncpg`, `starlette`; OpenTelemetry auto-instruments dozens of libraries. If you call `sentry_sdk.init()` after those libraries have been imported, the patches are silently incomplete and some telemetry never fires.
+Observability SDKs work by patching third-party libraries at import time — Sentry hooks into `httpx`, `asyncpg`, `starlette`; OpenTelemetry auto-instruments dozens of libraries. If you call `sentry_sdk.init()` *after* those libraries have been imported, the patches are silently incomplete and some telemetry never fires.
 
 The bootstrap hook runs **before Nori imports Starlette, Tortoise, or any other instrumentable library**, so every subsequent import sees the instrumented versions.
 
@@ -83,40 +83,190 @@ That is it. Sentry picks up uncaught exceptions from controllers and middleware,
 
 ---
 
-## Other integrations
+## Recipe: OpenTelemetry
 
-The same pattern applies to Datadog (`ddtrace.patch_all()`), OpenTelemetry (`opentelemetry.sdk.trace` setup), New Relic, Honeycomb, and anything else that needs early initialization. Put the setup inside `bootstrap()` and configure via environment variables — the hook is a plain Python function, so you own what happens inside.
+OpenTelemetry is the vendor-neutral standard. Same trace data goes to Jaeger, Honeycomb, Datadog, New Relic, Grafana Tempo, or any other OTLP-compatible backend.
 
-For Datadog specifically, the `ddtrace-run` wrapper is also an option and skips the bootstrap hook entirely:
+### 1. Install the SDK and the auto-instrumentation packages
 
 ```bash
-ddtrace-run uvicorn asgi:app
+pip install \
+    opentelemetry-api \
+    opentelemetry-sdk \
+    opentelemetry-exporter-otlp \
+    opentelemetry-instrumentation-starlette \
+    opentelemetry-instrumentation-asyncpg \
+    opentelemetry-instrumentation-httpx
 ```
 
-Use whichever fits your deployment.
+Pick the instrumentation packages that match the libraries your site actually uses. `asyncpg` for Postgres, `aiomysql` / `asyncmy` for MySQL, `redis` if you use the Redis cache or throttle backend, `httpx` for outbound requests.
+
+### 2. Create `rootsystem/application/bootstrap.py`
+
+```python
+import os
+
+
+def bootstrap() -> None:
+    endpoint = os.environ.get('OTEL_EXPORTER_OTLP_ENDPOINT')
+    if not endpoint:
+        return
+
+    from opentelemetry import trace
+    from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+    from opentelemetry.sdk.resources import SERVICE_NAME, Resource
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import BatchSpanProcessor
+
+    # Configure the global tracer provider.
+    resource = Resource.create({
+        SERVICE_NAME: os.environ.get('OTEL_SERVICE_NAME', 'nori-app'),
+    })
+    provider = TracerProvider(resource=resource)
+    provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter(endpoint=endpoint)))
+    trace.set_tracer_provider(provider)
+
+    # Auto-instrument the libraries that ship telemetry.
+    from opentelemetry.instrumentation.asyncpg import AsyncPGInstrumentor
+    from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
+    from opentelemetry.instrumentation.starlette import StarletteInstrumentor
+
+    AsyncPGInstrumentor().instrument()
+    HTTPXClientInstrumentor().instrument()
+    StarletteInstrumentor.instrument()  # Starlette uses a class method.
+```
+
+### 3. Set the environment variables
+
+```text
+OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+OTEL_SERVICE_NAME=my-nori-app
+```
+
+You also need an OTLP collector running somewhere — typically the [OpenTelemetry Collector](https://opentelemetry.io/docs/collector/) deployed alongside your app, forwarding to your backend of choice.
+
+### Notes
+
+- `StarletteInstrumentor.instrument()` wraps every request in a span tagged with the route, method, and status. Combined with the `asyncpg` instrumentation, you get a flame graph showing exactly which SQL query inside a request is slow.
+- Order does not matter inside `bootstrap()` — instrumentation hooks register globally and apply when the libraries are imported by Nori afterwards.
+- `BatchSpanProcessor` buffers spans and flushes asynchronously. `SimpleSpanProcessor` flushes per-span (synchronous, slower, useful for debugging only).
 
 ---
 
-## Upgrading an existing site
+## Recipe: Datadog
 
-If your site runs Nori ≤ 1.5.x, the upgrade to 1.6.0 is a two-step:
+Datadog ships its own SDK (`ddtrace`) that auto-instruments most popular Python libraries with one call.
+
+### Option A — bootstrap hook
 
 ```bash
-python3 nori.py framework:update             # step 1 — brings in v1.6.0
-python3 nori.py framework:update --force     # step 2 — applies patches
+pip install ddtrace
 ```
 
-### Why two steps?
+```python
+# rootsystem/application/bootstrap.py
+import os
 
-The patch system itself ships in 1.6.0. When you run `framework:update` on an older release, the code that executes is still the OLD `core/cli.py` — it has already been loaded into memory by the Python interpreter. It downloads and replaces the files on disk with 1.6.0, but the running process keeps executing the old logic, which does not know about patches.
 
-The second run (`--force`) is executed by the newly installed 1.6.0 `cli.py`, so the patcher actually fires and you will see:
+def bootstrap() -> None:
+    if not os.environ.get('DD_TRACE_ENABLED', '').lower() in ('1', 'true', 'yes'):
+        return
+
+    from ddtrace import patch_all
+    patch_all()  # Patches starlette, asyncpg, httpx, redis, and everything else ddtrace knows about.
+```
+
+### Option B — `ddtrace-run` wrapper
+
+Datadog also ships a wrapper that patches before any application code runs, skipping the bootstrap hook entirely:
+
+```bash
+ddtrace-run uvicorn asgi:app --host 0.0.0.0 --port 8000
+```
+
+Use Option A if you want the patching decision to be visible in your codebase. Use Option B if your deployment platform standardises on `ddtrace-run` (Datadog's Kubernetes integration uses it by default).
+
+### Environment
+
+Datadog reads agent connection info from environment variables — typically:
 
 ```text
-  Applying patches...
-    ✓ asgi.py: added bootstrap hook
+DD_TRACE_ENABLED=true
+DD_AGENT_HOST=datadog-agent
+DD_TRACE_AGENT_PORT=8126
+DD_SERVICE=my-nori-app
+DD_ENV=production
+DD_VERSION=<commit-sha>
 ```
 
-This is a **one-time** quirk for the first upgrade to a release that introduces the patch system. From 1.6.x onwards, patches run automatically on every update.
+---
 
-The patch is idempotent — running it repeatedly is a no-op. A timestamped backup of the pre-patch `asgi.py` lives under `rootsystem/.framework_backups/` if you ever need to inspect it.
+## Correlating Request-ID with traces
+
+Since v1.11.0 Nori automatically attaches a `request_id` to every log record under an HTTP request (including from `asyncio.create_task` background work). You can copy that same ID onto observability spans so a single trace correlates logs ↔ spans ↔ external service calls.
+
+The current ID is available via `core.http.request_id.get_request_id()`:
+
+```python
+from core.http.request_id import get_request_id
+
+rid = get_request_id()  # str | None
+```
+
+### OpenTelemetry — copy as a span attribute
+
+Wrap your handler entry points (or use a Starlette middleware after `RequestIdMiddleware`) to tag the active span:
+
+```python
+from opentelemetry import trace
+from core.http.request_id import get_request_id
+
+
+def tag_current_span_with_request_id() -> None:
+    span = trace.get_current_span()
+    rid = get_request_id()
+    if span and rid:
+        span.set_attribute('nori.request_id', rid)
+```
+
+Now every span produced under that request carries the same `nori.request_id` attribute as your logs, so you can pivot from a slow trace in Jaeger to the matching log lines in Loki/Elasticsearch with one query.
+
+### Sentry — set as a tag
+
+```python
+import sentry_sdk
+from core.http.request_id import get_request_id
+
+
+def tag_sentry_with_request_id() -> None:
+    rid = get_request_id()
+    if rid:
+        sentry_sdk.set_tag('request_id', rid)
+```
+
+Call this from a small middleware that runs after `RequestIdMiddleware`. Sentry then groups errors by `request_id` and surfaces it on every event.
+
+---
+
+## Verifying the hook fires
+
+Add a debug log inside `bootstrap()`:
+
+```python
+def bootstrap() -> None:
+    import logging
+    logging.getLogger('nori.bootstrap').warning('bootstrap fired')
+    # ... rest of your init ...
+```
+
+Run `python3 nori.py serve` — you should see `bootstrap fired` before any other startup line. If you do not, the file is in the wrong location (it must be `rootsystem/application/bootstrap.py`) or the function is not named `bootstrap`.
+
+---
+
+## When NOT to use the hook
+
+- **Pure logging configuration** (changing levels, adding handlers) belongs in `core.logger` configuration via the `LOG_LEVEL` / `LOG_FORMAT` / `LOG_FILE` environment variables, not the bootstrap hook.
+- **Database connection pooling** is owned by Tortoise ORM via `settings.TORTOISE_ORM`. Don't pre-connect inside `bootstrap()`.
+- **App routes or middleware** belong in `routes.py` and `asgi.py` — the bootstrap hook is for *third-party SDK initialization*, not application wiring.
+
+If you find yourself reaching for the hook for anything other than instrumentation, the answer is probably one of the dedicated extension points instead.
