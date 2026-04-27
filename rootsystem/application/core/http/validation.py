@@ -155,7 +155,7 @@ def _check_rule(
         try:
             n = int(param)
         except (ValueError, TypeError):
-            raise ValueError(f"Invalid parameter for 'min' rule: '{param}'")
+            raise ValueError(f"Invalid parameter for 'min' rule: '{param}'") from None
         if value and len(value) < n:
             return _msg(field, rule, messages, n=n)
 
@@ -163,7 +163,7 @@ def _check_rule(
         try:
             n = int(param)
         except (ValueError, TypeError):
-            raise ValueError(f"Invalid parameter for 'max' rule: '{param}'")
+            raise ValueError(f"Invalid parameter for 'max' rule: '{param}'") from None
         if value and len(value) > n:
             return _msg(field, rule, messages, n=n)
 
@@ -222,7 +222,7 @@ def _check_rule(
         try:
             n = float(param)
         except (ValueError, TypeError):
-            raise ValueError(f"Invalid parameter for 'min_value' rule: '{param}'")
+            raise ValueError(f"Invalid parameter for 'min_value' rule: '{param}'") from None
         if value:
             try:
                 if float(value) < n:
@@ -234,7 +234,7 @@ def _check_rule(
         try:
             n = float(param)
         except (ValueError, TypeError):
-            raise ValueError(f"Invalid parameter for 'max_value' rule: '{param}'")
+            raise ValueError(f"Invalid parameter for 'max_value' rule: '{param}'") from None
         if value:
             try:
                 if float(value) > n:

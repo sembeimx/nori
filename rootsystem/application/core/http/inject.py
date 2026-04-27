@@ -36,7 +36,7 @@ def inject():
             # Lazily collect async FormData / JSON only if requested
             form_data = None
             needs_form = "form" in sig.parameters or any(
-                p.annotation == dict for p in sig.parameters.values() if p.name not in ['self', 'request']
+                p.annotation is dict for p in sig.parameters.values() if p.name not in ['self', 'request']
             )
 
             if needs_form:
@@ -61,7 +61,7 @@ def inject():
                     continue
 
                 # 1. Requests full Dictionary or Form
-                if name == "form" or param.annotation == dict:
+                if name == "form" or param.annotation is dict:
                     injected_kwargs[name] = form_data
 
                 # 2. Requests URL-anchored variable (Path Params)
