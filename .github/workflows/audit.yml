@@ -1,0 +1,76 @@
+name: Audit
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.9'
+          cache: pip
+      - run: pip install pip-audit
+
+      # Each --ignore-vuln below has a documented justification. Removing an
+      # ignore SHOULD fail the build — that's the whole point. New CVEs not
+      # in this list will still break CI, which is why this workflow has
+      # value despite the existing exceptions.
+      #
+      # Trigger to remove the py310-blocked ignores: v1.11.0 (drops Python 3.9).
+      - name: Audit framework dependencies (requirements.nori.txt)
+        run: |
+          pip-audit -r requirements.nori.txt \
+            --ignore-vuln GHSA-qhqw-rrw9-25rm \
+            --ignore-vuln GHSA-wp53-j4wj-2cfg \
+            --ignore-vuln GHSA-mj87-hwqh-73pj \
+            --ignore-vuln GHSA-mf9w-mj56-hr94
+
+      - name: Audit dev dependencies (requirements-dev.txt)
+        run: |
+          pip-audit -r requirements-dev.txt \
+            --ignore-vuln GHSA-qhqw-rrw9-25rm \
+            --ignore-vuln GHSA-wp53-j4wj-2cfg \
+            --ignore-vuln GHSA-mj87-hwqh-73pj \
+            --ignore-vuln GHSA-mf9w-mj56-hr94 \
+            --ignore-vuln GHSA-6w46-j5rx-g56g \
+            --ignore-vuln GHSA-w853-jp5j-5j7f \
+            --ignore-vuln GHSA-qmgc-5h2g-mvrw \
+            --ignore-vuln GHSA-gc5v-m9x4-r6x2
+
+# Documented exceptions (keep in sync with the --ignore-vuln flags above):
+#
+# GHSA-qhqw-rrw9-25rm  asyncmy 0.2.11 — SQL injection via crafted dict keys
+#                      (CVE-2025-65896). NO upstream fix available.
+#                      Vector applies only to raw queries that pass user-
+#                      controlled dict keys to asyncmy.execute(). Tortoise
+#                      ORM (Nori's only DB layer) and core/ never do this.
+#                      Revisit on every release; reconsider migrating to
+#                      aiomysql if upstream stays unpatched.
+#
+# Python-3.10+-only fixes (removed in v1.11.0 when 3.9 is dropped):
+# GHSA-wp53-j4wj-2cfg  python-multipart 0.0.20 — Arbitrary File Write via
+#                      Non-Default Configuration (CVE-2026-24486). Fixed in
+#                      0.0.22 (requires Python >=3.10).
+# GHSA-mj87-hwqh-73pj  python-multipart 0.0.20 — DoS via large multipart
+#                      preamble/epilogue (CVE-2026-40347). Fixed in 0.0.26
+#                      (requires Python >=3.10).
+# GHSA-mf9w-mj56-hr94  python-dotenv 1.2.1 — Symlink following in set_key
+#                      (CVE-2026-28684). Fixed in 1.2.2 (requires Python
+#                      >=3.10).
+# GHSA-6w46-j5rx-g56g  pytest 8.4.2 — fixed in 9.0.3 (requires Python >=3.10).
+# GHSA-w853-jp5j-5j7f  filelock 3.19.1 — fixed in 3.20.1 (requires Python
+#                      >=3.10).
+# GHSA-qmgc-5h2g-mvrw  filelock 3.19.1 — fixed in 3.20.3 (requires Python
+#                      >=3.10).
+# GHSA-gc5v-m9x4-r6x2  requests 2.32.5 — extract_zipped_paths uses predictable
+#                      tempfile name (CVE-2026-25645). Per upstream advisory,
+#                      "Standard usage of the Requests library is not affected"
+#                      — only direct callers of extract_zipped_paths(). Nori
+#                      and pip-audit (transitive consumer of requests) do not
+#                      call it. Fixed in 2.33.0 (requires Python >=3.10).
