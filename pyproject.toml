@@ -62,6 +62,24 @@ ignore = [
 quote-style = "single"
 indent-style = "space"
 
+[tool.mypy]
+python_version = "3.9"
+files = ["rootsystem/application"]
+exclude = [
+    "rootsystem/application/migrations",
+    "rootsystem/.framework_backups",
+]
+# Most third-party libs (tortoise, starlette, jinja2, etc.) ship without
+# type stubs or with incomplete ones. Treat missing imports as Any rather
+# than failing the type check.
+ignore_missing_imports = true
+# Show error codes so they can be silenced precisely with # type: ignore[code].
+show_error_codes = true
+# Flag # type: ignore comments that are no longer needed — keeps the
+# baseline honest as upstream stubs improve.
+warn_unused_ignores = true
+pretty = true
+
 [tool.coverage.run]
 source = ["rootsystem/application"]
 branch = true
