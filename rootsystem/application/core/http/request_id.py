@@ -2,18 +2,36 @@
 Request ID middleware for request tracing.
 
 Generates a UUID per HTTP request and:
+
 - Sets ``X-Request-ID`` response header
 - Stores on ``request.state.request_id``
+- Stores in the ``request_id_var`` ContextVar so any code in the request
+  task tree (including ``asyncio.create_task`` background work spawned
+  during the request) can read it without threading the request through
 - Supports propagation from incoming ``X-Request-ID`` header
 
-The JsonFormatter in ``core.logger`` already supports ``record.request_id``.
+The ContextVar is what makes Request-ID reach logs from async background
+tasks (audit, queue, push, background). ``RequestIdLogFilter`` in
+``core.logger`` consumes it; the JSON formatter then writes it on every
+log record.
 """
 
 from __future__ import annotations
 
 import uuid
+from contextvars import ContextVar
 
-__all__ = ['RequestIdMiddleware']
+__all__ = ['RequestIdMiddleware', 'request_id_var', 'get_request_id']
+
+# ContextVar carries the current request's ID through the asyncio task tree.
+# `asyncio.create_task` copies the context at spawn time, so background
+# tasks created inside a request handler inherit this value automatically.
+request_id_var: ContextVar[str | None] = ContextVar('request_id', default=None)
+
+
+def get_request_id() -> str | None:
+    """Return the current request's ID, or None outside an HTTP context."""
+    return request_id_var.get()
 
 
 class RequestIdMiddleware:
@@ -44,6 +62,10 @@ class RequestIdMiddleware:
             scope['state'] = {}
         scope['state']['request_id'] = request_id
 
+        # Set the ContextVar so logging.Filter and any background task
+        # spawned inside this handler picks it up without manual threading.
+        token = request_id_var.set(request_id)
+
         async def send_with_id(message):
             if message['type'] == 'http.response.start':
                 headers = list(message.get('headers', []))
@@ -51,4 +73,7 @@ class RequestIdMiddleware:
                 message = {**message, 'headers': headers}
             await send(message)
 
-        await self.app(scope, receive, send_with_id)
+        try:
+            await self.app(scope, receive, send_with_id)
+        finally:
+            request_id_var.reset(token)

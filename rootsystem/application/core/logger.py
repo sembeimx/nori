@@ -24,6 +24,26 @@ from datetime import datetime, timezone
 from core.conf import config
 
 
+class _RequestIdFilter(logging.Filter):
+    """Inject the current request_id ContextVar into every LogRecord.
+
+    Set by ``RequestIdMiddleware`` per HTTP request and inherited by any
+    ``asyncio.create_task`` spawned inside the handler — so background
+    work (audit, queue, push, background) logs the same trace ID as the
+    request that started it, without ever touching the call signature.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        # Late import: core.http.request_id imports nothing heavy, but
+        # core.logger is imported earlier in the boot chain.
+        from core.http.request_id import request_id_var
+
+        rid = request_id_var.get()
+        if rid is not None and not hasattr(record, 'request_id'):
+            record.request_id = rid
+        return True
+
+
 class _JsonFormatter(logging.Formatter):
     """Structured JSON log formatter for production/cloud environments."""
 
@@ -42,13 +62,24 @@ class _JsonFormatter(logging.Formatter):
 
 
 class _TextFormatter(logging.Formatter):
-    """Human-readable formatter for development."""
+    """Human-readable formatter for development.
+
+    Includes ``[req=<short>]`` when a request_id is present on the record
+    so traces are visible during local dev too.
+    """
 
     def __init__(self) -> None:
         super().__init__(
             fmt='[%(asctime)s] %(levelname)s - %(name)s: %(message)s',
             datefmt='%Y-%m-%d %H:%M:%S',
         )
+
+    def format(self, record: logging.LogRecord) -> str:
+        base = super().format(record)
+        rid = getattr(record, 'request_id', None)
+        if rid:
+            return f'{base} [req={rid[:8]}]'
+        return base
 
 
 def _setup_logger() -> logging.Logger:
@@ -66,10 +97,19 @@ def _setup_logger() -> logging.Logger:
     log_format = os.environ.get('LOG_FORMAT', 'text').lower()
     formatter = _JsonFormatter() if log_format == 'json' else _TextFormatter()
 
+    # Filter must be on the HANDLERS, not the logger. Python logging only runs
+    # filters on the *originating* logger; for records from child loggers
+    # (e.g. ``nori.auth``) propagating up through ``nori``, only the handlers
+    # are consulted. Putting the filter on each handler ensures the record is
+    # mutated before it reaches root (so test caplog and prod observers all
+    # see ``record.request_id``). The filter is idempotent.
+    request_id_filter = _RequestIdFilter()
+
     # Console handler (always)
     console = logging.StreamHandler(sys.stdout)
     console.setLevel(level)
     console.setFormatter(formatter)
+    console.addFilter(request_id_filter)
     logger.addHandler(console)
 
     # File handler (optional, with rotation)
@@ -83,6 +123,7 @@ def _setup_logger() -> logging.Logger:
         )
         file_handler.setLevel(level)
         file_handler.setFormatter(formatter)
+        file_handler.addFilter(request_id_filter)
         logger.addHandler(file_handler)
 
     logger.propagate = False
