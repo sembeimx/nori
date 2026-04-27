@@ -19,7 +19,19 @@ jobs:
           python-version: ${{ matrix.python-version }}
           allow-prereleases: true
       - run: pip install -r requirements-dev.txt
-      - run: pytest tests/ -q --cov --cov-report=term
+      - name: Tests + coverage
+        run: pytest tests/ -q --cov --cov-report=term
+        env:
+          DEBUG: 'true'
+          DB_ENGINE: sqlite
+          DB_NAME: ':memory:'
+
+      # Doctests live in the public APIs they document. Catches stale examples —
+      # if the docstring shows `>>> users.pluck('name')` returning ['ana'], we
+      # want CI to fail the moment the API drifts. Scope is narrow on purpose
+      # (one module today); add more files here as we add more doctests.
+      - name: Doctests
+        run: pytest --doctest-modules rootsystem/application/core/collection.py -q
         env:
           DEBUG: 'true'
           DB_ENGINE: sqlite

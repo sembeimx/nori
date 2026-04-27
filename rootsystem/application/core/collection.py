@@ -12,6 +12,17 @@ _builtin_max = max
 _SENTINEL = object()
 
 
+def _get_field(item: Any, key: str, default: Any = None) -> Any:
+    """Read ``key`` from a dict (via __getitem__) or any other object (via getattr).
+
+    Mirrors the access pattern in ``pluck`` and ``where`` so all reducers
+    handle both model instances and plain dicts uniformly.
+    """
+    if isinstance(item, dict):
+        return item.get(key, default)
+    return getattr(item, key, default)
+
+
 class NoriCollection(list[T]):
     """
     List with superpowers. Wraps Tortoise results
@@ -19,20 +30,61 @@ class NoriCollection(list[T]):
     """
 
     def first(self) -> T | None:
+        """Return the first element, or None if empty.
+
+        >>> NoriCollection([1, 2, 3]).first()
+        1
+        >>> NoriCollection().first() is None
+        True
+        """
         return self[0] if self else None
 
     def last(self) -> T | None:
+        """Return the last element, or None if empty.
+
+        >>> NoriCollection([1, 2, 3]).last()
+        3
+        >>> NoriCollection().last() is None
+        True
+        """
         return self[-1] if self else None
 
     def is_empty(self) -> bool:
+        """Return True if the collection has no elements.
+
+        >>> NoriCollection().is_empty()
+        True
+        >>> NoriCollection([0]).is_empty()
+        False
+        """
         return len(self) == 0
 
     def pluck(self, key: str) -> list[Any]:
-        """Extract values from a field."""
+        """Extract values from a field across every item.
+
+        >>> users = NoriCollection([{'name': 'ana'}, {'name': 'beto'}])
+        >>> users.pluck('name')
+        ['ana', 'beto']
+        >>> NoriCollection([{'name': 'ana'}]).pluck('missing')
+        [None]
+        """
         return [getattr(item, key, item.get(key) if isinstance(item, dict) else None) for item in self]
 
     def where(self, key: str, operator_or_value: Any = _SENTINEL, value: Any = _SENTINEL) -> NoriCollection[T]:
-        """Filter in-memory with operators."""
+        """Filter in-memory with optional comparison operators.
+
+        Two-arg form (equality):
+
+        >>> users = NoriCollection([{'role': 'admin'}, {'role': 'user'}])
+        >>> users.where('role', 'admin').pluck('role')
+        ['admin']
+
+        Three-arg form (operator + value):
+
+        >>> items = NoriCollection([{'price': 5}, {'price': 10}, {'price': 20}])
+        >>> items.where('price', '>', 8).pluck('price')
+        [10, 20]
+        """
 
         def _get_val(item: Any) -> Any:
             return getattr(item, key, item.get(key) if isinstance(item, dict) else None)
@@ -84,6 +136,11 @@ class NoriCollection(list[T]):
         return result
 
     def chunk(self, size: int) -> list[NoriCollection[T]]:
+        """Split the collection into chunks of at most ``size`` elements.
+
+        >>> [list(c) for c in NoriCollection([1, 2, 3, 4, 5]).chunk(2)]
+        [[1, 2], [3, 4], [5]]
+        """
         return [NoriCollection(self[i : i + size]) for i in range(0, len(self), size)]
 
     def map(self, fn: Callable[[T], Any]) -> NoriCollection[Any]:
@@ -95,24 +152,52 @@ class NoriCollection(list[T]):
         return self
 
     def sum(self, key: str) -> float:
-        return sum(getattr(i, key, 0) or 0 for i in self)
+        """Sum a numeric field across all items. Missing/None values count as 0.
+
+        Works on both model instances (attribute access) and dicts (key access)
+        — consistent with ``pluck`` and ``where``.
+
+        >>> NoriCollection([{'price': 5}, {'price': 10}]).sum('price')
+        15
+        >>> NoriCollection().sum('price')
+        0
+        """
+        return sum(_get_field(i, key, 0) or 0 for i in self)
 
     def avg(self, key: str) -> float | None:
-        """Average of field values. Returns None for empty collections."""
+        """Average of field values. Returns None for empty collections.
+
+        >>> NoriCollection([{'price': 10}, {'price': 20}, {'price': 30}]).avg('price')
+        20.0
+        >>> NoriCollection().avg('price') is None
+        True
+        """
         if not self:
             return None
-        vals = [getattr(i, key, 0) or 0 for i in self]
+        vals = [_get_field(i, key, 0) or 0 for i in self]
         return sum(vals) / len(self)
 
     def min(self, key: str) -> Any | None:
-        vals = [getattr(i, key, None) for i in self if getattr(i, key, None) is not None]
-        # vals is filtered to non-None at the comprehension level; mypy still sees
-        # Optional from getattr's default arg.
-        return _builtin_min(vals) if vals else None  # type: ignore[type-var]
+        """Minimum of field values. Skips None entries; returns None on empty.
+
+        >>> NoriCollection([{'n': 3}, {'n': 1}, {'n': 2}]).min('n')
+        1
+        >>> NoriCollection([{'n': None}, {'n': 5}]).min('n')
+        5
+        """
+        vals = [_get_field(i, key, None) for i in self]
+        non_null = [v for v in vals if v is not None]
+        return _builtin_min(non_null) if non_null else None
 
     def max(self, key: str) -> Any | None:
-        vals = [getattr(i, key, None) for i in self if getattr(i, key, None) is not None]
-        return _builtin_max(vals) if vals else None  # type: ignore[type-var]
+        """Maximum of field values. Skips None entries; returns None on empty.
+
+        >>> NoriCollection([{'n': 3}, {'n': 1}, {'n': 2}]).max('n')
+        3
+        """
+        vals = [_get_field(i, key, None) for i in self]
+        non_null = [v for v in vals if v is not None]
+        return _builtin_max(non_null) if non_null else None
 
     def to_list(self) -> list[Any]:
         """Convert to list of dicts (JSON serializable)."""
