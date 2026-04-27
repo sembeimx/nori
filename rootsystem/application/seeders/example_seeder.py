@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """
 Example seeder template.
 
@@ -8,6 +6,9 @@ To use:
 2. Implement the run() function
 3. Register this module in database_seeder.SEEDERS
 """
+
+from __future__ import annotations
+
 # from models.user import User
 # from core.auth.security import Security
 

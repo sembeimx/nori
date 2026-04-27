@@ -1,9 +1,9 @@
-from __future__ import annotations
-
 """
 Nori - ASGI Entry Point
 Start with: uvicorn asgi:app --reload --host 0.0.0.0 --port 8000
 """
+
+from __future__ import annotations
 
 # Bootstrap hook — MUST run before any framework/third-party import so
 # observability SDKs (Sentry, OTel, Datadog) can patch libraries at load time.
