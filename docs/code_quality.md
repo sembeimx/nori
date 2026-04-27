@@ -244,9 +244,105 @@ Existing Nori projects can opt in with the same setup:
 
 ---
 
+## Type checking
+
+Nori ships pre-configured with [mypy](https://mypy.readthedocs.io/) for static type analysis. Configuration lives in `pyproject.toml` under `[tool.mypy]`. The framework codebase passes mypy with zero errors; CI enforces this on every push.
+
+Type checking is gradual, not strict. The aim is to catch real bugs (Optional dereference, wrong return shapes, mismatched call signatures) without forcing every annotation to be exhaustive. Strictness can be tightened per-module as the project matures.
+
+### What ships configured
+
+```toml
+[tool.mypy]
+python_version = "3.9"
+files = ["rootsystem/application"]
+exclude = [
+    "rootsystem/application/migrations",
+    "rootsystem/.framework_backups",
+]
+ignore_missing_imports = true
+show_error_codes = true
+warn_unused_ignores = true
+pretty = true
+```
+
+| Option | Why |
+|--------|-----|
+| `python_version = "3.9"` | matches the framework's lower bound; older syntax is allowed via `from __future__ import annotations` |
+| `ignore_missing_imports = true` | most third-party libs (Tortoise, Starlette, Jinja2) ship without complete stubs — treat them as `Any` rather than failing the run |
+| `show_error_codes = true` | every error is reported with its code (e.g. `[arg-type]`), so it can be silenced precisely with `# type: ignore[code]` |
+| `warn_unused_ignores = true` | flags `# type: ignore` comments that no longer apply — keeps the baseline honest as upstream stubs improve |
+| `pretty = true` | nicer multi-line output for readability |
+
+### Running locally
+
+```bash
+mypy                              # type-check rootsystem/application
+mypy path/to/file.py              # check a specific file
+mypy --show-traceback             # debug mypy-internal errors
+```
+
+Mypy is on your venv's `PATH` after `pip install -r requirements-dev.txt`.
+
+### CI gate
+
+The `Typecheck` workflow at `.github/workflows/typecheck.yml` runs on every push and PR to `main`. It installs `requirements-dev.txt` and runs `mypy` — failing the build on any new error.
+
+### Silencing errors with justification
+
+When a type error reflects a stub limitation (not a real bug), silence it with an inline comment that explains why:
+
+```python
+# Tortoise's QuerySet stubs don't preserve subclass identity through .filter();
+# qs.__class__ is rebound at runtime so the cast is safe.
+return SoftDeleteQuerySet(self._model).filter(deleted_at__isnull=True)  # type: ignore[return-value]
+```
+
+```python
+# Tortoise attaches Model._meta dynamically at class creation; not in stubs.
+for field in self._meta.fields_map:  # type: ignore[attr-defined]
+```
+
+The comment is non-negotiable. With `warn_unused_ignores = true`, mypy will flag any silencer that is no longer needed — so dead `# type: ignore` won't accumulate.
+
+### Adopting in existing Nori projects
+
+`framework:update` does not retrofit `pyproject.toml` — it's a user-owned file. To adopt mypy in a project created on Nori ≤ 1.10.8:
+
+1. Add `mypy>=1.10` to your `requirements-dev.txt`.
+2. Copy the `[tool.mypy]` section from the framework's `pyproject.toml` to yours.
+3. Run `.venv/bin/pip install -r requirements-dev.txt`.
+4. Run `mypy` — read the report, fix or silence each error.
+5. Optionally, copy `.github/workflows/typecheck.yml` to gate future PRs.
+
+### Stricter modes
+
+The defaults are pragmatic. To tighten:
+
+```toml
+[tool.mypy]
+# ... existing config ...
+disallow_untyped_defs = true       # require every function to have signature annotations
+disallow_incomplete_defs = true    # require all params if any param is annotated
+warn_return_any = true             # flag functions that return Any when a real type is declared
+strict_equality = true             # x == y where x and y can never be equal is suspicious
+```
+
+Or all-in:
+
+```toml
+[tool.mypy]
+strict = true
+```
+
+Run `mypy` after each tightening to triage the new errors. Loosen per-module with `[[tool.mypy.overrides]]` blocks where strict mode doesn't fit (e.g. tests, migration scripts).
+
+---
+
 ## See also
 
 - [Ruff documentation](https://docs.astral.sh/ruff/)
 - [Coverage.py documentation](https://coverage.readthedocs.io/)
+- [mypy documentation](https://mypy.readthedocs.io/)
 - [Dependencies](dependencies.md) — how `requirements-dev.txt` works alongside framework deps
 - [Testing](testing.md) — pytest setup for Nori projects
