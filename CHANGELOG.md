@@ -4,6 +4,38 @@ All notable changes to Nori are documented here. Format follows [Keep a Changelo
 
 ---
 
+## [1.10.9] — 2026-04-26
+
+### Added
+
+- **Static type checking with mypy.** Framework codebase now passes `mypy` with zero errors (29 → 0 across 12 files). New `Typecheck` workflow at `.github/workflows/typecheck.yml` runs on every push and PR to `main`, gating the build on type correctness.
+
+  Configuration in `pyproject.toml` under `[tool.mypy]`:
+  - `python_version = "3.9"` — matches framework's lower bound
+  - `files = ["rootsystem/application"]` — framework code only
+  - `ignore_missing_imports = true` — third-party libs without stubs (Tortoise, Starlette, Jinja2) are treated as `Any`
+  - `show_error_codes = true` and `warn_unused_ignores = true` — keeps the baseline honest as upstream stubs improve
+  - `pretty = true` — multi-line readable output
+
+  Approach is gradual, not strict. `disallow_untyped_defs` and full `--strict` are documented as opt-in for projects that want to tighten further. `mypy>=1.10` added to `requirements-dev.txt`. `pyproject.toml` already ships to fresh projects via the starter manifest, so new projects come pre-configured.
+
+### Fixed
+
+- **8 genuine type bugs surfaced during the mypy push:**
+  - `core/auth/security.py`: `hash_password(iterations: int = None)` was implicit Optional under PEP 484 — now correctly annotated `int | None = None`. Added the missing `from __future__ import annotations`.
+  - `core/queue.py`: `push()` could call `None` if the memory driver wasn't registered. Now raises a clear `RuntimeError`.
+  - `core/_patches.py`: `stmt.end_lineno + 1` could fail if mypy-parsed AST node had `end_lineno = None`. Now falls back to `stmt.lineno`.
+  - `core/cli.py:framework_update`: `release['tag_name']` would crash if GitHub returned a list (the `_github_api` return type is `dict | list`). Now narrows with an `isinstance` check and reports a clean error.
+  - `models/framework/job.py` and `audit_log.py`: missing type annotations on `payload` and `changes` JSONFields. Now `payload: dict` and `changes: dict | None`.
+  - `core/http/validation.py`: `param: str | None` was passed unconditionally to `int()`, `float()`, `dict.get()`, `re.match()`, etc. Cleaner approach: change to `param: str = ''` (empty string is the canonical "no parameter" sentinel — existing `try/except` already handles it). Same fix in `_check_unique`.
+  - `services/storage_gcs.py`: `private_key.sign(data, padding, hash)` is RSA-only, but `serialization.load_pem_private_key()` returns a union of RSA/DSA/DH/Ed25519/.... Code assumed RSA but never narrowed. Now `isinstance(private_key, RSAPrivateKey)` check raises a clear `RuntimeError` if the GCS service account key is non-RSA (which would silently fail at runtime today).
+
+### Compatibility
+
+- No API changes. Adoption in existing projects: add `mypy>=1.10` to `requirements-dev.txt`, copy `[tool.mypy]` from the framework's `pyproject.toml`, optionally copy `.github/workflows/typecheck.yml`. Full instructions in [docs/code_quality.md#type-checking](docs/code_quality.md).
+
+---
+
 ## [1.10.8] — 2026-04-26
 
 ### Added
