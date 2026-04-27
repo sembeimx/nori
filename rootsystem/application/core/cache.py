@@ -145,9 +145,7 @@ class RedisCacheBackend(CacheBackend):
         try:
             await self._redis.ping()
         except Exception as exc:
-            raise RuntimeError(
-                f'CACHE_BACKEND=redis but Redis at {self._redis_url} is not reachable: {exc}'
-            ) from exc
+            raise RuntimeError(f'CACHE_BACKEND=redis but Redis at {self._redis_url} is not reachable: {exc}') from exc
 
     async def get(self, key: str) -> Any | None:
         raw = await self._redis.get(f'{self._prefix}{key}')
