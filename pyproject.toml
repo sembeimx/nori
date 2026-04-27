@@ -1,0 +1,31 @@
+[tool.ruff]
+line-length = 120
+target-version = "py39"
+extend-exclude = [
+    "rootsystem/.framework_backups",
+    "rootsystem/application/migrations",
+    "site",
+    ".venv",
+    "venv",
+    "__pycache__",
+]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes (unused imports, undefined names)
+    "I",   # isort (import sorting)
+    "UP",  # pyupgrade (modernize syntax to target-version)
+    "B",   # flake8-bugbear (likely bugs)
+]
+ignore = [
+    "E501",  # line too long — handled by formatter
+]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]  # re-exports are fine in package init files
+
+[tool.ruff.format]
+quote-style = "single"
+indent-style = "space"

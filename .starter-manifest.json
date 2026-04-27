@@ -10,6 +10,7 @@
     ".env.example",
     ".dockerignore",
     ".gitignore",
+    "pyproject.toml",
     "pytest.ini",
     "gunicorn.conf.py",
     "LICENSE",
