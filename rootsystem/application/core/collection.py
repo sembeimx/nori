@@ -124,7 +124,7 @@ class NoriCollection(list[T]):
                     if not field.startswith('_'):
                         try:
                             d[field] = getattr(i, field)
-                        except Exception:
+                        except Exception:  # noqa: S110, BLE001 — silently skip inaccessible fields (lazy/descriptor) during serialization
                             pass
                 result.append(d)
             elif isinstance(i, dict):

@@ -45,7 +45,7 @@ from core.auth.oauth import generate_state, validate_state
 from core.conf import config
 
 _AUTHORIZE_URL = 'https://github.com/login/oauth/authorize'
-_TOKEN_URL = 'https://github.com/login/oauth/access_token'
+_TOKEN_URL = 'https://github.com/login/oauth/access_token'  # noqa: S105 — public OAuth endpoint, not a secret
 _USER_URL = 'https://api.github.com/user'
 _EMAILS_URL = 'https://api.github.com/user/emails'
 _DEFAULT_SCOPES = 'read:user,user:email'

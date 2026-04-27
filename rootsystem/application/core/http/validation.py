@@ -360,10 +360,10 @@ async def _check_unique(
     conn = connections.get('default')
 
     if except_id:
-        sql = f'SELECT COUNT(*) AS cnt FROM {table} WHERE {column} = $1 AND id != $2'
+        sql = f'SELECT COUNT(*) AS cnt FROM {table} WHERE {column} = $1 AND id != $2'  # noqa: S608 — table/column validated against _IDENTIFIER_RE above; values are parameterized
         _, result = await conn.execute_query(sql, [value, except_id])
     else:
-        sql = f'SELECT COUNT(*) AS cnt FROM {table} WHERE {column} = $1'
+        sql = f'SELECT COUNT(*) AS cnt FROM {table} WHERE {column} = $1'  # noqa: S608 — table/column validated against _IDENTIFIER_RE above; values are parameterized
         _, result = await conn.execute_query(sql, [value])
 
     count = result[0]['cnt'] if result else 0

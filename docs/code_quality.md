@@ -31,6 +31,7 @@ indent-style = "space"
 | `I` | isort — import ordering (auto-fixable) |
 | `UP` | pyupgrade — modernize syntax to your declared `target-version` |
 | `B` | flake8-bugbear — likely bugs (mutable defaults, misuse of `assert`, etc.) |
+| `S` | flake8-bandit — security checks (hardcoded secrets, SQL injection, weak hashes, insecure subprocess, etc.) |
 
 `E501` (line-too-long) is delegated to the formatter. The format defaults are `single` quotes (matching the dominant convention in framework code) and 4-space indentation.
 

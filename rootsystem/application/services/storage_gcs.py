@@ -39,7 +39,7 @@ import httpx
 from core.conf import config
 from core.http.upload import register_storage_driver
 
-_TOKEN_SCOPE = 'https://www.googleapis.com/auth/devstorage.read_write'
+_TOKEN_SCOPE = 'https://www.googleapis.com/auth/devstorage.read_write'  # noqa: S105 — public GCS scope identifier, not a secret
 
 _token_cache: dict = {'token': None, 'expires_at': 0.0}
 _token_lock = asyncio.Lock()

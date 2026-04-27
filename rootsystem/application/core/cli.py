@@ -24,7 +24,7 @@ _APP_DIR = os.path.join('rootsystem', 'application')
 # ---------------------------------------------------------------------------
 
 
-def serve(host: str = '0.0.0.0', port: int = 8000) -> None:
+def serve(host: str = '0.0.0.0', port: int = 8000) -> None:  # noqa: S104 — dev server intentionally binds all interfaces (Docker, mobile testing)
     print('Booting up Nori Framework (Uvicorn) in development mode...')
     try:
         subprocess.run(
@@ -810,7 +810,7 @@ def main() -> None:
     subparsers = parser.add_subparsers(dest='command', help='Available commands')
 
     serve_parser = subparsers.add_parser('serve', help='Start the dev server with hot reload')
-    serve_parser.add_argument('--host', default='0.0.0.0', help='Bind address (default: 0.0.0.0)')
+    serve_parser.add_argument('--host', default='0.0.0.0', help='Bind address (default: 0.0.0.0)')  # noqa: S104 — dev server intentionally binds all interfaces
     serve_parser.add_argument('--port', type=int, default=8000, help='Port (default: 8000)')
 
     subparsers.add_parser('shell', help='Open an async REPL with Tortoise + registered models loaded')

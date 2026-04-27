@@ -18,6 +18,7 @@ select = [
     "I",   # isort (import sorting)
     "UP",  # pyupgrade (modernize syntax to target-version)
     "B",   # flake8-bugbear (likely bugs)
+    "S",   # flake8-bandit (security)
 ]
 ignore = [
     "E501",  # line too long — handled by formatter
@@ -34,9 +35,28 @@ ignore = [
 "rootsystem/application/core/__init__.py" = ["E402"]
 # load_dotenv() must run before any module that reads env vars at import time.
 "rootsystem/application/settings.py" = ["E402"]
-# Test setup commonly needs sys.path edits, env var injection, or importlib
-# patches before importing the module under test.
-"tests/**/*.py" = ["E402"]
+# Tests legitimately use pytest's `assert` (S101), declare hardcoded credentials
+# and URLs in fixtures (S105, S106), reference /tmp paths in mocks (S108), and
+# use random for non-crypto purposes (S311). E402 covers sys.path/env/importlib
+# patches before the module-under-test import.
+"tests/**/*.py" = ["E402", "S101", "S105", "S106", "S108", "S311"]
+# core/cli.py spawns subprocesses (uvicorn, aerich, python -c scripts) with
+# hardcoded executables and args — never user input. S603 flags every
+# subprocess.run regardless of input source. S310 covers the framework:update
+# downloader (URL constructed from the hardcoded GITHUB_REPO). Per-file-ignore
+# is honest about the policy without disabling these rules globally for user code.
+"rootsystem/application/core/cli.py" = ["S603", "S310"]
+# core/testing.py provides pytest-style assertion helpers (assert_redirects,
+# assert_json_error) for user tests. The asserts are the point of the module.
+"rootsystem/application/core/testing.py" = ["S101"]
+# Recursive CTE queries in NoriTreeMixin construct identifiers via multi-line
+# f-strings but validate them via isalnum() (see lines ~81 and ~109) before
+# the query runs. Ruff cannot follow validation through multi-line concatenation,
+# and noqa on a single line of a multi-line f-string does not always suppress.
+"rootsystem/application/core/mixins/tree.py" = ["S608"]
+# Installer trusts URLs constructed from the hardcoded GitHub repo (S310) and
+# invokes git from PATH (S607). Acceptable for a one-shot install script.
+"docs/install.py" = ["S310", "S603", "S607"]
 
 [tool.ruff.format]
 quote-style = "single"

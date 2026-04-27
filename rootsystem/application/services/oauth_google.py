@@ -44,7 +44,7 @@ from core.auth.oauth import generate_pkce_verifier, generate_state, get_pkce_ver
 from core.conf import config
 
 _AUTHORIZE_URL = 'https://accounts.google.com/o/oauth2/v2/auth'
-_TOKEN_URL = 'https://oauth2.googleapis.com/token'
+_TOKEN_URL = 'https://oauth2.googleapis.com/token'  # noqa: S105 — public OAuth endpoint, not a secret
 _USERINFO_URL = 'https://openidconnect.googleapis.com/v1/userinfo'
 _DEFAULT_SCOPES = 'openid email profile'
 
