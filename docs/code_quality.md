@@ -339,10 +339,73 @@ Run `mypy` after each tightening to triage the new errors. Loosen per-module wit
 
 ---
 
+## Cyclomatic complexity
+
+Ruff's `C90` (mccabe) rule caps function complexity at 10 — the standard threshold across the Python ecosystem. A function whose branching exceeds 10 typically benefits from being split.
+
+```toml
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "UP", "B", "S", "C90"]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+```
+
+Per-file-ignores in `pyproject.toml` document the legitimate exceptions (CLI dispatchers, DI decorator factories, validation rule dispatchers — places where flattening would fragment a coherent unit). New code must respect the default; raising the threshold is not a substitute for refactoring.
+
+---
+
+## Dependency vulnerability scanning
+
+The `Audit` workflow at `.github/workflows/audit.yml` runs `pip-audit` against both `requirements.nori.txt` and `requirements-dev.txt` on every push and PR to `main`. New CVEs in any direct or transitive dependency fail the build immediately.
+
+Each `--ignore-vuln` flag in the workflow has a documented justification — usually one of:
+
+1. **No upstream fix yet.** Document the actual risk vector; revisit each release.
+2. **Fix requires Python ≥ 3.10.** Will be removed in v1.11.0 (drops Python 3.9, EOL since 2025-10-31).
+3. **Vulnerable function not used by Nori or its callers.** Document which function and why we don't reach it.
+
+A bare ignore without justification is a bug — `pip-audit` is only useful as a gate when the ignore list is honest.
+
+```bash
+pip install pip-audit
+pip-audit -r requirements.nori.txt    # local check
+```
+
+---
+
+## Docstring coverage
+
+The `Docstrings` workflow at `.github/workflows/docstrings.yml` enforces a minimum docstring coverage via [interrogate](https://github.com/econchick/interrogate). The v1.10.7 incident — 17 module docstrings silently lost when `from __future__ import annotations` was placed before the docstring — is exactly the kind of regression this gate prevents.
+
+```toml
+[tool.interrogate]
+fail-under = 70
+ignore-init-module = true
+ignore-init-method = true
+ignore-magic = true
+ignore-property-decorators = true
+ignore-nested-functions = true
+ignore-regex = ["^Meta$"]   # Tortoise convention; configuration sentinel
+```
+
+Module docstrings are NOT exempt — they are precisely what the v1.10.7 regression broke. Run locally:
+
+```bash
+interrogate                     # check all of rootsystem/application
+interrogate -vv path/file.py    # detail per item
+```
+
+The floor is intentionally a few points below the current baseline to absorb churn; raise it as the codebase sustains a higher number.
+
+---
+
 ## See also
 
 - [Ruff documentation](https://docs.astral.sh/ruff/)
 - [Coverage.py documentation](https://coverage.readthedocs.io/)
 - [mypy documentation](https://mypy.readthedocs.io/)
+- [pip-audit documentation](https://pypi.org/project/pip-audit/)
+- [interrogate documentation](https://interrogate.readthedocs.io/)
 - [Dependencies](dependencies.md) — how `requirements-dev.txt` works alongside framework deps
 - [Testing](testing.md) — pytest setup for Nori projects
