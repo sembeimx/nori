@@ -23,6 +23,8 @@ def register_queue_driver(name: str, handler: Callable):
 async def push(func_path: str, *args, queue: str = 'default', delay: int = 0, **kwargs):
     driver_name = config.get('QUEUE_DRIVER', 'memory')
     handler = _DRIVERS.get(driver_name, _DRIVERS.get('memory'))
+    if handler is None:
+        raise RuntimeError('No queue driver registered (memory driver missing)')
     payload = {'func': func_path, 'args': args, 'kwargs': kwargs}
     await handler(queue, payload, delay=delay)
 

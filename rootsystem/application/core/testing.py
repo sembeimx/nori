@@ -86,7 +86,12 @@ async def setup_test_db(extra_models: list[str] | None = None) -> None:
     """
     import settings
 
-    model_modules = list(settings.TORTOISE_ORM.get('apps', {}).get('models', {}).get('models', ['models']))
+    # settings.TORTOISE_ORM has dict-of-dicts shape, but its values are typed
+    # as object since the schema is heterogeneous (per Tortoise docs).
+    tortoise_cfg: dict = settings.TORTOISE_ORM
+    apps_cfg: dict = tortoise_cfg.get('apps', {})
+    models_cfg: dict = apps_cfg.get('models', {})
+    model_modules = list(models_cfg.get('models', ['models']))
     if extra_models:
         model_modules.extend(extra_models)
 

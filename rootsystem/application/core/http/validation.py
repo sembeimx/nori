@@ -123,7 +123,7 @@ def validate(
             if not rule:
                 continue
 
-            param: str | None = None
+            param: str = ''
             if ':' in rule:
                 rule, param = rule.split(':', 1)
 
@@ -141,7 +141,7 @@ def validate(
 
 def _check_rule(
     rule: str,
-    param: str | None,
+    param: str,
     field: str,
     value: str,
     data: dict[str, object],
@@ -223,24 +223,24 @@ def _check_rule(
 
     elif rule == 'min_value':
         try:
-            n = float(param)
+            n_float: float = float(param)
         except (ValueError, TypeError):
             raise ValueError(f"Invalid parameter for 'min_value' rule: '{param}'") from None
         if value:
             try:
-                if float(value) < n:
+                if float(value) < n_float:
                     return _msg(field, rule, messages, n=param)
             except ValueError:
                 return _msg(field, rule, messages, n=param)
 
     elif rule == 'max_value':
         try:
-            n = float(param)
+            n_float = float(param)
         except (ValueError, TypeError):
             raise ValueError(f"Invalid parameter for 'max_value' rule: '{param}'") from None
         if value:
             try:
-                if float(value) > n:
+                if float(value) > n_float:
                     return _msg(field, rule, messages, n=param)
             except ValueError:
                 return _msg(field, rule, messages, n=param)
@@ -320,7 +320,7 @@ async def validate_async(
             if not rule:
                 continue
 
-            param: str | None = None
+            param: str = ''
             if ':' in rule:
                 rule, param = rule.split(':', 1)
 
@@ -333,7 +333,7 @@ async def validate_async(
 
 
 async def _check_unique(
-    param: str | None,
+    param: str,
     field: str,
     value: str,
     messages: dict[str, str] | None,

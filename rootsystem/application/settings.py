@@ -25,6 +25,7 @@ STATIC_DIR = join(_root, 'rootsystem', 'static')
 DB_ENABLED = os.environ.get('DB_ENABLED', 'true').lower() in ('true', '1', 'yes')
 DB_ENGINE = os.environ.get('DB_ENGINE', 'mysql')
 
+_connection: str | dict[str, object]
 if DB_ENGINE == 'sqlite':
     _db_name = os.environ.get('DB_NAME', 'db.sqlite3')
     _db_path = _db_name if isabs(_db_name) else join(_app_dir, _db_name)

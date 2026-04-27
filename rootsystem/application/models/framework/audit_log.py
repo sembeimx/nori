@@ -15,7 +15,7 @@ class AuditLog(NoriModelMixin, Model):
     action = fields.CharField(max_length=50)  # create/update/delete/login/logout/custom
     model_name = fields.CharField(max_length=100, null=True)
     record_id = fields.CharField(max_length=100, null=True)
-    changes = fields.JSONField(null=True)  # {"field": {"before": ..., "after": ...}}
+    changes: dict | None = fields.JSONField(null=True)  # {"field": {"before": ..., "after": ...}}
     ip_address = fields.CharField(max_length=45, null=True)
     request_id = fields.CharField(max_length=36, null=True)
     created_at = fields.DatetimeField(auto_now_add=True)

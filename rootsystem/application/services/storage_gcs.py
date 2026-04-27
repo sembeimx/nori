@@ -86,6 +86,7 @@ def _build_jwt(client_email: str, private_key_pem: str, token_uri: str) -> str:
     """
     from cryptography.hazmat.primitives import hashes, serialization
     from cryptography.hazmat.primitives.asymmetric import padding
+    from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey
 
     now = int(time.time())
     header = {'alg': 'RS256', 'typ': 'JWT'}
@@ -102,6 +103,11 @@ def _build_jwt(client_email: str, private_key_pem: str, token_uri: str) -> str:
     signing_input = f'{header_b64}.{claims_b64}'
 
     private_key = serialization.load_pem_private_key(private_key_pem.encode(), password=None)
+    # GCS service-account keys are RSA. load_pem_private_key returns a union of
+    # RSA/DSA/DH/Ed25519/Ed448/X25519/X448 — only RSA exposes the (data, padding,
+    # hash) sign signature this code uses, so narrow before signing.
+    if not isinstance(private_key, RSAPrivateKey):
+        raise RuntimeError('GCS service account private key must be RSA')
     signature = private_key.sign(signing_input.encode(), padding.PKCS1v15(), hashes.SHA256())
 
     return f'{signing_input}.{_b64url(signature)}'

@@ -12,7 +12,7 @@ class Job(NoriModelMixin, Model):
 
     id = fields.BigIntField(primary_key=True)
     queue = fields.CharField(max_length=50, default='default', index=True)
-    payload = fields.JSONField()
+    payload: dict = fields.JSONField()
     attempts = fields.IntField(default=0)
     reserved_at = fields.DatetimeField(null=True)
     available_at = fields.DatetimeField(auto_now_add=True)

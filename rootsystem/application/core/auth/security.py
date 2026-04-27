@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import hashlib
 import hmac
 import secrets
@@ -9,7 +11,7 @@ class Security:
     """Password hashing and token generation."""
 
     @staticmethod
-    def hash_password(password: str, iterations: int = None) -> str:
+    def hash_password(password: str, iterations: int | None = None) -> str:
         """
         Hash with PBKDF2-HMAC-SHA256.
         Returns: 'pbkdf2_sha256$iterations$salt$hash'

@@ -520,6 +520,9 @@ def framework_update(target_version: str | None = None, skip_backup: bool = Fals
         print('  Check your internet connection or set GITHUB_TOKEN for private repos.')
         return
 
+    if not isinstance(release, dict):
+        print('\n  Error: Unexpected GitHub API response shape (not an object).')
+        return
     tag = release['tag_name']
     version = tag.lstrip('v')
     print(f'  Target version:  {version} ({tag})')

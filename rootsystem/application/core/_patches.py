@@ -53,7 +53,8 @@ def _patch_bootstrap_hook_in_asgi() -> bool:
         )
         is_future = isinstance(stmt, ast.ImportFrom) and stmt.module == '__future__'
         if is_docstring or is_future:
-            insert_lineno = stmt.end_lineno + 1
+            # AST end_lineno is Optional[int]; for real source nodes it's always set.
+            insert_lineno = (stmt.end_lineno or stmt.lineno) + 1
             continue
         break
 
