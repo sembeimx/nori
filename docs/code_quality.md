@@ -168,6 +168,46 @@ line-length = 100  # default is 88; Nori ships with 120 to match existing code
 
 ---
 
+## Pre-commit hooks
+
+Nori ships with `.pre-commit-config.yaml` so ruff runs on every `git commit`. CI catches violations after the push, but pre-commit catches them before — saving the round trip.
+
+### Activate once per clone
+
+```bash
+.venv/bin/pip install -r requirements-dev.txt   # installs pre-commit
+.venv/bin/pre-commit install                    # writes .git/hooks/pre-commit
+```
+
+After that, every `git commit` runs:
+
+- `ruff check --fix` — lint and auto-fix
+- `ruff format` — format
+
+If either modifies files, the commit is aborted so you can review the changes and re-stage. The first run downloads ruff into pre-commit's isolated environment; subsequent runs are fast (~100ms).
+
+### Run against all files manually
+
+Useful before opening a PR or after pulling someone else's changes:
+
+```bash
+.venv/bin/pre-commit run --all-files
+```
+
+### Bump the ruff version
+
+```bash
+.venv/bin/pre-commit autoupdate
+```
+
+Updates `rev:` in `.pre-commit-config.yaml` to the latest stable tag of `astral-sh/ruff-pre-commit`. Commit the resulting diff so other contributors pick up the same version.
+
+### Skipping hooks
+
+`git commit --no-verify` bypasses the hooks. **Avoid it.** If a hook is firing on something you believe is wrong, fix the rule (per-file-ignore or pyproject.toml change) rather than the symptom.
+
+---
+
 ## Test coverage
 
 Nori ships pre-configured with [`pytest-cov`](https://pytest-cov.readthedocs.io/) so every test run measures how much of `rootsystem/application` was exercised. The `Tests` workflow in CI reports coverage on every push and fails the build if the project drops below the configured threshold.

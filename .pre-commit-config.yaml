@@ -1,0 +1,17 @@
+# Pre-commit hooks — run lint + format locally before every commit.
+#
+# Install once per clone:
+#   .venv/bin/pre-commit install
+#
+# Run against all files manually:
+#   .venv/bin/pre-commit run --all-files
+#
+# Bump the ruff version:
+#   .venv/bin/pre-commit autoupdate
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.12
+    hooks:
+      - id: ruff-check
+        args: [--fix]
+      - id: ruff-format
