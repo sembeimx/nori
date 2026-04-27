@@ -70,6 +70,7 @@ nav:
   - Operations:
       - Deployment: deployment.md
       - Dependencies: dependencies.md
+      - Code Quality: code_quality.md
       - Observability: observability.md
       - Roadmap: roadmap.md
 

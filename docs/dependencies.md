@@ -133,12 +133,16 @@ If your site predates 1.7.1 and was based on an earlier Nori `Dockerfile`, add `
 
 ## Dev dependencies
 
-`requirements-dev.txt` is yours and is never touched by `framework:update`. The convention is to start it with `-r requirements.txt` so dev installs include prod deps, then add testing tools:
+`requirements-dev.txt` is yours and is never touched by `framework:update`. The convention is to start it with `-r requirements.txt` so dev installs include prod deps, then add testing and tooling:
 
 ```text
 -r requirements.txt
 pytest>=8.0
 pytest-asyncio>=1.0
+cryptography>=42.0
+ruff>=0.6
 ```
 
 Because `requirements.txt` now `-r`s `requirements.nori.txt`, `pip install -r requirements-dev.txt` transitively installs everything. No changes needed.
+
+Fresh Nori projects ship with `pytest`, `pytest-asyncio` (test runners), `cryptography` (used by some service drivers' tests), and `ruff` (lint + format). See [Code Quality](code_quality.md) for how ruff is configured and how to customize the rules for your project.
