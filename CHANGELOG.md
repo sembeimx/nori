@@ -4,6 +4,47 @@ All notable changes to Nori are documented here. Format follows [Keep a Changelo
 
 ---
 
+## [1.10.8] — 2026-04-26
+
+### Added
+
+- **Test coverage tracking with `pytest-cov`.** Every test run now measures branch coverage of `rootsystem/application` and reports a per-file table at the end. The `Tests` workflow fails any push or PR that drops below the configured floor.
+
+  Configuration in `pyproject.toml` under `[tool.coverage]`:
+  - `source = ["rootsystem/application"]` — framework code only
+  - `branch = true` — both lines AND conditional branches must be covered
+  - `fail_under = 75` — floor (intentionally below today's baseline so refactors have room; raise as the project sustains higher numbers)
+  - Excludes `migrations/`, `seeders/example_seeder.py`, and `commands/_example.py` (templates meant to be edited by users)
+
+  `pytest-cov>=5.0` added to `requirements-dev.txt`. Existing projects can opt in by copying the `[tool.coverage]` sections to their own `pyproject.toml`.
+
+- **Pre-commit hooks for ruff lint + format.** New `.pre-commit-config.yaml` at repo root pinned to `astral-sh/ruff-pre-commit` v0.15.12. Runs `ruff check --fix` and `ruff format` on every `git commit` so violations are caught locally instead of waiting for CI.
+
+  Activation per clone:
+  ```bash
+  .venv/bin/pip install -r requirements-dev.txt
+  .venv/bin/pre-commit install
+  ```
+
+  `pre-commit>=3.5` added to `requirements-dev.txt`. The `.pre-commit-config.yaml` ships to fresh projects via the starter manifest.
+
+- **Security rules (`S`) enabled in ruff.** flake8-bandit checks for hardcoded secrets, SQL injection patterns, weak hashes, insecure subprocess calls, `/tmp` paths, and similar issues. The rule set ran clean against the current codebase: 975 raw findings triaged to 0 violations, zero real security bugs found.
+
+  Most findings were structural false positives (`assert` is the language of pytest, framework subprocess calls use hardcoded args, `_TOKEN_URL` constants are public OAuth endpoints not secrets, recursive CTE queries already validate identifiers via `_IDENTIFIER_RE` / `isalnum()`). Each per-file-ignore in `pyproject.toml` carries a justification comment naming the architectural reason — no silent suppressions.
+
+### Docs
+
+- `docs/code_quality.md` — added "Pre-commit hooks" and "Test coverage" sections covering activation, manual all-files runs, version bumps, threshold tuning, exclusion list, and adoption steps for existing projects.
+
+### Compatibility
+
+- No API changes. Existing projects are unaffected — `framework:update` does not touch user-owned `requirements-dev.txt`, `pyproject.toml`, or repo-root configuration files. To adopt any of the three additions in an existing project, follow the relevant section of the new Code Quality docs:
+  - Add `pytest-cov>=5.0` to `requirements-dev.txt` and copy the `[tool.coverage]` sections
+  - Add `pre-commit>=3.5` to `requirements-dev.txt`, copy `.pre-commit-config.yaml`, and run `pre-commit install`
+  - Add `S` to your ruff `select` and define your own per-file-ignores for tests and any framework-internal subprocess wrappers
+
+---
+
 ## [1.10.7] — 2026-04-26
 
 ### Fixed
