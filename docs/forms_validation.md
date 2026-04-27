@@ -112,6 +112,22 @@ validate(form, {'password': 'required|password_strength:8,upper,lower,digit,spec
 
 The character-class checks are Unicode-aware (`str.isupper`, `str.islower`, `str.isdigit`); `special` matches any non-alphanumeric character per `str.isalnum`.
 
+#### The `email` rule contract
+
+The `email` regex is **intentionally pragmatic**, not RFC-compliant. The same posture as Django's `EmailValidator`, Rails's `Devise.email_regexp`, and Laravel's default `email` rule — covering the common case while rejecting structurally suspicious input that almost always indicates a typo or hostile payload.
+
+What the rule **rejects** that a strict RFC 5321 implementation would accept:
+
+| Input | Why rejected |
+|-------|-------------|
+| `"a b"@example.com` | Quoted local parts (RFC 5321 §4.1.2) — almost never seen in practice; a common payload shape for header injection. |
+| `user@[192.168.1.1]` | IP-literal hosts — accepted by RFC 5321 but vanishingly rare in user-supplied addresses; usually a sign of automated form abuse. |
+| `a@b.c` | Single-character TLDs — no real TLD is one character; almost always a typo. |
+| `user@example.XN--90AIS` | IDN/Punycode TLDs (`xn--…`) — the regex enforces alphabetic TLDs only. International domains in their Unicode form (`example.рф`) are also rejected. |
+| `.user@example.com`, `+tag@example.com` | Local part starting with a non-alphanumeric character. The rule allows `.` and `+` **inside** the local part (`first.last`, `user+tag@…` are valid), just not as the first character. |
+
+If your project genuinely needs IDN, IP-literal, or quoted-local support, write a custom regex rule with the `regex:` validator and surface the trade-off in your form copy.
+
 ### Custom Error Messages
 
 `validate()` accepts an optional third parameter to override default error messages per `field.rule`:
