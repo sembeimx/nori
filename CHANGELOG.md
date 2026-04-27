@@ -4,6 +4,30 @@ All notable changes to Nori are documented here. Format follows [Keep a Changelo
 
 ---
 
+## [1.10.10] — 2026-04-26
+
+### Added
+
+- **Cyclomatic complexity gate (ruff `C90`).** Mccabe complexity threshold set to 10 — the standard across the Python ecosystem. Ran clean against the codebase except for 4 documented exceptions (CLI dispatchers, DI decorator factories, validation rule dispatchers — all places where flattening would fragment a coherent unit). Each per-file-ignore in `pyproject.toml` carries a justification. New code must respect the default; future refactors should remove the exceptions, not raise the threshold.
+
+- **Dependency vulnerability scanning (`pip-audit`).** New `Audit` workflow at `.github/workflows/audit.yml` runs `pip-audit` against `requirements.nori.txt` and `requirements-dev.txt` on every push and PR to `main`. Currently 8 known vulnerabilities are explicitly ignored with documented justification — 1 has no upstream fix (asyncmy SQL injection vector that doesn't apply to Nori's Tortoise ORM usage), and 7 require Python 3.10+ to fix (will be removed in v1.11.0 when 3.9 is dropped). New CVEs not in the ignore list will fail CI immediately. `pip-audit>=2.7` added to `requirements-dev.txt`.
+
+- **Docstring coverage gate (`interrogate`).** New `Docstrings` workflow at `.github/workflows/docstrings.yml` enforces a `fail-under = 70` minimum docstring coverage. The v1.10.7 incident — 17 module docstrings silently lost when `from __future__ import annotations` was placed before them — is exactly the regression this gate prevents. Module docstrings are NOT exempt (which was the v1.10.7 vector); only `__init__.py` shims, `__init__` methods, magic methods, property decorators, nested functions, and Tortoise's `class Meta:` configuration sentinels are skipped. Configuration in `pyproject.toml` under `[tool.interrogate]`. `interrogate>=1.7` added to `requirements-dev.txt`.
+
+### Fixed
+
+- **19 module-level docstrings added across the framework.** Files that lacked a top-level docstring (and so showed empty `__doc__` in `pydoc`, `help()`, and IDE tooltips): `routes.py`, `settings.py`, `core/{collection,jinja,pagination,queue,queue_worker}.py`, `core/auth/{decorators,security}.py`, `core/http/{inject,throttle}.py`, `core/mixins/{model,soft_deletes,tree}.py`, `models/framework/{audit_log,job,permission,role}.py`, `modules/page.py`. Each now has a one-line description placed BEFORE `from __future__ import annotations` (the v1.10.7 ordering rule).
+
+### Compatibility
+
+- No API changes. Adoption in existing projects: copy the `[tool.interrogate]` section + `C90` selection + `[tool.ruff.lint.mccabe]` from the framework's `pyproject.toml`, copy `.github/workflows/{audit,docstrings}.yml`, and add `pip-audit>=2.7`, `interrogate>=1.7` to `requirements-dev.txt`.
+
+### Notes
+
+- Python 3.9 EOL was 2025-10-31. **v1.11.0 will drop Python 3.9 support** as a dedicated release — necessary to consume security fixes for `python-multipart`, `python-dotenv`, `pytest`, `filelock`, and `requests` (all of which require Python 3.10+ in their fixed versions). The `pip-audit` ignore list will shrink to a single entry (asyncmy) at that point.
+
+---
+
 ## [1.10.9] — 2026-04-26
 
 ### Added
