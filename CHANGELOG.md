@@ -4,6 +4,30 @@ All notable changes to Nori are documented here. Format follows [Keep a Changelo
 
 ---
 
+## [1.12.1] — 2026-04-26
+
+### Security
+
+- **`SECURITY.md` policy file** at the repository root. Documents supported versions, the responsible disclosure process (`security@sembei.mx` with a 3-day acknowledgement target and 14-day disclosure timeline), in-scope / out-of-scope criteria, and an inventory of the framework's hardening defaults. This is the file every reputable open-source project ships and the entry point GitHub uses for the "Security" tab and the "Report a vulnerability" button on the repo home.
+
+- **Secrets scanning in CI** via `gitleaks` (`.github/workflows/secrets.yml`). Runs on every push and PR to `main`, scans the **full git history** (not just the diff), and fails the build if any high-confidence secret is detected (AWS keys, Stripe keys, JWT bearer tokens, PEM blocks, etc.). Uses the gitleaks binary directly to sidestep `gitleaks-action`'s licensing requirement for organisation accounts. Initial scan of all 156 commits in `main` is clean — no leaks found.
+
+- **Dependabot config** (`.github/dependabot.yml`) for automatic dependency-update PRs. Two ecosystems wired:
+  - **Python** (`pip`) — scans `requirements.txt` + `requirements.nori.txt` + `requirements-dev.txt` (the `-r` chain is followed transitively). Dev tooling (`pytest`, `ruff`, `mypy`, `pre-commit`, `pip-audit`, `interrogate`, `filelock`) is grouped into a single PR per week to avoid noise.
+  - **GitHub Actions** — keeps `actions/checkout`, `actions/setup-python`, etc. current.
+
+  Schedule: weekly on Mondays at 06:00 ART. Open-PR limits prevent flooding (5 for pip, 3 for actions). Dependabot is the **active** counterpart to `pip-audit`'s **passive** CVE detection — together they close the loop: pip-audit fails the build when a CVE lands, Dependabot opens the PR that fixes it.
+
+### Compatibility
+
+- Pure repository-level additions. No framework code, settings, dependencies, or runtime behavior changes. Existing projects are unaffected; framework users do not need to do anything.
+
+### Notes
+
+- The `security@sembei.mx` email alias must be active in your DNS / Google Workspace before the first vulnerability report arrives. If it's not yet set up, point the alias at `e@sembei.mx` (or update `SECURITY.md` to use a different address).
+
+---
+
 ## [1.12.0] — 2026-04-26
 
 ### Added
