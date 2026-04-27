@@ -21,10 +21,11 @@ Current state of Nori and what's coming next.
 | **Architecture** | Decoupled core via `core.conf` (config provider) and `core.registry` (model registry). Framework-agnostic to application code |
 | **Observability** | Pre-Starlette `bootstrap.py` hook for Sentry / OpenTelemetry / Datadog SDKs that need to patch libraries at import time. Idempotent `framework:update` patch system wires it into existing sites automatically. |
 | **Dependency Management** | Split `requirements.nori.txt` (framework-owned, refreshed on update) + `requirements.txt` (user-owned, `-r`s the framework file). Engine-aware Aerich migrations generated locally per site to avoid SQLite/MySQL/Postgres drift. |
-| **CLI** | `serve`, `shell` (async REPL with models pre-loaded), `make:controller`, `make:model`, `make:seeder`, `migrate:*`, `db:seed`, `queue:work`, `framework:update`, `framework:version` |
+| **CLI** | `serve`, `shell` (async REPL with models pre-loaded), `make:controller`, `make:model`, `make:seeder`, `migrate:*`, `db:seed`, `queue:work`, `framework:update`, `framework:version`, `routes:list`, `audit:purge`, `check:deps` |
 | **Forms** | `flash_old()` + `{{ old('field') }}` Jinja helper for re-populating forms across validation errors. Sensitive fields (passwords) auto-excluded. |
 | **Deployment** | Dockerfile, docker-compose, Gunicorn config (with `forwarded_allow_ips` defaults for proxied setups), Apache/Nginx/Caddy examples, MkDocs documentation site |
-| **Tests** | 585 tests (pytest + pytest-asyncio), unit + E2E with httpx, CLI command coverage |
+| **Tests** | 601 tests (pytest + pytest-asyncio), unit + E2E with httpx, CLI command coverage |
+| **Code Quality Gates** | Lint (ruff E/W/F/I/UP/B/S/C90), format (ruff), type checking (mypy gradual), test coverage ≥75%, dependency vulnerability scanning (pip-audit), docstring coverage ≥70% (interrogate). All wired to CI on push and PR to main. |
 
 ---
 
@@ -39,6 +40,9 @@ All production-critical gaps have been addressed:
 | **Brute-force protection** | Per-account lockout with escalating backoff (1m → 5m → 15m → 30m → 1h) via `core/auth/login_guard.py`. |
 | **Session permissions TTL** | `require_permission` auto-refreshes from the database when the cache expires (default: 5 minutes, configurable via `PERMISSIONS_TTL`). |
 | **JWT revocation** | `revoke_token()` adds the token's `jti` to a cache-backed blacklist. `verify_token()` checks the blacklist automatically. Blacklist entries auto-expire with the token. |
+| **Fail-fast on misconfigured Redis** (v1.11.0) | `CACHE_BACKEND=redis` and `THROTTLE_BACKEND=redis` now require Redis to be reachable at startup — no more silent fallback to memory. Misconfigured deployments fail boot instead of serving inconsistent state across workers. |
+| **Auto-propagated Request-ID** (v1.11.0) | Request-ID stored in a `ContextVar`; every log record under a request automatically carries `record.request_id`, including from `asyncio.create_task` background work. Correlates logs ↔ traces without threading through call signatures. |
+| **Deep `/health` + `check:deps` CLI** (v1.12.0) | `/health` now probes DB + cache + throttle, returns 503 if any dependency is down (orchestrator-friendly). `check:deps` CLI runs the same probes pre-deploy / in CI. |
 
 ---
 
@@ -61,3 +65,11 @@ Translation support for templates and validation messages. The `messages=` param
 ### 4. Admin Panel
 
 Leverage `core.registry` to auto-discover registered models. Visual interface for AuditLog inspection, Job queue status, and basic CRUD.
+
+### 5. Migration SQL Dry-Run (`migrate:sql`)
+
+A `python3 nori.py migrate:sql` command that prints the **raw SQL** a pending migration will execute against the configured database, without touching it. Aerich generates a Python migration file that's already reviewable, but the actual SQL it produces against your live schema (especially around column renames, where Aerich sometimes infers a destructive `DROP + ADD` instead of `ALTER`) is invisible until `migrate:upgrade` runs.
+
+The implementation needs to either parse Aerich's migration file and replay each operation through Tortoise's schema generator capturing the SQL instead of executing it, or wrap the connection with an interceptor that logs the queries. Aerich 0.9.x does not expose a native `--dry-run` flag, so this is a non-trivial integration — estimated 1 week of work to ship rigorously (a half-baked version that shows SQL that doesn't exactly match what Aerich runs would be worse than nothing).
+
+Pairs naturally with mandatory PR-template review of migration SQL for any change that touches the schema.
