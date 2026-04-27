@@ -8,7 +8,10 @@ asserting the file content they produce.
 
 from __future__ import annotations
 
-from unittest.mock import patch
+import io
+import zipfile
+from unittest.mock import MagicMock, patch
+from urllib.error import HTTPError, URLError
 
 import pytest
 from core import cli
@@ -59,6 +62,15 @@ def test_make_model_generates_file_with_reminder(app_dir, capsys):
     out = capsys.readouterr().out
     assert 'Model User created' in out
     assert 'register' in out  # reminder to wire it up in models/__init__.py
+
+
+def test_make_model_refuses_to_overwrite(app_dir, capsys):
+    target = app_dir / 'models' / 'user.py'
+    target.write_text('# existing user model')
+    cli.make_model('User')
+
+    assert target.read_text() == '# existing user model'
+    assert 'already exists' in capsys.readouterr().out
 
 
 def test_make_seeder_generates_file(app_dir, capsys):
@@ -521,6 +533,18 @@ def test_has_existing_migrations_true_when_any_app_has_migrations(tmp_path, monk
     assert cli._has_existing_migrations() is True
 
 
+def test_has_existing_migrations_skips_non_directory_entries_under_migrations(tmp_path, monkeypatch):
+    """Stray files in migrations/ (e.g. .gitignore) are skipped, not treated as apps."""
+    migrations = tmp_path / 'migrations'
+    migrations.mkdir()
+    (migrations / '.gitignore').write_text('*.pyc')
+    models = migrations / 'models'
+    models.mkdir()
+    (models / '0_initial.py').write_text('# migration')
+    monkeypatch.setattr(cli, '_APP_DIR', str(tmp_path))
+    assert cli._has_existing_migrations() is True
+
+
 # ---------------------------------------------------------------------------
 # _github_api / _download_zip — HTTP helpers for framework:update
 # ---------------------------------------------------------------------------
@@ -842,3 +866,294 @@ def test_main_prints_help_when_no_command_given(monkeypatch, capsys):
     cli.main()
     out = capsys.readouterr().out
     assert 'Available commands' in out or 'usage' in out.lower()
+
+
+# ---------------------------------------------------------------------------
+# framework:update — end-to-end integration with mocked network boundary
+# ---------------------------------------------------------------------------
+#
+# Strategy: mock only `_github_api` and `_download_zip` (the network calls).
+# Let the rest run on the real filesystem against tmp_path: zip extraction,
+# backup creation, file replacement. This catches regressions in the actual
+# update flow rather than asserting our mocks are called.
+#
+# `core._patches.apply()` runs for real but is harmless: its CWD-relative
+# patchers (asgi.py, requirements.txt) find no targets in tmp_path and
+# return False without side effects.
+
+
+def _make_release_zip(zip_path, root='nori-1.99.0', files=None, dirs=None):
+    """Build a fake GitHub release zip mimicking ``zipball`` archive structure."""
+    files = files or {}
+    dirs = dirs or {}
+    with zipfile.ZipFile(zip_path, 'w') as zf:
+        zf.writestr(f'{root}/', '')
+        for rel_path, content in files.items():
+            zf.writestr(f'{root}/{rel_path}', content)
+        for rel_dir, contents in dirs.items():
+            zf.writestr(f'{root}/{rel_dir}', '')
+            for fname, content in contents.items():
+                zf.writestr(f'{root}/{rel_dir}{fname}', content)
+
+
+def _release_dirs():
+    """Standard fixture release content: all required framework files."""
+    return {
+        'rootsystem/application/core/': {
+            'version.py': "__version__ = '1.99.0'\n",
+            '__init__.py': '',
+            'cli.py': '# new cli\n',
+        },
+        'rootsystem/application/models/framework/': {
+            '__init__.py': '',
+        },
+    }
+
+
+@pytest.fixture
+def update_env(tmp_path, monkeypatch):
+    """Set up a fake project layout under tmp_path matching the real shape."""
+    app_dir = tmp_path / 'rootsystem' / 'application'
+    core_dir = app_dir / 'core'
+    framework_models_dir = app_dir / 'models' / 'framework'
+    core_dir.mkdir(parents=True)
+    framework_models_dir.mkdir(parents=True)
+    (core_dir / 'version.py').write_text("__version__ = '1.0.0'\n")
+    (tmp_path / 'requirements.nori.txt').write_text('# old\n')
+    monkeypatch.chdir(tmp_path)
+    return {
+        'tmp_path': tmp_path,
+        'app_dir': app_dir,
+        'core_dir': core_dir,
+        'framework_models_dir': framework_models_dir,
+    }
+
+
+def test_framework_update_happy_path_replaces_files_and_creates_backup(update_env, monkeypatch, capsys):
+    def fake_download(url, dest):
+        _make_release_zip(
+            dest,
+            root='nori-1.99.0',
+            dirs=_release_dirs(),
+            files={'requirements.nori.txt': '# new\n'},
+        )
+
+    monkeypatch.setattr(cli, '_github_api', lambda endpoint: {'tag_name': 'v1.99.0'})
+    monkeypatch.setattr(cli, '_download_zip', fake_download)
+
+    cli.framework_update(target_version='1.99.0')
+
+    out = capsys.readouterr().out
+    assert 'Updated: 1.0.0 → 1.99.0' in out
+    assert (update_env['core_dir'] / 'version.py').read_text() == "__version__ = '1.99.0'\n"
+    assert (update_env['core_dir'] / 'cli.py').read_text() == '# new cli\n'
+    assert (update_env['tmp_path'] / 'requirements.nori.txt').read_text() == '# new\n'
+
+    backups_root = update_env['tmp_path'] / 'rootsystem' / '.framework_backups'
+    backup_dirs = list(backups_root.iterdir())
+    assert len(backup_dirs) == 1
+    assert backup_dirs[0].name.startswith('v1.0.0_')
+    assert (backup_dirs[0] / 'core' / 'version.py').read_text() == "__version__ = '1.0.0'\n"
+
+
+def test_framework_update_calls_releases_latest_when_no_target_version(update_env, monkeypatch):
+    captured: dict = {}
+
+    def fake_api(endpoint):
+        captured['endpoint'] = endpoint
+        return {'tag_name': 'v1.0.0'}
+
+    monkeypatch.setattr(cli, '_github_api', fake_api)
+    monkeypatch.setattr(cli, '_download_zip', MagicMock())
+
+    cli.framework_update()
+
+    assert captured['endpoint'] == 'releases/latest'
+
+
+def test_framework_update_calls_releases_tags_when_target_version_given(update_env, monkeypatch):
+    """Endpoint format check; tag matches current version so the flow short-circuits before download."""
+    captured: dict = {}
+
+    def fake_api(endpoint):
+        captured['endpoint'] = endpoint
+        return {'tag_name': 'v1.0.0'}
+
+    monkeypatch.setattr(cli, '_github_api', fake_api)
+
+    cli.framework_update(target_version='1.0.0')
+
+    assert captured['endpoint'] == 'releases/tags/v1.0.0'
+
+
+def test_framework_update_already_up_to_date_returns_early(update_env, monkeypatch, capsys):
+    monkeypatch.setattr(cli, '_github_api', lambda endpoint: {'tag_name': 'v1.0.0'})
+    download = MagicMock(side_effect=AssertionError('should not download'))
+    monkeypatch.setattr(cli, '_download_zip', download)
+
+    cli.framework_update(target_version='1.0.0')
+
+    out = capsys.readouterr().out
+    assert 'Already up to date' in out
+    download.assert_not_called()
+
+
+def test_framework_update_force_proceeds_even_when_versions_match(update_env, monkeypatch, capsys):
+    def fake_download(url, dest):
+        _make_release_zip(
+            dest,
+            root='nori-1.0.0',
+            dirs={
+                'rootsystem/application/core/': {
+                    'version.py': "__version__ = '1.0.0'\n",
+                    '__init__.py': '',
+                },
+                'rootsystem/application/models/framework/': {'__init__.py': ''},
+            },
+            files={'requirements.nori.txt': '# refreshed\n'},
+        )
+
+    monkeypatch.setattr(cli, '_github_api', lambda endpoint: {'tag_name': 'v1.0.0'})
+    monkeypatch.setattr(cli, '_download_zip', fake_download)
+
+    cli.framework_update(target_version='1.0.0', force=True)
+
+    out = capsys.readouterr().out
+    assert 'Already up to date' not in out
+    assert 'Updated: 1.0.0 → 1.0.0' in out
+    assert (update_env['tmp_path'] / 'requirements.nori.txt').read_text() == '# refreshed\n'
+
+
+def test_framework_update_404_with_target_version_prints_specific_error(update_env, monkeypatch, capsys):
+    def fake_api(endpoint):
+        raise HTTPError('http://example', 404, 'Not Found', {}, io.BytesIO(b''))
+
+    monkeypatch.setattr(cli, '_github_api', fake_api)
+
+    cli.framework_update(target_version='9.9.9')
+
+    out = capsys.readouterr().out
+    assert 'Version v9.9.9 not found' in out
+
+
+def test_framework_update_404_without_target_version_prints_no_releases(update_env, monkeypatch, capsys):
+    def fake_api(endpoint):
+        raise HTTPError('http://example', 404, 'Not Found', {}, io.BytesIO(b''))
+
+    monkeypatch.setattr(cli, '_github_api', fake_api)
+
+    cli.framework_update()
+
+    out = capsys.readouterr().out
+    assert 'No releases found' in out
+
+
+def test_framework_update_url_error_on_api_prints_connection_error(update_env, monkeypatch, capsys):
+    def fake_api(endpoint):
+        raise URLError('No internet')
+
+    monkeypatch.setattr(cli, '_github_api', fake_api)
+
+    cli.framework_update()
+
+    out = capsys.readouterr().out
+    assert 'Could not connect to GitHub' in out
+
+
+def test_framework_update_url_error_on_download_prints_download_failed(update_env, monkeypatch, capsys):
+    monkeypatch.setattr(cli, '_github_api', lambda endpoint: {'tag_name': 'v1.99.0'})
+
+    def fake_download(url, dest):
+        raise URLError('connection reset')
+
+    monkeypatch.setattr(cli, '_download_zip', fake_download)
+
+    cli.framework_update(target_version='1.99.0')
+
+    out = capsys.readouterr().out
+    assert 'Download failed' in out
+
+
+def test_framework_update_zip_missing_core_dir_aborts(update_env, monkeypatch, capsys):
+    def fake_download(url, dest):
+        _make_release_zip(
+            dest,
+            root='nori-1.99.0',
+            dirs={'rootsystem/application/models/framework/': {'__init__.py': ''}},
+            files={'requirements.nori.txt': '# new\n'},
+        )
+
+    monkeypatch.setattr(cli, '_github_api', lambda endpoint: {'tag_name': 'v1.99.0'})
+    monkeypatch.setattr(cli, '_download_zip', fake_download)
+
+    cli.framework_update(target_version='1.99.0')
+
+    out = capsys.readouterr().out
+    assert 'Release zip does not contain' in out
+    # Original files preserved (no replacement happened)
+    assert (update_env['core_dir'] / 'version.py').read_text() == "__version__ = '1.0.0'\n"
+
+
+def test_framework_update_skip_backup_does_not_create_backup_dir(update_env, monkeypatch, capsys):
+    def fake_download(url, dest):
+        _make_release_zip(
+            dest,
+            root='nori-1.99.0',
+            dirs=_release_dirs(),
+            files={'requirements.nori.txt': '# new\n'},
+        )
+
+    monkeypatch.setattr(cli, '_github_api', lambda endpoint: {'tag_name': 'v1.99.0'})
+    monkeypatch.setattr(cli, '_download_zip', fake_download)
+
+    cli.framework_update(target_version='1.99.0', skip_backup=True)
+
+    out = capsys.readouterr().out
+    assert 'Backing up' not in out
+    backups_root = update_env['tmp_path'] / 'rootsystem' / '.framework_backups'
+    assert not backups_root.exists()
+
+
+def test_framework_update_non_dict_release_aborts(update_env, monkeypatch, capsys):
+    monkeypatch.setattr(cli, '_github_api', lambda endpoint: ['not-a-dict'])
+
+    cli.framework_update(target_version='1.99.0')
+
+    out = capsys.readouterr().out
+    assert 'Unexpected GitHub API response' in out
+
+
+def test_framework_update_reraises_non_404_http_error(update_env, monkeypatch):
+    """Only 404 is friendly-handled. 5xx etc. should bubble up so the caller sees the real failure."""
+
+    def fake_api(endpoint):
+        raise HTTPError('http://example', 503, 'Service Unavailable', {}, io.BytesIO(b''))
+
+    monkeypatch.setattr(cli, '_github_api', fake_api)
+
+    with pytest.raises(HTTPError) as exc_info:
+        cli.framework_update(target_version='1.99.0')
+    assert exc_info.value.code == 503
+
+
+def test_framework_update_migrate_fix_reminder_shown_when_migrations_exist(update_env, monkeypatch, capsys):
+    migrations_dir = update_env['app_dir'] / 'migrations' / 'models'
+    migrations_dir.mkdir(parents=True)
+    (migrations_dir / '0_20260101_initial.py').write_text('# migration')
+
+    def fake_download(url, dest):
+        _make_release_zip(
+            dest,
+            root='nori-1.99.0',
+            dirs=_release_dirs(),
+            files={'requirements.nori.txt': '# new\n'},
+        )
+
+    monkeypatch.setattr(cli, '_github_api', lambda endpoint: {'tag_name': 'v1.99.0'})
+    monkeypatch.setattr(cli, '_download_zip', fake_download)
+
+    cli.framework_update(target_version='1.99.0')
+
+    out = capsys.readouterr().out
+    assert 'migrate:fix' in out
+    assert 'aerich <0.9.2' in out
