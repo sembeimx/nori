@@ -4,6 +4,34 @@ All notable changes to Nori are documented here. Format follows [Keep a Changelo
 
 ---
 
+## [1.14.1] — 2026-04-27
+
+### Fixed
+
+- **Replaced deprecated `datetime.datetime.utcnow()`** with timezone-aware `datetime.datetime.now(datetime.timezone.utc)` at three sites: `services/storage_s3.py:63` (AWS SigV4 signing timestamp), `core/cli.py:658` (`audit_log:purge` cutoff query), and `core/cli.py:674` (audit log export filename). `datetime.utcnow()` is deprecated in Python 3.12+ and scheduled for removal; the test suite no longer emits the `DeprecationWarning`. The SigV4 strftime output is byte-identical to the previous code (the `Z` is a literal in the format string), so existing signed requests are unaffected. Uses `timezone.utc` (Python 3.0+) rather than `datetime.UTC` (3.11+) to keep the framework's 3.10 floor honest.
+
+### Changed
+
+- **`mypy --strict` now applies to three more high-stakes auth modules**: `core.auth.csrf`, `core.auth.jwt`, and `core.auth.oauth`. The strict-enforced surface goes from 3 to 6 modules (alongside the existing `core.auth.security`, `core.auth.login_guard`, `core.http.validation`). Type changes to satisfy the new flags: ASGI signatures in `csrf.py` annotated with `starlette.types` (`ASGIApp`, `Scope`, `Receive`, `Send`, `Message`); `verify_token` return type tightened from `dict` to `dict[str, Any] | None`; local annotations in `_get_secret`, `verify_token`, `get_pkce_verifier`, `_read_body` to narrow `config.get` / `dict.get` / `json.loads` Any returns. Renamed a shadowed loop variable in `_parse_multipart_token` (`part: str` vs `part: bytes`) to `seg`. No behavior changes; 45 auth tests pass.
+
+### Test coverage
+
+- **`services/search_meilisearch.py`: 43.1% → 100%.** 11 new tests in `tests/test_search_meilisearch.py` covering `_get_headers` with/without API key, `_get_base_url` default + trailing-slash stripping, `_search` URL/payload/filter/empty-hits, `_index_document` with id override, `_remove_document`, and `register()`. Same `AsyncMock + patch('httpx.AsyncClient')` pattern as `tests/test_oauth_google.py` and the storage tests — no new test infrastructure.
+
+- **`modules/page.py`: 66.7% → 100%.** New `tests/test_page.py` with 4 tests for the default home page controller (status, content type, framework metadata surfaces in body, route count matches `len(routes)`).
+
+- **`core/auth/security.py`: 88.1% → 100%.** Added regression tests for the legacy 3-part hash format (backward-compat with pre-iterations-in-format hashes) and the `ValueError` path when the iterations field of a 4-part hash is non-integer.
+
+- **`core/auth/jwt.py`: 88.7% → 97.6%.** Added tests for corrupt-payload encoding (forged-but-valid signature, invalid base64 payload), `_get_secret` returning the configured `JWT_SECRET` (no fallback warning path), `revoke_token` raising `ValueError` without `jti`, and `revoke_token` silently no-op'ing on invalid token strings.
+
+- **Project total: 78.2% → 79.5%.** Test count: 642 → 663. The remaining gap to 80% is concentrated in `core/cli.py` (32.5%, subprocess-spawning command dispatchers) and `core/cache.py`'s `RedisCacheBackend` (needs `fakeredis` or a live Redis to exercise) — both larger efforts deferred to a follow-up.
+
+### Compatibility
+
+- Pure additions / pure bugfixes. No public API changes, no settings keys added or renamed, no dependencies bumped or pinned. Upgrade is drop-in.
+
+---
+
 ## [1.14.0] — 2026-04-27
 
 ### Added
