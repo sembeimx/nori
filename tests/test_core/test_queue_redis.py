@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 from core.queue import _redis_handler, push
-from core.queue_worker import _work_redis, execute_payload
+from core.queue_worker import _work_redis
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -117,39 +117,30 @@ async def test_redis_worker_processes_job(mock_redis):
             'attempts': 0,
         }
     )
-    # First call returns a job, second returns None (to exit loop)
-    mock_redis.brpop = AsyncMock(
-        side_effect=[
-            (b'nori:queue:default', job_data.encode()),
-            None,
-        ]
-    )
+    mock_redis.brpop = AsyncMock(return_value=(b'nori:queue:default', job_data.encode()))
 
     import core.queue_worker as qw
 
     qw._should_exit = False
 
-    async def _stop_after_one(*a, **kw):
+    async def _execute_and_stop(payload):
         qw._should_exit = True
-        return None
 
-    mock_redis.brpop.side_effect = [
-        (b'nori:queue:default', job_data.encode()),
-    ]
+    try:
+        with patch('core.queue._get_redis', return_value=mock_redis):
+            with patch('core.queue_worker._register_signals'):
+                with patch(
+                    'core.queue_worker.execute_payload',
+                    side_effect=_execute_and_stop,
+                ) as mock_execute:
+                    await _work_redis('default')
+    finally:
+        qw._should_exit = False
 
-    with patch('core.queue._get_redis', return_value=mock_redis):
-        with patch('core.queue_worker._register_signals'):
-            # We need to stop the loop — set _should_exit after first iteration
-            original_execute = execute_payload
-
-            async def _execute_and_stop(payload):
-                await original_execute(payload)
-                qw._should_exit = True
-
-            with patch('core.queue_worker.execute_payload', side_effect=_execute_and_stop):
-                await _work_redis('default')
-
-    qw._should_exit = False  # Reset
+    mock_execute.assert_called_once()
+    called_payload = mock_execute.call_args.args[0]
+    assert called_payload['func'] == 'tests.test_core.test_queue_redis:_dummy_task'
+    assert called_payload['attempts'] == 0
 
 
 @pytest.mark.asyncio

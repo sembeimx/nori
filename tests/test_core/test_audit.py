@@ -166,8 +166,10 @@ async def test_audit_casts_string_user_id():
 
 
 @pytest.mark.asyncio
-async def test_audit_handles_db_failure(monkeypatch):
+async def test_audit_handles_db_failure(monkeypatch, caplog):
     """Exception in _write background task is logged and doesn't crash."""
+    import logging
+
     from models.framework.audit_log import AuditLog
 
     async def _fail(*args, **kwargs):
@@ -175,11 +177,17 @@ async def test_audit_handles_db_failure(monkeypatch):
 
     monkeypatch.setattr(AuditLog, 'create', _fail)
 
-    # We need to capture logs to verify it logged the error
-    # but for simplicity, we just ensure it doesn't raise exception here
+    # core.logger sets propagate=False on the 'nori' root, so caplog (which
+    # listens on the actual root) only sees our 'nori.audit' records when
+    # propagation is temporarily re-enabled.
+    monkeypatch.setattr(logging.getLogger('nori'), 'propagate', True)
+
     req = FakeRequest()
-    task = audit(req, 'fail_test')
-    await task  # Task should complete without raising
+    with caplog.at_level(logging.ERROR, logger='nori.audit'):
+        task = audit(req, 'fail_test')
+        await task  # background task swallows the exception
+
+    assert any('Failed to write audit log entry' in r.message for r in caplog.records)
 
 
 def test_audit_no_loop_warning(monkeypatch):
