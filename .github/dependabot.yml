@@ -1,0 +1,48 @@
+version: 2
+
+# Auto-PRs for dependency updates. Complements the pip-audit CI gate:
+# pip-audit fails the build when a CVE lands, Dependabot opens the PR that
+# bumps the dependency. Together they close the loop end-to-end.
+updates:
+  # Python dependencies — scans requirements.txt (which -r's requirements.nori.txt)
+  # plus requirements-dev.txt automatically.
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: America/Argentina/Buenos_Aires
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - python
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      # Group dev tooling so we don't get 6 separate PRs for ruff + pytest + mypy
+      # bumps in the same week.
+      dev-tooling:
+        patterns:
+          - "pytest*"
+          - "ruff"
+          - "mypy*"
+          - "pre-commit"
+          - "pip-audit"
+          - "interrogate"
+          - "filelock"
+
+  # GitHub Actions — keeps actions/checkout, actions/setup-python, etc. current.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: America/Argentina/Buenos_Aires
+    open-pull-requests-limit: 3
+    labels:
+      - dependencies
+      - github-actions
+    commit-message:
+      prefix: "chore(ci)"
