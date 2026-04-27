@@ -10,6 +10,7 @@ WebSocket handler base classes.
     # In routes.py:
     # WebSocketRoute('/ws/chat', ChatHandler())
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -49,17 +50,17 @@ class WebSocketHandler:
                         timeout=self.receive_timeout,
                     )
                 except asyncio.TimeoutError:
-                    _log.info("WebSocket idle timeout (%ds), closing", self.receive_timeout)
+                    _log.info('WebSocket idle timeout (%ds), closing', self.receive_timeout)
                     await websocket.close(code=1000)
                     break
                 try:
                     await self.on_receive(websocket, data)
                 except Exception as exc:
-                    _log.error("Error in on_receive: %s", exc, exc_info=True)
+                    _log.error('Error in on_receive: %s', exc, exc_info=True)
         except WebSocketDisconnect as exc:
             await self.on_disconnect(websocket, exc.code)
         except Exception as exc:
-            _log.error("WebSocket error: %s", exc, exc_info=True)
+            _log.error('WebSocket error: %s', exc, exc_info=True)
 
     async def on_connect(self, websocket: WebSocket) -> None:
         """Called when a client connects. Default: accept the connection."""
@@ -91,17 +92,17 @@ class JsonWebSocketHandler(WebSocketHandler):
                         timeout=self.receive_timeout,
                     )
                 except asyncio.TimeoutError:
-                    _log.info("WebSocket idle timeout (%ds), closing", self.receive_timeout)
+                    _log.info('WebSocket idle timeout (%ds), closing', self.receive_timeout)
                     await websocket.close(code=1000)
                     break
                 try:
                     await self.on_receive_json(websocket, data)
                 except Exception as exc:
-                    _log.error("Error in on_receive_json: %s", exc, exc_info=True)
+                    _log.error('Error in on_receive_json: %s', exc, exc_info=True)
         except WebSocketDisconnect as exc:
             await self.on_disconnect(websocket, exc.code)
         except Exception as exc:
-            _log.error("WebSocket error: %s", exc, exc_info=True)
+            _log.error('WebSocket error: %s', exc, exc_info=True)
 
     async def on_receive_json(self, websocket: WebSocket, data: dict) -> None:
         """Called when a JSON message is received. Override in subclass."""

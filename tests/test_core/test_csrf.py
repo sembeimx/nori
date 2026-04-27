@@ -1,4 +1,5 @@
 """Tests for CSRF middleware and helpers."""
+
 from urllib.parse import urlencode
 
 import pytest
@@ -9,8 +10,10 @@ from core.auth.security import Security
 # Helpers to simulate ASGI calls
 # ---------------------------------------------------------------------------
 
+
 class _Captured:
     """Captures ASGI response messages."""
+
     def __init__(self):
         self.status = None
         self.body = b''
@@ -25,12 +28,14 @@ class _Captured:
 async def _make_receive(body: bytes = b''):
     """Return an ASGI receive callable that returns the given body."""
     sent = False
+
     async def receive():
         nonlocal sent
         if not sent:
             sent = True
             return {'type': 'http.request', 'body': body, 'more_body': False}
         return {'type': 'http.disconnect'}
+
     return receive
 
 
@@ -59,6 +64,7 @@ def _scope(method='GET', path='/', session=None, headers=None, content_type=None
 # ---------------------------------------------------------------------------
 # csrf_field / csrf_token helpers
 # ---------------------------------------------------------------------------
+
 
 def test_csrf_field_returns_html():
     session = {_CSRF_SESSION_KEY: 'abc123'}
@@ -93,6 +99,7 @@ def test_csrf_token_empty_session():
 # Middleware: safe methods pass through
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_get_request_passes():
     session = {}
@@ -125,6 +132,7 @@ async def test_options_request_passes():
 # Middleware: POST without token -> 403
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_post_without_token_returns_403():
     session = {_CSRF_SESSION_KEY: Security.generate_csrf_token()}
@@ -151,6 +159,7 @@ async def test_post_with_wrong_token_returns_403():
 # Middleware: valid token passes
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_post_with_valid_token_passes():
     token = Security.generate_csrf_token()
@@ -168,8 +177,7 @@ async def test_post_with_header_token_passes():
     token = Security.generate_csrf_token()
     session = {_CSRF_SESSION_KEY: token}
     headers = [(b'x-csrf-token', token.encode())]
-    scope = _scope('POST', session=session, headers=headers,
-                   content_type='application/x-www-form-urlencoded')
+    scope = _scope('POST', session=session, headers=headers, content_type='application/x-www-form-urlencoded')
     cap = _Captured()
     mw = CsrfMiddleware(_passthrough_app)
     await mw(scope, await _make_receive(b''), cap.send)
@@ -179,6 +187,7 @@ async def test_post_with_header_token_passes():
 # ---------------------------------------------------------------------------
 # JSON bypass
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_json_post_bypasses_csrf():
@@ -194,11 +203,11 @@ async def test_json_post_bypasses_csrf():
 # Exempt paths
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_exempt_path_passes():
     session = {_CSRF_SESSION_KEY: Security.generate_csrf_token()}
-    scope = _scope('POST', path='/api/webhook', session=session,
-                   content_type='application/x-www-form-urlencoded')
+    scope = _scope('POST', path='/api/webhook', session=session, content_type='application/x-www-form-urlencoded')
     cap = _Captured()
     mw = CsrfMiddleware(_passthrough_app, exempt_paths={'/api/webhook'})
     await mw(scope, await _make_receive(b'no_token=1'), cap.send)
@@ -208,6 +217,7 @@ async def test_exempt_path_passes():
 # ---------------------------------------------------------------------------
 # Multipart form data
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_multipart_token_extraction():
@@ -225,8 +235,7 @@ async def test_multipart_token_extraction():
         f'Hello\r\n'
         f'------WebKitFormBoundary7MA4YWxk--\r\n'
     ).encode()
-    scope = _scope('POST', session=session,
-                   content_type=f'multipart/form-data; boundary={boundary}')
+    scope = _scope('POST', session=session, content_type=f'multipart/form-data; boundary={boundary}')
     cap = _Captured()
     mw = CsrfMiddleware(_passthrough_app)
     await mw(scope, await _make_receive(body), cap.send)
@@ -246,8 +255,7 @@ async def test_multipart_quoted_boundary():
         f'------myboundary--\r\n'
     ).encode()
     # Boundary with quotes
-    scope = _scope('POST', session=session,
-                   content_type=f'multipart/form-data; boundary="{boundary}"')
+    scope = _scope('POST', session=session, content_type=f'multipart/form-data; boundary="{boundary}"')
     cap = _Captured()
     mw = CsrfMiddleware(_passthrough_app)
     await mw(scope, await _make_receive(body), cap.send)
@@ -257,6 +265,7 @@ async def test_multipart_quoted_boundary():
 # ---------------------------------------------------------------------------
 # Non-HTTP scope passes through
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_non_http_scope_passes():
@@ -275,6 +284,7 @@ async def test_non_http_scope_passes():
 # No session -> 403
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_post_without_session_returns_403():
     scope = _scope('POST', content_type='application/x-www-form-urlencoded')
@@ -288,6 +298,7 @@ async def test_post_without_session_returns_403():
 # ---------------------------------------------------------------------------
 # Body size limit -> 413
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_large_body_returns_413():

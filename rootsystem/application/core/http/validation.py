@@ -18,13 +18,14 @@ Declarative validation with pipe-separated rules.
         'email': 'required|email|unique:users,email',
     })
 """
+
 from __future__ import annotations
 
 import re
 
 _EMAIL_RE = re.compile(
-    r'^[a-zA-Z0-9][a-zA-Z0-9_%+-]*'      # first char + allowed chars (no leading dot)
-    r'(\.[a-zA-Z0-9][a-zA-Z0-9_%+-]*)*'   # optional groups starting with single dot (no consecutive dots)
+    r'^[a-zA-Z0-9][a-zA-Z0-9_%+-]*'  # first char + allowed chars (no leading dot)
+    r'(\.[a-zA-Z0-9][a-zA-Z0-9_%+-]*)*'  # optional groups starting with single dot (no consecutive dots)
     r'@'
     r'[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?'
     r'(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)*'
@@ -176,6 +177,7 @@ def _check_rule(
             try:
                 f = float(value)
                 import math
+
                 if math.isinf(f) or math.isnan(f):
                     return _msg(field, rule, messages)
             except ValueError:
@@ -198,6 +200,7 @@ def _check_rule(
     elif rule == 'date':
         if value:
             from datetime import date as _date
+
             try:
                 _date.fromisoformat(value)
             except ValueError:
@@ -341,10 +344,7 @@ async def _check_unique(
 
     parts = param.split(',')
     if len(parts) < 2:
-        raise ValueError(
-            f"'unique' rule requires at least table and column: "
-            f"unique:table,column — got: '{param}'"
-        )
+        raise ValueError(f"'unique' rule requires at least table and column: unique:table,column — got: '{param}'")
 
     table = parts[0].strip()
     column = parts[1].strip()
@@ -356,6 +356,7 @@ async def _check_unique(
         raise ValueError(f"Invalid column name: '{column}'")
 
     from tortoise import connections
+
     conn = connections.get('default')
 
     if except_id:

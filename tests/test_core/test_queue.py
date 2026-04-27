@@ -1,4 +1,5 @@
 """Tests for the persistent queue system (core.queue and core.queue_worker)."""
+
 import asyncio
 import os
 import sys
@@ -30,6 +31,7 @@ async def _clean_db():
 @pytest.fixture(autouse=True)
 def _force_db_driver(monkeypatch):
     import settings
+
     monkeypatch.setattr(settings, 'QUEUE_DRIVER', 'database')
     monkeypatch.setattr(settings, 'DB_ENABLED', True)
 
@@ -38,15 +40,18 @@ def _force_db_driver(monkeypatch):
 
 TRACKER_FILE = os.path.join(tempfile.gettempdir(), 'nori_queue_test.txt')
 
+
 def _mark_executed(msg: str):
     with open(TRACKER_FILE, 'a') as f:
         f.write(msg + '\n')
+
 
 def _get_executed() -> list[str]:
     if not os.path.exists(TRACKER_FILE):
         return []
     with open(TRACKER_FILE) as f:
         return [line.strip() for f in [f] for line in f if line.strip()]
+
 
 @pytest.fixture(autouse=True)
 def _clear_tracker():
@@ -56,15 +61,18 @@ def _clear_tracker():
     if os.path.exists(TRACKER_FILE):
         os.remove(TRACKER_FILE)
 
+
 async def success_task(name: str):
-    _mark_executed(f"success:{name}")
+    _mark_executed(f'success:{name}')
+
 
 async def fail_task(name: str):
-    _mark_executed(f"fail:{name}")
-    raise Exception("Task failed intentionally")
+    _mark_executed(f'fail:{name}')
+    raise Exception('Task failed intentionally')
 
 
 # -- Tests -------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_push_adds_job_to_db():
@@ -81,14 +89,14 @@ async def test_worker_processes_successful_job():
 
     # Run worker briefly
     worker_task = asyncio.create_task(work(queue_name='worker_queue', sleep=0.1))
-    await asyncio.sleep(0.8) # Wait a bit longer
+    await asyncio.sleep(0.8)  # Wait a bit longer
     worker_task.cancel()
     try:
         await worker_task
     except asyncio.CancelledError:
         pass
 
-    assert "success:worker_test" in _get_executed()
+    assert 'success:worker_test' in _get_executed()
     # Job should be deleted from DB after success
     count = await Job.filter(queue='worker_queue').count()
     assert count == 0
@@ -107,7 +115,7 @@ async def test_worker_retries_failed_job_with_backoff():
     except asyncio.CancelledError:
         pass
 
-    assert "fail:retry_test" in _get_executed()
+    assert 'fail:retry_test' in _get_executed()
 
     job = await Job.filter(queue='retry_queue').first()
     assert job is not None
@@ -120,16 +128,12 @@ async def test_worker_retries_failed_job_with_backoff():
 @pytest.mark.asyncio
 async def test_worker_marks_job_as_failed_after_max_attempts():
     # Create a job that is on its last attempt
-    payload = {
-        "func": "tests.test_core.test_queue:fail_task",
-        "args": ["dead_letter"],
-        "kwargs": {}
-    }
+    payload = {'func': 'tests.test_core.test_queue:fail_task', 'args': ['dead_letter'], 'kwargs': {}}
     await Job.create(
         queue='dead_queue',
         payload=payload,
         attempts=MAX_ATTEMPTS - 1,
-        available_at=now() - timedelta(seconds=1) # Ensure it's ready
+        available_at=now() - timedelta(seconds=1),  # Ensure it's ready
     )
 
     # Run worker briefly
@@ -164,4 +168,4 @@ async def test_atomic_reservation():
     # success_task should only have been executed ONCE
     executed = _get_executed()
     assert len(executed) == 1
-    assert executed[0] == "success:atomic"
+    assert executed[0] == 'success:atomic'

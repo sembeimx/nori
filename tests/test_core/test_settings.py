@@ -10,6 +10,7 @@ def test_sqlite_config(monkeypatch):
     import importlib
 
     import settings
+
     importlib.reload(settings)
 
     conn = settings.TORTOISE_ORM['connections']['default']
@@ -26,6 +27,7 @@ def test_sqlite_absolute_path(monkeypatch):
     import importlib
 
     import settings
+
     importlib.reload(settings)
 
     conn = settings.TORTOISE_ORM['connections']['default']
@@ -40,6 +42,7 @@ def test_mysql_config(monkeypatch):
     import importlib
 
     import settings
+
     importlib.reload(settings)
 
     conn = settings.TORTOISE_ORM['connections']['default']
@@ -55,6 +58,7 @@ def test_postgres_config(monkeypatch):
     import importlib
 
     import settings
+
     importlib.reload(settings)
 
     conn = settings.TORTOISE_ORM['connections']['default']

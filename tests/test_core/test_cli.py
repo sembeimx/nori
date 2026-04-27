@@ -5,6 +5,7 @@ and asserting the right arguments are passed — testing that we drive aerich
 correctly, not testing aerich itself. The make:* generators are tested by
 asserting the file content they produce.
 """
+
 from __future__ import annotations
 
 from unittest.mock import patch
@@ -15,6 +16,7 @@ from core import cli
 # ---------------------------------------------------------------------------
 # make:* generators
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def app_dir(tmp_path, monkeypatch):
@@ -74,6 +76,7 @@ def test_make_seeder_generates_file(app_dir, capsys):
 # Repo-state guard: fresh user projects must NOT inherit a `migrations/` dir
 # ---------------------------------------------------------------------------
 
+
 def test_repo_does_not_ship_migrations_dir():
     """The framework repo must not commit `rootsystem/application/migrations/`.
 
@@ -89,12 +92,13 @@ def test_repo_does_not_ship_migrations_dir():
     the leftover `.gitkeep` files. This guard prevents recurrence.
     """
     from pathlib import Path
+
     repo_root = Path(__file__).resolve().parents[2]
     migrations = repo_root / 'rootsystem' / 'application' / 'migrations'
     assert not migrations.exists(), (
-        f"{migrations} is checked into the repo. Fresh user projects will "
-        f"inherit this directory and aerich init-db will bail without "
-        f"generating migration files. Migrations must be created by the "
+        f'{migrations} is checked into the repo. Fresh user projects will '
+        f'inherit this directory and aerich init-db will bail without '
+        f'generating migration files. Migrations must be created by the '
         f"user's first `migrate:init`, not shipped pre-existing."
     )
 
@@ -102,6 +106,7 @@ def test_repo_does_not_ship_migrations_dir():
 # ---------------------------------------------------------------------------
 # migrate:init
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def migrations_env(tmp_path, monkeypatch):
@@ -142,7 +147,8 @@ def test_migrate_init_uses_dynamic_apps_from_tortoise_orm(migrations_env, monkey
     not just the hardcoded ('framework', 'models') pair.
     """
     monkeypatch.setattr(
-        cli, '_read_tortoise_apps',
+        cli,
+        '_read_tortoise_apps',
         lambda: ('framework', 'models', 'analytics'),
     )
     with patch('subprocess.run') as mock_run:
@@ -185,6 +191,7 @@ def test_migrate_init_ignores_init_py_for_idempotence_check(migrations_env):
 # migrate:make / migrate:upgrade / migrate:downgrade
 # ---------------------------------------------------------------------------
 
+
 def test_migrate_make_defaults_to_models_app():
     with patch('subprocess.run') as mock_run:
         cli.migrate_make('add_email_to_users')
@@ -216,7 +223,8 @@ def test_migrate_upgrade_without_app_runs_both_in_order(monkeypatch):
 def test_migrate_upgrade_without_app_uses_dynamic_app_list(monkeypatch):
     """Same dynamic-app contract as migrate:init."""
     monkeypatch.setattr(
-        cli, '_read_tortoise_apps',
+        cli,
+        '_read_tortoise_apps',
         lambda: ('framework', 'models', 'analytics'),
     )
     with patch('subprocess.run') as mock_run:
@@ -256,6 +264,7 @@ def test_migrate_downgrade_omits_delete_flag_by_default():
 # User commands — discovery must be CWD-independent
 # ---------------------------------------------------------------------------
 
+
 def test_load_user_commands_resolves_relative_to_module_not_cwd(monkeypatch, tmp_path):
     """`commands_dir` must be anchored to the cli module file, not CWD.
 
@@ -292,10 +301,7 @@ def test_load_user_commands_resolves_relative_to_module_not_cwd(monkeypatch, tmp
     subparsers = parser.add_subparsers(dest='command')
     handlers = cli._load_user_commands(subparsers)
 
-    assert 'foo' in handlers, (
-        "User commands at <module_root>/commands/ must be discovered "
-        "regardless of process CWD"
-    )
+    assert 'foo' in handlers, 'User commands at <module_root>/commands/ must be discovered regardless of process CWD'
 
     # Cleanup the import we just added
     _sys.modules.pop('commands.foo', None)
@@ -305,6 +311,7 @@ def test_load_user_commands_resolves_relative_to_module_not_cwd(monkeypatch, tmp
 # ---------------------------------------------------------------------------
 # routes:list — must boot Nori config before importing routes
 # ---------------------------------------------------------------------------
+
 
 def test_routes_list_configures_settings_before_importing_routes():
     """The subprocess script for `routes:list` must call core.conf.configure()
@@ -318,21 +325,20 @@ def test_routes_list_configures_settings_before_importing_routes():
         cli.routes_list()
 
     script = mock_run.call_args.args[0][-1]  # last arg is the -c script
-    assert 'configure(settings)' in script, (
-        "routes:list must initialise Nori config before importing routes"
-    )
+    assert 'configure(settings)' in script, 'routes:list must initialise Nori config before importing routes'
     configure_idx = script.index('configure(settings)')
     routes_idx = script.index('from routes import')
     assert configure_idx < routes_idx, (
         "configure(settings) must run BEFORE 'from routes import' — otherwise "
-        "any module in the import chain that touches config/templates.env at "
-        "import time will crash"
+        'any module in the import chain that touches config/templates.env at '
+        'import time will crash'
     )
 
 
 # ---------------------------------------------------------------------------
 # migrate:fresh — DEBUG-only safety check
 # ---------------------------------------------------------------------------
+
 
 def test_migrate_fresh_refuses_when_debug_is_false(monkeypatch, capsys):
     monkeypatch.setattr(
@@ -361,6 +367,7 @@ def test_migrate_fresh_aborts_if_user_does_not_confirm(monkeypatch, capsys):
 # ---------------------------------------------------------------------------
 # framework:version
 # ---------------------------------------------------------------------------
+
 
 def test_framework_version_prints_current_version(capsys):
     cli.framework_version()

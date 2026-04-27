@@ -17,8 +17,7 @@ class SecurityHeadersMiddleware:
         'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
     }
 
-    def __init__(self, app, headers=None, hsts=True, hsts_max_age=31536000,
-                 csp=None):
+    def __init__(self, app, headers=None, hsts=True, hsts_max_age=31536000, csp=None):
         """
         Args:
             app: ASGI application.
@@ -34,10 +33,7 @@ class SecurityHeadersMiddleware:
         if csp:
             self.headers['Content-Security-Policy'] = csp
         # Pre-encode headers to avoid doing it on every request
-        self._encoded = [
-            (k.lower().encode('latin1'), v.encode('latin1'))
-            for k, v in self.headers.items()
-        ]
+        self._encoded = [(k.lower().encode('latin1'), v.encode('latin1')) for k, v in self.headers.items()]
 
     async def __call__(self, scope, receive, send):
         if scope['type'] != 'http':

@@ -49,8 +49,7 @@ def get_model(name: str) -> Any:
         return _models[name]
     except KeyError:
         raise LookupError(
-            f"Model '{name}' not registered. "
-            f"Ensure it is imported and registered in models/__init__.py"
+            f"Model '{name}' not registered. Ensure it is imported and registered in models/__init__.py"
         ) from None
 
 

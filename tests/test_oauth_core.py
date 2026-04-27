@@ -1,4 +1,5 @@
 """Tests for core.auth.oauth — OAuth state and PKCE helpers."""
+
 from __future__ import annotations
 
 import base64
@@ -14,6 +15,7 @@ from core.auth.oauth import (
 )
 
 # -- generate_state / validate_state ----------------------------------------
+
 
 def test_generate_state_returns_nonempty_string():
     session: dict = {}
@@ -82,6 +84,7 @@ def test_validate_state_consumes_on_failure():
 
 
 # -- generate_pkce_verifier / get_pkce_verifier ------------------------------
+
 
 def test_pkce_verifier_format():
     session: dict = {}

@@ -1,4 +1,5 @@
 """Tests for services.oauth_google — Google OAuth2/OpenID Connect driver."""
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -9,10 +10,12 @@ from core.auth.oauth import _PKCE_SESSION_KEY, _STATE_SESSION_KEY
 
 # -- Fixtures ----------------------------------------------------------------
 
+
 @pytest.fixture(autouse=True)
 def _google_settings(monkeypatch):
     """Set required Google OAuth settings."""
     import settings
+
     monkeypatch.setattr(settings, 'GOOGLE_CLIENT_ID', 'test-client-id')
     monkeypatch.setattr(settings, 'GOOGLE_CLIENT_SECRET', 'test-client-secret')
 
@@ -22,6 +25,7 @@ def _make_session() -> dict:
 
 
 # -- get_auth_url ------------------------------------------------------------
+
 
 def test_get_auth_url_contains_required_params():
     from services.oauth_google import get_auth_url
@@ -66,6 +70,7 @@ def test_get_auth_url_stores_state_and_pkce():
 
 # -- handle_callback ---------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_handle_callback_invalid_state():
     from services.oauth_google import handle_callback
@@ -108,8 +113,10 @@ async def test_handle_callback_exchanges_code():
 
     with patch('services.oauth_google.httpx.AsyncClient', return_value=mock_client):
         profile = await handle_callback(
-            session, code='auth-code-xyz',
-            redirect_uri='https://example.com/cb', state=state,
+            session,
+            code='auth-code-xyz',
+            redirect_uri='https://example.com/cb',
+            state=state,
         )
 
     # Verify token exchange was called correctly
@@ -131,6 +138,7 @@ async def test_handle_callback_exchanges_code():
 
 
 # -- get_user_profile --------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_get_user_profile_returns_normalized_dict():

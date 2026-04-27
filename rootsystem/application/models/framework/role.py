@@ -11,7 +11,9 @@ class Role(NoriModelMixin, Model):
     id = fields.IntField(primary_key=True)
     name = fields.CharField(max_length=50, unique=True)
     permissions = fields.ManyToManyField(
-        'framework.Permission', related_name='roles', through='role_permission',
+        'framework.Permission',
+        related_name='roles',
+        through='role_permission',
     )
 
     class Meta:

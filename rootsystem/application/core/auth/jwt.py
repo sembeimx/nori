@@ -8,6 +8,7 @@ Manual implementation consistent with the framework's stdlib-first philosophy.
     token = create_token({'user_id': 42}, expires_in=3600)
     payload = verify_token(token)  # dict or None
 """
+
 from __future__ import annotations
 
 import base64
@@ -27,7 +28,7 @@ def _get_secret() -> str:
     """Return JWT secret, warning if it falls back to SECRET_KEY."""
     secret = config.get('JWT_SECRET', None)
     if not secret or secret == config.SECRET_KEY:
-        _log.warning("JWT_SECRET not set; falling back to SECRET_KEY")
+        _log.warning('JWT_SECRET not set; falling back to SECRET_KEY')
         return config.SECRET_KEY
     return secret
 
@@ -71,23 +72,29 @@ def create_token(payload: dict, *, expires_in: int | None = None) -> str:
 
     secret = _get_secret()
 
-    header = _base64url_encode(json.dumps(
-        {'alg': 'HS256', 'typ': 'JWT'}, separators=(',', ':'),
-    ).encode('utf-8'))
+    header = _base64url_encode(
+        json.dumps(
+            {'alg': 'HS256', 'typ': 'JWT'},
+            separators=(',', ':'),
+        ).encode('utf-8')
+    )
 
     now = int(time.time())
     payload = {**payload, 'iat': now, 'exp': now + expires_in}
     if 'jti' not in payload:
         payload['jti'] = secrets.token_urlsafe(16)
 
-    payload_encoded = _base64url_encode(json.dumps(
-        payload, separators=(',', ':'),
-    ).encode('utf-8'))
+    payload_encoded = _base64url_encode(
+        json.dumps(
+            payload,
+            separators=(',', ':'),
+        ).encode('utf-8')
+    )
 
-    header_payload = f"{header}.{payload_encoded}"
+    header_payload = f'{header}.{payload_encoded}'
     signature = _sign(header_payload, secret)
 
-    return f"{header_payload}.{signature}"
+    return f'{header_payload}.{signature}'
 
 
 def verify_token(token: str) -> dict | None:
@@ -107,13 +114,13 @@ def verify_token(token: str) -> dict | None:
     try:
         header = json.loads(_base64url_decode(parts[0]))
     except (json.JSONDecodeError, ValueError):
-        _log.debug("Invalid JWT header encoding")
+        _log.debug('Invalid JWT header encoding')
         return None
     if header.get('alg') != 'HS256':
-        _log.debug("Unsupported JWT algorithm: %s", header.get('alg'))
+        _log.debug('Unsupported JWT algorithm: %s', header.get('alg'))
         return None
 
-    header_payload = f"{parts[0]}.{parts[1]}"
+    header_payload = f'{parts[0]}.{parts[1]}'
     expected_sig = _sign(header_payload, secret)
 
     if not hmac.compare_digest(parts[2], expected_sig):
@@ -122,7 +129,7 @@ def verify_token(token: str) -> dict | None:
     try:
         payload = json.loads(_base64url_decode(parts[1]))
     except (json.JSONDecodeError, ValueError):
-        _log.debug("Invalid JWT payload encoding")
+        _log.debug('Invalid JWT payload encoding')
         return None
 
     # Clock skew tolerance (seconds) for distributed systems
@@ -133,7 +140,7 @@ def verify_token(token: str) -> dict | None:
     # Check blacklist (if jti is present)
     jti = payload.get('jti')
     if jti and _is_blacklisted(jti):
-        _log.debug("JWT rejected: jti %s is blacklisted", jti)
+        _log.debug('JWT rejected: jti %s is blacklisted', jti)
         return None
 
     return payload
@@ -145,6 +152,7 @@ _BLACKLIST_PREFIX = 'jwt_blacklist:'
 def _is_blacklisted(jti: str) -> bool:
     """Check if a jti is in the blacklist (synchronous cache read)."""
     from core.cache import get_backend
+
     backend = get_backend()
     # Synchronous check: MemoryCacheBackend stores in a dict we can read directly
     key = f'{_BLACKLIST_PREFIX}{jti}'

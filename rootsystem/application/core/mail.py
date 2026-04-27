@@ -147,8 +147,11 @@ async def _send_via_log(
         body_text: Optional plain-text fallback body.
     """
     _log.info(
-        "Mail [driver=log] to=%s subject=%r html_len=%d text=%s",
-        to, subject, len(body_html), bool(body_text),
+        'Mail [driver=log] to=%s subject=%r html_len=%d text=%s',
+        to,
+        subject,
+        len(body_html),
+        bool(body_text),
     )
 
 
@@ -180,6 +183,7 @@ def get_mail_drivers() -> set[str]:
 # Public API
 # ---------------------------------------------------------------------------
 
+
 async def send_mail(
     *,
     to: str | list[str],
@@ -206,16 +210,13 @@ async def send_mail(
         body_html = _render_template(template, context)
 
     if not body_html:
-        raise ValueError("Either body_html or template is required")
+        raise ValueError('Either body_html or template is required')
 
     driver_name = driver or config.get('MAIL_DRIVER', 'smtp')
     handler = _DRIVERS.get(driver_name)
     if handler is None:
         available = ', '.join(sorted(_DRIVERS))
-        raise ValueError(
-            f"Unknown mail driver '{driver_name}'. "
-            f"Available drivers: {available}"
-        )
+        raise ValueError(f"Unknown mail driver '{driver_name}'. Available drivers: {available}")
 
     recipients = _normalize_recipients(to)
     await handler(recipients, subject, body_html, body_text)

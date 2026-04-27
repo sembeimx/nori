@@ -1,4 +1,5 @@
 """Tests for the 404 not_found handler."""
+
 import pytest
 from asgi import not_found
 

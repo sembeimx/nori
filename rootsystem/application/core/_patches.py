@@ -14,6 +14,7 @@ added patches can apply on the same run that installs them. Do NOT move
 these patchers back into `cli.py`; `cli.py` is already loaded in memory
 by the time `framework_update()` runs.
 """
+
 from __future__ import annotations
 
 import ast
@@ -42,20 +43,15 @@ def _patch_bootstrap_hook_in_asgi() -> bool:
     try:
         tree = ast.parse(content)
     except SyntaxError as e:
-        print(f"  Warning: cannot parse asgi.py ({e}) — skipping bootstrap patch")
+        print(f'  Warning: cannot parse asgi.py ({e}) — skipping bootstrap patch')
         return False
 
     insert_lineno = 1
     for stmt in tree.body:
         is_docstring = (
-            isinstance(stmt, ast.Expr)
-            and isinstance(stmt.value, ast.Constant)
-            and isinstance(stmt.value.value, str)
+            isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Constant) and isinstance(stmt.value.value, str)
         )
-        is_future = (
-            isinstance(stmt, ast.ImportFrom)
-            and stmt.module == '__future__'
-        )
+        is_future = isinstance(stmt, ast.ImportFrom) and stmt.module == '__future__'
         if is_docstring or is_future:
             insert_lineno = stmt.end_lineno + 1
             continue

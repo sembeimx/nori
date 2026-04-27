@@ -10,4 +10,4 @@ class EchoHandler(WebSocketHandler):
     """Echoes back any text message received."""
 
     async def on_receive(self, websocket: WebSocket, data: str) -> None:
-        await websocket.send_text(f"Echo: {data}")
+        await websocket.send_text(f'Echo: {data}')

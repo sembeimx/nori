@@ -1,4 +1,5 @@
 """Tests for CORS configuration in settings."""
+
 import os
 
 import settings
@@ -9,11 +10,7 @@ def test_cors_origins_empty_by_default():
     original = os.environ.pop('CORS_ORIGINS', None)
     try:
         # Re-evaluate: settings module already loaded, so test the parsing logic
-        result = [
-            o.strip()
-            for o in os.environ.get('CORS_ORIGINS', '').split(',')
-            if o.strip()
-        ]
+        result = [o.strip() for o in os.environ.get('CORS_ORIGINS', '').split(',') if o.strip()]
         assert result == []
     finally:
         if original is not None:
@@ -24,11 +21,7 @@ def test_cors_origins_single():
     original = os.environ.get('CORS_ORIGINS')
     os.environ['CORS_ORIGINS'] = 'http://localhost:3000'
     try:
-        result = [
-            o.strip()
-            for o in os.environ.get('CORS_ORIGINS', '').split(',')
-            if o.strip()
-        ]
+        result = [o.strip() for o in os.environ.get('CORS_ORIGINS', '').split(',') if o.strip()]
         assert result == ['http://localhost:3000']
     finally:
         if original is not None:
@@ -41,11 +34,7 @@ def test_cors_origins_multiple():
     original = os.environ.get('CORS_ORIGINS')
     os.environ['CORS_ORIGINS'] = 'http://localhost:3000, https://miapp.com'
     try:
-        result = [
-            o.strip()
-            for o in os.environ.get('CORS_ORIGINS', '').split(',')
-            if o.strip()
-        ]
+        result = [o.strip() for o in os.environ.get('CORS_ORIGINS', '').split(',') if o.strip()]
         assert result == ['http://localhost:3000', 'https://miapp.com']
     finally:
         if original is not None:

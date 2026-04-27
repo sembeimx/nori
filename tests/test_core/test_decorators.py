@@ -1,4 +1,5 @@
 """Tests for auth decorators: login_required, require_role, require_any_role."""
+
 from core.auth.decorators import login_required, require_any_role, require_role
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
@@ -12,8 +13,8 @@ from starlette.testclient import TestClient
 # Controller stubs
 # ---------------------------------------------------------------------------
 
-class _Controller:
 
+class _Controller:
     @login_required
     async def protected(self, request: Request):
         return JSONResponse({'user_id': request.session.get('user_id')})
@@ -55,6 +56,7 @@ client = TestClient(app)
 # @login_required
 # ---------------------------------------------------------------------------
 
+
 def test_login_required_json_returns_401():
     resp = client.get('/protected', headers={'accept': 'application/json'})
     assert resp.status_code == 401
@@ -62,8 +64,7 @@ def test_login_required_json_returns_401():
 
 
 def test_login_required_html_redirects_to_login():
-    resp = client.get('/protected', headers={'accept': 'text/html'},
-                      follow_redirects=False)
+    resp = client.get('/protected', headers={'accept': 'text/html'}, follow_redirects=False)
     assert resp.status_code == 302
     assert '/login' in resp.headers['location']
 
@@ -72,14 +73,14 @@ def test_login_required_html_redirects_to_login():
 # @require_role
 # ---------------------------------------------------------------------------
 
+
 def test_require_role_json_returns_401_without_session():
     resp = client.get('/editor', headers={'accept': 'application/json'})
     assert resp.status_code == 401
 
 
 def test_require_role_html_redirects_without_session():
-    resp = client.get('/editor', headers={'accept': 'text/html'},
-                      follow_redirects=False)
+    resp = client.get('/editor', headers={'accept': 'text/html'}, follow_redirects=False)
     assert resp.status_code == 302
     assert '/login' in resp.headers['location']
 
@@ -88,14 +89,14 @@ def test_require_role_html_redirects_without_session():
 # @require_any_role
 # ---------------------------------------------------------------------------
 
+
 def test_require_any_role_json_returns_401_without_session():
     resp = client.get('/multi', headers={'accept': 'application/json'})
     assert resp.status_code == 401
 
 
 def test_require_any_role_html_redirects_without_session():
-    resp = client.get('/multi', headers={'accept': 'text/html'},
-                      follow_redirects=False)
+    resp = client.get('/multi', headers={'accept': 'text/html'}, follow_redirects=False)
     assert resp.status_code == 302
     assert '/login' in resp.headers['location']
 
@@ -103,6 +104,7 @@ def test_require_any_role_html_redirects_without_session():
 # ---------------------------------------------------------------------------
 # LOGIN_URL / FORBIDDEN_URL settings override the hardcoded defaults
 # ---------------------------------------------------------------------------
+
 
 def test_login_required_uses_login_url_setting(monkeypatch):
     """A custom LOGIN_URL in settings replaces the default /login redirect.
@@ -119,8 +121,7 @@ def test_login_required_uses_login_url_setting(monkeypatch):
 
     monkeypatch.setattr(config, '_settings', SimpleNamespace(LOGIN_URL='/admin/login'))
 
-    resp = client.get('/protected', headers={'accept': 'text/html'},
-                      follow_redirects=False)
+    resp = client.get('/protected', headers={'accept': 'text/html'}, follow_redirects=False)
     assert resp.status_code == 302
     assert resp.headers['location'] == '/admin/login'
 
@@ -159,8 +160,7 @@ def test_require_role_forbidden_uses_forbidden_url_setting(monkeypatch):
     )
     test_client = TestClient(test_app)
     test_client.get('/set')  # populate session cookie
-    resp = test_client.get('/editor', headers={'accept': 'text/html'},
-                           follow_redirects=False)
+    resp = test_client.get('/editor', headers={'accept': 'text/html'}, follow_redirects=False)
     assert resp.status_code == 302
     assert resp.headers['location'] == '/access-denied'
 
@@ -168,6 +168,7 @@ def test_require_role_forbidden_uses_forbidden_url_setting(monkeypatch):
 # ---------------------------------------------------------------------------
 # E2E with session: use internal Starlette test helpers
 # ---------------------------------------------------------------------------
+
 
 def test_login_required_passes_with_session():
     """Simulate setting session by adding a route that sets it."""

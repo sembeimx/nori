@@ -5,6 +5,7 @@ Pluggable backends for rate limiting.
 
 Default is MemoryBackend. Set settings.THROTTLE_BACKEND = 'redis' for Redis.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -82,17 +83,18 @@ class RedisBackend(ThrottleBackend):
 
     def __init__(self, redis_url: str) -> None:
         import redis.asyncio as aioredis
+
         self._redis = aioredis.from_url(redis_url, socket_connect_timeout=5)
         self._prefix = 'throttle:'
 
     async def get_timestamps(self, key: str, window: int) -> list[float]:
         cutoff = time.time() - window
-        rkey = f"{self._prefix}{key}"
+        rkey = f'{self._prefix}{key}'
         values = await self._redis.zrangebyscore(rkey, cutoff, '+inf')
         return [float(v) for v in values]
 
     async def add_timestamp(self, key: str, now: float, window: int) -> None:
-        rkey = f"{self._prefix}{key}"
+        rkey = f'{self._prefix}{key}'
         pipe = self._redis.pipeline()
         pipe.zadd(rkey, {str(now): now})
         pipe.zremrangebyscore(rkey, '-inf', now - window)
@@ -101,7 +103,7 @@ class RedisBackend(ThrottleBackend):
 
     async def cleanup(self, key: str, window: int) -> None:
         cutoff = time.time() - window
-        rkey = f"{self._prefix}{key}"
+        rkey = f'{self._prefix}{key}'
         await self._redis.zremrangebyscore(rkey, '-inf', cutoff)
 
     async def shutdown(self) -> None:

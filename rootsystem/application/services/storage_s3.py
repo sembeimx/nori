@@ -70,15 +70,10 @@ def _sign_aws4(
     signed_headers = ';'.join(signed_header_keys)
 
     canonical_headers = ''.join(f'{k}:{headers[k]}\n' for k in signed_header_keys)
-    canonical_request = (
-        f"{method}\n{parsed.path}\n\n{canonical_headers}\n{signed_headers}\n{payload_hash}"
-    )
+    canonical_request = f'{method}\n{parsed.path}\n\n{canonical_headers}\n{signed_headers}\n{payload_hash}'
 
-    scope = f"{datestamp}/{region}/s3/aws4_request"
-    string_to_sign = (
-        f"AWS4-HMAC-SHA256\n{amz_date}\n{scope}\n"
-        + hashlib.sha256(canonical_request.encode()).hexdigest()
-    )
+    scope = f'{datestamp}/{region}/s3/aws4_request'
+    string_to_sign = f'AWS4-HMAC-SHA256\n{amz_date}\n{scope}\n' + hashlib.sha256(canonical_request.encode()).hexdigest()
 
     def _hmac(key: bytes, msg: str) -> bytes:
         return hmac.new(key, msg.encode(), hashlib.sha256).digest()
@@ -90,8 +85,7 @@ def _sign_aws4(
 
     signature = hmac.new(signing_key, string_to_sign.encode(), hashlib.sha256).hexdigest()
     headers['Authorization'] = (
-        f"AWS4-HMAC-SHA256 Credential={access_key}/{scope}, "
-        f"SignedHeaders={signed_headers}, Signature={signature}"
+        f'AWS4-HMAC-SHA256 Credential={access_key}/{scope}, SignedHeaders={signed_headers}, Signature={signature}'
     )
 
     return headers
@@ -131,13 +125,13 @@ async def _store_s3(
     url_prefix = config.get('S3_URL_PREFIX', None)
 
     # Build the object key using upload_dir as prefix
-    key = f"{upload_dir.strip('/')}/{filename}" if upload_dir else filename
+    key = f'{upload_dir.strip("/")}/{filename}' if upload_dir else filename
 
     # Build endpoint URL
     if endpoint:
-        put_url = f"{endpoint.rstrip('/')}/{bucket}/{key}"
+        put_url = f'{endpoint.rstrip("/")}/{bucket}/{key}'
     else:
-        put_url = f"https://{bucket}.s3.{region}.amazonaws.com/{key}"
+        put_url = f'https://{bucket}.s3.{region}.amazonaws.com/{key}'
 
     payload_hash = hashlib.sha256(content).hexdigest()
     content_type = 'application/octet-stream'
@@ -159,11 +153,11 @@ async def _store_s3(
 
     # Public URL
     if url_prefix:
-        public_url = f"{url_prefix.rstrip('/')}/{key}"
+        public_url = f'{url_prefix.rstrip("/")}/{key}'
     elif endpoint:
-        public_url = f"{endpoint.rstrip('/')}/{bucket}/{key}"
+        public_url = f'{endpoint.rstrip("/")}/{bucket}/{key}'
     else:
-        public_url = f"https://{bucket}.s3.{region}.amazonaws.com/{key}"
+        public_url = f'https://{bucket}.s3.{region}.amazonaws.com/{key}'
 
     return key, public_url
 

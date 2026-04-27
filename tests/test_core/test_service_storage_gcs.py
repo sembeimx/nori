@@ -1,4 +1,5 @@
 """Tests for services/storage_gcs.py — Google Cloud Storage driver."""
+
 from __future__ import annotations
 
 import base64
@@ -19,6 +20,7 @@ from services.storage_gcs import (
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture(autouse=True)
 def _reset_token_cache():
@@ -64,6 +66,7 @@ def fake_credentials(rsa_keypair):
 def _gcs_settings(monkeypatch):
     """Ensure GCS settings exist on the settings module."""
     import settings
+
     monkeypatch.setattr(settings, 'GCS_BUCKET', 'test-bucket', raising=False)
     for attr in ('GCS_URL_PREFIX', 'GCS_CREDENTIALS_FILE', 'GCS_CREDENTIALS_JSON'):
         if hasattr(settings, attr):
@@ -74,6 +77,7 @@ def _gcs_settings(monkeypatch):
 # register()
 # ---------------------------------------------------------------------------
 
+
 def test_register_adds_gcs_driver():
     with patch('services.storage_gcs.register_storage_driver') as mock_reg:
         register()
@@ -83,6 +87,7 @@ def test_register_adds_gcs_driver():
 # ---------------------------------------------------------------------------
 # _b64url()
 # ---------------------------------------------------------------------------
+
 
 def test_b64url_strips_padding():
     assert _b64url(b'hi') == 'aGk'  # standard b64 would be 'aGk='
@@ -99,8 +104,10 @@ def test_b64url_uses_url_safe_alphabet():
 # _load_credentials()
 # ---------------------------------------------------------------------------
 
+
 def test_load_credentials_from_file(tmp_path, fake_credentials, monkeypatch):
     import settings
+
     creds_path = tmp_path / 'sa.json'
     creds_path.write_text(json.dumps(fake_credentials))
     monkeypatch.setattr(settings, 'GCS_CREDENTIALS_FILE', str(creds_path), raising=False)
@@ -111,9 +118,8 @@ def test_load_credentials_from_file(tmp_path, fake_credentials, monkeypatch):
 
 def test_load_credentials_from_json_env(fake_credentials, monkeypatch):
     import settings
-    monkeypatch.setattr(
-        settings, 'GCS_CREDENTIALS_JSON', json.dumps(fake_credentials), raising=False
-    )
+
+    monkeypatch.setattr(settings, 'GCS_CREDENTIALS_JSON', json.dumps(fake_credentials), raising=False)
 
     loaded = _load_credentials()
     assert loaded['client_email'] == fake_credentials['client_email']
@@ -121,11 +127,13 @@ def test_load_credentials_from_json_env(fake_credentials, monkeypatch):
 
 def test_load_credentials_file_takes_precedence(tmp_path, fake_credentials, monkeypatch):
     import settings
+
     creds_path = tmp_path / 'sa.json'
     creds_path.write_text(json.dumps({**fake_credentials, 'client_email': 'from-file@x.iam'}))
     monkeypatch.setattr(settings, 'GCS_CREDENTIALS_FILE', str(creds_path), raising=False)
     monkeypatch.setattr(
-        settings, 'GCS_CREDENTIALS_JSON',
+        settings,
+        'GCS_CREDENTIALS_JSON',
         json.dumps({**fake_credentials, 'client_email': 'from-env@x.iam'}),
         raising=False,
     )
@@ -142,6 +150,7 @@ def test_load_credentials_raises_when_missing():
 # ---------------------------------------------------------------------------
 # _build_jwt()
 # ---------------------------------------------------------------------------
+
 
 def test_build_jwt_returns_three_part_token(rsa_keypair):
     pem, _ = rsa_keypair
@@ -193,28 +202,28 @@ def test_build_jwt_signature_verifies(rsa_keypair):
     signature = base64.urlsafe_b64decode(sig_b64 + '=' * (-len(sig_b64) % 4))
 
     # Raises InvalidSignature if the signature does not verify
-    key.public_key().verify(
-        signature, signing_input, padding.PKCS1v15(), hashes.SHA256()
-    )
+    key.public_key().verify(signature, signing_input, padding.PKCS1v15(), hashes.SHA256())
 
 
 # ---------------------------------------------------------------------------
 # _get_access_token()
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_get_access_token_fetches_and_caches(fake_credentials, monkeypatch):
     import settings
-    monkeypatch.setattr(
-        settings, 'GCS_CREDENTIALS_JSON', json.dumps(fake_credentials), raising=False
-    )
+
+    monkeypatch.setattr(settings, 'GCS_CREDENTIALS_JSON', json.dumps(fake_credentials), raising=False)
 
     token_response = MagicMock()
     token_response.raise_for_status = MagicMock()
-    token_response.json = MagicMock(return_value={
-        'access_token': 'ya29.test-token',
-        'expires_in': 3600,
-    })
+    token_response.json = MagicMock(
+        return_value={
+            'access_token': 'ya29.test-token',
+            'expires_in': 3600,
+        }
+    )
 
     mock_client = AsyncMock()
     mock_client.post = AsyncMock(return_value=token_response)
@@ -233,9 +242,8 @@ async def test_get_access_token_fetches_and_caches(fake_credentials, monkeypatch
 @pytest.mark.asyncio
 async def test_get_access_token_refreshes_when_expired(fake_credentials, monkeypatch):
     import settings
-    monkeypatch.setattr(
-        settings, 'GCS_CREDENTIALS_JSON', json.dumps(fake_credentials), raising=False
-    )
+
+    monkeypatch.setattr(settings, 'GCS_CREDENTIALS_JSON', json.dumps(fake_credentials), raising=False)
 
     # Pre-seed the cache with an expired token
     gcs_mod._token_cache['token'] = 'old-token'
@@ -243,10 +251,12 @@ async def test_get_access_token_refreshes_when_expired(fake_credentials, monkeyp
 
     token_response = MagicMock()
     token_response.raise_for_status = MagicMock()
-    token_response.json = MagicMock(return_value={
-        'access_token': 'new-token',
-        'expires_in': 3600,
-    })
+    token_response.json = MagicMock(
+        return_value={
+            'access_token': 'new-token',
+            'expires_in': 3600,
+        }
+    )
 
     mock_client = AsyncMock()
     mock_client.post = AsyncMock(return_value=token_response)
@@ -262,9 +272,8 @@ async def test_get_access_token_refreshes_when_expired(fake_credentials, monkeyp
 @pytest.mark.asyncio
 async def test_get_access_token_posts_jwt_bearer_grant(fake_credentials, monkeypatch):
     import settings
-    monkeypatch.setattr(
-        settings, 'GCS_CREDENTIALS_JSON', json.dumps(fake_credentials), raising=False
-    )
+
+    monkeypatch.setattr(settings, 'GCS_CREDENTIALS_JSON', json.dumps(fake_credentials), raising=False)
 
     token_response = MagicMock()
     token_response.raise_for_status = MagicMock()
@@ -289,9 +298,11 @@ async def test_get_access_token_posts_jwt_bearer_grant(fake_credentials, monkeyp
 # _store_gcs()
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_store_gcs_default_url(monkeypatch):
     import settings
+
     monkeypatch.setattr(settings, 'GCS_BUCKET', 'mybucket')
 
     async def _fake_token():
@@ -305,8 +316,10 @@ async def test_store_gcs_default_url(monkeypatch):
     mock_client.__aenter__ = AsyncMock(return_value=mock_client)
     mock_client.__aexit__ = AsyncMock(return_value=False)
 
-    with patch('services.storage_gcs._get_access_token', _fake_token), \
-         patch('services.storage_gcs.httpx.AsyncClient', return_value=mock_client):
+    with (
+        patch('services.storage_gcs._get_access_token', _fake_token),
+        patch('services.storage_gcs.httpx.AsyncClient', return_value=mock_client),
+    ):
         key, url = await _store_gcs('photo.jpg', b'image-data', 'uploads')
 
     assert key == 'uploads/photo.jpg'
@@ -322,6 +335,7 @@ async def test_store_gcs_default_url(monkeypatch):
 @pytest.mark.asyncio
 async def test_store_gcs_url_prefix(monkeypatch):
     import settings
+
     monkeypatch.setattr(settings, 'GCS_BUCKET', 'media')
     monkeypatch.setattr(settings, 'GCS_URL_PREFIX', 'https://cdn.example.com', raising=False)
 
@@ -336,8 +350,10 @@ async def test_store_gcs_url_prefix(monkeypatch):
     mock_client.__aenter__ = AsyncMock(return_value=mock_client)
     mock_client.__aexit__ = AsyncMock(return_value=False)
 
-    with patch('services.storage_gcs._get_access_token', _fake_token), \
-         patch('services.storage_gcs.httpx.AsyncClient', return_value=mock_client):
+    with (
+        patch('services.storage_gcs._get_access_token', _fake_token),
+        patch('services.storage_gcs.httpx.AsyncClient', return_value=mock_client),
+    ):
         key, url = await _store_gcs('img.png', b'png-data', 'images')
 
     assert key == 'images/img.png'
@@ -347,6 +363,7 @@ async def test_store_gcs_url_prefix(monkeypatch):
 @pytest.mark.asyncio
 async def test_store_gcs_empty_upload_dir(monkeypatch):
     import settings
+
     monkeypatch.setattr(settings, 'GCS_BUCKET', 'mybucket')
 
     async def _fake_token():
@@ -360,8 +377,10 @@ async def test_store_gcs_empty_upload_dir(monkeypatch):
     mock_client.__aenter__ = AsyncMock(return_value=mock_client)
     mock_client.__aexit__ = AsyncMock(return_value=False)
 
-    with patch('services.storage_gcs._get_access_token', _fake_token), \
-         patch('services.storage_gcs.httpx.AsyncClient', return_value=mock_client):
+    with (
+        patch('services.storage_gcs._get_access_token', _fake_token),
+        patch('services.storage_gcs.httpx.AsyncClient', return_value=mock_client),
+    ):
         key, url = await _store_gcs('file.txt', b'data', '')
 
     assert key == 'file.txt'

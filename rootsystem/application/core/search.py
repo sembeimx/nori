@@ -48,6 +48,7 @@ objects, no ORM models. This makes drivers easy to write and test.
 Register your driver with :func:`register_search_driver` and you're done.
 See ``services/search_meilisearch.py`` for a complete example.
 """
+
 from __future__ import annotations
 
 from typing import Any, Callable
@@ -92,11 +93,9 @@ def register_search_driver(name: str, driver: dict[str, Callable]) -> None:
     required_keys = {'search', 'index_document', 'remove_document'}
     missing = required_keys - set(driver)
     if missing:
-        raise ValueError(
-            f"Search driver '{name}' is missing required keys: {', '.join(sorted(missing))}"
-        )
+        raise ValueError(f"Search driver '{name}' is missing required keys: {', '.join(sorted(missing))}")
     _DRIVERS[name] = driver
-    _log.info("Registered search driver: %s", name)
+    _log.info('Registered search driver: %s', name)
 
 
 def get_search_drivers() -> set[str]:
@@ -122,23 +121,18 @@ def _get_driver(driver: str | None = None) -> tuple[str, dict[str, Callable]]:
     """
     driver_name = driver or config.get('SEARCH_DRIVER', None) or None
     if driver_name is None:
-        raise ValueError(
-            "No search driver configured. Set SEARCH_DRIVER in your .env "
-            "or pass driver= explicitly."
-        )
+        raise ValueError('No search driver configured. Set SEARCH_DRIVER in your .env or pass driver= explicitly.')
     handler = _DRIVERS.get(driver_name)
     if handler is None:
         available = ', '.join(sorted(_DRIVERS)) if _DRIVERS else '(none registered)'
-        raise ValueError(
-            f"Unknown search driver '{driver_name}'. "
-            f"Available drivers: {available}"
-        )
+        raise ValueError(f"Unknown search driver '{driver_name}'. Available drivers: {available}")
     return driver_name, handler
 
 
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 async def search(
     index: str,
@@ -180,7 +174,7 @@ async def search(
             print(hit['title'], hit['id'])
     """
     name, drv = _get_driver(driver)
-    _log.debug("search index=%s query=%r driver=%s", index, query, name)
+    _log.debug('search index=%s query=%r driver=%s', index, query, name)
     return await drv['search'](index, query, filters or {}, limit, offset)
 
 
@@ -224,7 +218,7 @@ async def index_document(
             return JSONResponse({'id': article.id}, background=task)
     """
     name, drv = _get_driver(driver)
-    _log.debug("index_document index=%s id=%s driver=%s", index, doc_id, name)
+    _log.debug('index_document index=%s id=%s driver=%s', index, doc_id, name)
     await drv['index_document'](index, doc_id, document)
 
 
@@ -252,5 +246,5 @@ async def remove_document(
         await remove_document('articles', article.id)
     """
     name, drv = _get_driver(driver)
-    _log.debug("remove_document index=%s id=%s driver=%s", index, doc_id, name)
+    _log.debug('remove_document index=%s id=%s driver=%s', index, doc_id, name)
     await drv['remove_document'](index, doc_id)

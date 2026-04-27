@@ -31,6 +31,7 @@ class TrashedManager(Manager):
 
 class AllObjectsManager(Manager):
     """Manager without filters (includes everything)."""
+
     pass
 
 
@@ -58,9 +59,9 @@ class NoriSoftDeletes(Model):
     deleted_at = fields.DatetimeField(null=True, default=None)
 
     # Managers
-    objects: SoftDeleteManager = SoftDeleteManager()         # default: excludes deleted
-    all_objects: AllObjectsManager = AllObjectsManager()     # includes everything
-    trashed: TrashedManager = TrashedManager()               # only deleted
+    objects: SoftDeleteManager = SoftDeleteManager()  # default: excludes deleted
+    all_objects: AllObjectsManager = AllObjectsManager()  # includes everything
+    trashed: TrashedManager = TrashedManager()  # only deleted
 
     class Meta:
         abstract = True
@@ -68,6 +69,7 @@ class NoriSoftDeletes(Model):
     async def delete(self, using_db: object = None) -> None:
         """Soft delete: marks deleted_at with current timestamp."""
         from tortoise.timezone import now
+
         self.deleted_at = now()
         await self.save(update_fields=['deleted_at'], using_db=using_db)
 

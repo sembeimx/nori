@@ -1,4 +1,5 @@
 """Tests for NoriSoftDeletes mixin."""
+
 import pytest
 from test_models import SamplePost
 

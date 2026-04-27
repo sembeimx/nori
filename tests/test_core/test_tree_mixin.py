@@ -1,4 +1,5 @@
 """Tests for NoriTreeMixin."""
+
 import pytest
 from test_models import SampleCategory
 
@@ -112,12 +113,12 @@ async def test_tree_builds_structure():
 @pytest.mark.asyncio
 async def test_move_to_prevents_self():
     root, _, _, _ = await _build_tree()
-    with pytest.raises(ValueError, match="Cannot move a node to itself"):
+    with pytest.raises(ValueError, match='Cannot move a node to itself'):
         await root.move_to(root.id)
 
 
 @pytest.mark.asyncio
 async def test_move_to_prevents_descendant():
     root, child_a, _, grandchild = await _build_tree()
-    with pytest.raises(ValueError, match="Cannot move a node to one of its descendants"):
+    with pytest.raises(ValueError, match='Cannot move a node to one of its descendants'):
         await root.move_to(grandchild.id)

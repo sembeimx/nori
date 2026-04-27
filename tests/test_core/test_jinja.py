@@ -1,4 +1,5 @@
 """Tests for core.jinja template globals."""
+
 from core.jinja import templates
 
 

@@ -1,8 +1,10 @@
 """Tests for Request ID middleware."""
+
 import pytest
 from core.http.request_id import RequestIdMiddleware
 
 # --- Unit tests ---
+
 
 @pytest.mark.asyncio
 async def test_generates_uuid():
@@ -62,6 +64,7 @@ async def test_skips_non_http():
 
 
 # --- E2E tests ---
+
 
 @pytest.mark.asyncio
 async def test_response_has_x_request_id(client):

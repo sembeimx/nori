@@ -1,19 +1,24 @@
 """Tests for core.http.security_headers."""
+
 import pytest
 from core.http.security_headers import SecurityHeadersMiddleware
 
 
 async def _dummy_app(scope, receive, send):
     """Minimal ASGI app that returns 200 OK."""
-    await send({
-        'type': 'http.response.start',
-        'status': 200,
-        'headers': [(b'content-type', b'text/html')],
-    })
-    await send({
-        'type': 'http.response.body',
-        'body': b'OK',
-    })
+    await send(
+        {
+            'type': 'http.response.start',
+            'status': 200,
+            'headers': [(b'content-type', b'text/html')],
+        }
+    )
+    await send(
+        {
+            'type': 'http.response.body',
+            'body': b'OK',
+        }
+    )
 
 
 def _make_scope(path='/'):
@@ -37,6 +42,7 @@ async def _capture_headers(app, scope):
 
 
 # --- Tests ---
+
 
 @pytest.mark.asyncio
 async def test_default_headers_present():
@@ -95,9 +101,12 @@ async def test_no_csp_by_default():
 
 @pytest.mark.asyncio
 async def test_custom_header_override():
-    app = SecurityHeadersMiddleware(_dummy_app, headers={
-        'X-Frame-Options': 'SAMEORIGIN',
-    })
+    app = SecurityHeadersMiddleware(
+        _dummy_app,
+        headers={
+            'X-Frame-Options': 'SAMEORIGIN',
+        },
+    )
     headers = await _capture_headers(app, _make_scope())
 
     assert headers['x-frame-options'] == 'SAMEORIGIN'

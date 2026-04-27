@@ -26,6 +26,7 @@ def inject():
             # 'product_id' will be extracted from path_params or query_params and cast to int
             # ...
     """
+
     def decorator(func):
         sig = inspect.signature(func)
 
@@ -35,7 +36,7 @@ def inject():
 
             # Lazily collect async FormData / JSON only if requested
             form_data = None
-            needs_form = "form" in sig.parameters or any(
+            needs_form = 'form' in sig.parameters or any(
                 p.annotation is dict for p in sig.parameters.values() if p.name not in ['self', 'request']
             )
 
@@ -47,8 +48,9 @@ def inject():
                     else:
                         form_data = dict(await request.form())
                 except (ValueError, TypeError) as exc:
-                    _log.warning("Failed to parse request body: %s", exc)
+                    _log.warning('Failed to parse request body: %s', exc)
                     from starlette.responses import JSONResponse
+
                     return JSONResponse(
                         {'error': 'Invalid request body'},
                         status_code=400,
@@ -57,11 +59,11 @@ def inject():
             # Analyze signature and populate arguments
             for name, param in sig.parameters.items():
                 # Skip auto inputs
-                if name in ("self", "request") or name in kwargs:
+                if name in ('self', 'request') or name in kwargs:
                     continue
 
                 # 1. Requests full Dictionary or Form
-                if name == "form" or param.annotation is dict:
+                if name == 'form' or param.annotation is dict:
                     injected_kwargs[name] = form_data
 
                 # 2. Requests URL-anchored variable (Path Params)
@@ -95,5 +97,7 @@ def inject():
 
             # Finally, pass the computed values back to the controller
             return await func(self, request, *args, **kwargs, **injected_kwargs)
+
         return wrapper
+
     return decorator

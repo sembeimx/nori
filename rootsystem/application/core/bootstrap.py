@@ -17,6 +17,7 @@ The file is optional. If absent, `load_bootstrap()` is a no-op. If the
 file imports or `bootstrap()` raises, a warning is logged and the app
 continues to start — never crash the server because of a user hook.
 """
+
 from __future__ import annotations
 
 import importlib

@@ -72,11 +72,16 @@ async def test_escalating_lockout():
 
     # Simulate first lockout already happened by setting state directly
     from core.cache import cache_set
-    await cache_set('login_guard:user@example.com', {
-        'attempts': 0,
-        'lockouts': 1,
-        'locked_until': 0,
-    }, 3600)
+
+    await cache_set(
+        'login_guard:user@example.com',
+        {
+            'attempts': 0,
+            'lockouts': 1,
+            'locked_until': 0,
+        },
+        3600,
+    )
 
     # Trigger second lockout
     for _ in range(_MAX_ATTEMPTS):

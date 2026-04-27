@@ -1,4 +1,5 @@
 """Test models for mixin integration tests."""
+
 from core.mixins.model import NoriModelMixin
 from core.mixins.soft_deletes import NoriSoftDeletes
 from core.mixins.tree import NoriTreeMixin
@@ -17,6 +18,7 @@ class SampleArticle(NoriModelMixin, Model):
 
 class SampleUser(NoriModelMixin, Model):
     """Model with protected_fields for testing sensitive data exclusion."""
+
     protected_fields = ['password_hash', 'secret_token']
 
     id = fields.IntField(primary_key=True)
@@ -39,10 +41,7 @@ class SamplePost(NoriSoftDeletes):
 class SampleCategory(NoriTreeMixin):
     id = fields.IntField(primary_key=True)
     name = fields.CharField(max_length=100)
-    parent = fields.ForeignKeyField(
-        'models.SampleCategory', related_name='children_rel',
-        null=True, default=None
-    )
+    parent = fields.ForeignKeyField('models.SampleCategory', related_name='children_rel', null=True, default=None)
 
     class Meta:
         table = 'sample_category'

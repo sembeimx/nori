@@ -1,4 +1,5 @@
 """Tests for the form-value re-population helper (core.http.old)."""
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock
@@ -22,6 +23,7 @@ def request_obj():
 # flash_old
 # ---------------------------------------------------------------------------
 
+
 def test_flash_old_stores_form_values_in_session(request_obj):
     flash_old(request_obj, {'email': 'ada@example.com', 'name': 'Ada'})
 
@@ -32,12 +34,15 @@ def test_flash_old_stores_form_values_in_session(request_obj):
 
 
 def test_flash_old_excludes_password_fields_by_default(request_obj):
-    flash_old(request_obj, {
-        'email': 'ada@example.com',
-        'password': 'secret123',
-        'password_confirmation': 'secret123',
-        'current_password': 'oldpass',
-    })
+    flash_old(
+        request_obj,
+        {
+            'email': 'ada@example.com',
+            'password': 'secret123',
+            'password_confirmation': 'secret123',
+            'current_password': 'oldpass',
+        },
+    )
 
     stored = request_obj.session['_old']
     assert 'email' in stored
@@ -80,6 +85,7 @@ def test_flash_old_overwrites_previous_flash(request_obj):
 # _old_value (the read path)
 # ---------------------------------------------------------------------------
 
+
 def test_old_value_returns_stored_field():
     session = {'_old': {'email': 'ada@example.com'}}
     assert _old_value(session, 'email') == 'ada@example.com'
@@ -102,6 +108,7 @@ def test_old_value_default_is_empty_string():
 # ---------------------------------------------------------------------------
 # Jinja global integration
 # ---------------------------------------------------------------------------
+
 
 def test_old_jinja_global_reads_from_request_in_context():
     """The @pass_context-decorated `old` reads request.session via ctx."""

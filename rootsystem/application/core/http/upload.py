@@ -41,6 +41,7 @@ Security note:
     file types (JPEG, PNG, GIF, PDF, WebP).  For exotic formats the check
     is skipped gracefully — the extension and MIME checks still apply.
 """
+
 from __future__ import annotations
 
 import os
@@ -74,11 +75,11 @@ _MIME_MAP: dict[str, str] = {
 # without requiring heavy C dependencies like libmagic.
 # ---------------------------------------------------------------------------
 _MAGIC_BYTES: dict[str, tuple[bytes, ...]] = {
-    'jpg':  (b'\xff\xd8\xff',),
+    'jpg': (b'\xff\xd8\xff',),
     'jpeg': (b'\xff\xd8\xff',),
-    'png':  (b'\x89PNG\r\n\x1a\n',),
-    'gif':  (b'GIF87a', b'GIF89a'),
-    'pdf':  (b'%PDF',),
+    'png': (b'\x89PNG\r\n\x1a\n',),
+    'gif': (b'GIF87a', b'GIF89a'),
+    'pdf': (b'%PDF',),
     'webp': (b'RIFF',),  # Full check: bytes 8-12 must be WEBP (see _validate_magic_bytes)
 }
 
@@ -110,9 +111,7 @@ def _validate_extension(filename: str, allowed_types: list[str]) -> str:
     """Validate and return file extension (lowercase, without dot)."""
     ext = filename.rsplit('.', 1)[-1].lower() if '.' in filename else ''
     if ext not in allowed_types:
-        raise UploadError(
-            f"Extension '.{ext}' not allowed. Allowed: {', '.join(allowed_types)}"
-        )
+        raise UploadError(f"Extension '.{ext}' not allowed. Allowed: {', '.join(allowed_types)}")
     return ext
 
 
@@ -129,9 +128,7 @@ def _validate_mime_type(content_type: str | None, ext: str) -> None:
     if expected and content_type:
         base_type = content_type.split(';')[0].strip()
         if base_type != expected:
-            raise UploadError(
-                f"MIME type '{base_type}' does not match extension '.{ext}' (expected '{expected}')"
-            )
+            raise UploadError(f"MIME type '{base_type}' does not match extension '.{ext}' (expected '{expected}')")
 
 
 def _validate_magic_bytes(content: bytes, ext: str) -> None:
@@ -157,26 +154,21 @@ def _validate_magic_bytes(content: bytes, ext: str) -> None:
     if not signatures:
         return  # No known signature for this extension — skip gracefully
     if not any(content.startswith(sig) for sig in signatures):
-        raise UploadError(
-            f"File content does not match expected format for '.{ext}' "
-            f"(magic byte verification failed)"
-        )
+        raise UploadError(f"File content does not match expected format for '.{ext}' (magic byte verification failed)")
     # WebP: RIFF container must have WEBP identifier at bytes 8-12
     if ext == 'webp' and len(content) >= 12 and content[8:12] != b'WEBP':
-        raise UploadError(
-            "File content does not match expected format for '.webp' "
-            "(RIFF container is not WebP)"
-        )
+        raise UploadError("File content does not match expected format for '.webp' (RIFF container is not WebP)")
 
 
 def _generate_filename(ext: str) -> str:
     """Generate a unique filename with UUID."""
-    return f"{uuid.uuid4().hex}.{ext}"
+    return f'{uuid.uuid4().hex}.{ext}'
 
 
 # ---------------------------------------------------------------------------
 # Storage drivers
 # ---------------------------------------------------------------------------
+
 
 async def _store_local(
     filename: str,
@@ -203,7 +195,7 @@ async def _store_local(
     with open(file_path, 'wb') as f:
         f.write(content)
 
-    return file_path, f"/uploads/{filename}"
+    return file_path, f'/uploads/{filename}'
 
 
 _DRIVERS: dict[str, Callable] = {
@@ -230,6 +222,7 @@ def get_storage_drivers() -> set[str]:
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 async def save_upload(
     file,
@@ -286,11 +279,9 @@ async def save_upload(
     # Read content and validate size
     content = await file.read()
     if len(content) == 0:
-        raise UploadError("File is empty")
+        raise UploadError('File is empty')
     if len(content) > max_size:
-        raise UploadError(
-            f"File size ({len(content)} bytes) exceeds max ({max_size} bytes)"
-        )
+        raise UploadError(f'File size ({len(content)} bytes) exceeds max ({max_size} bytes)')
 
     # Verify actual file content via magic bytes
     _validate_magic_bytes(content, ext)
@@ -302,10 +293,7 @@ async def save_upload(
     handler = _DRIVERS.get(driver_name)
     if handler is None:
         available = ', '.join(sorted(_DRIVERS))
-        raise ValueError(
-            f"Unknown storage driver '{driver_name}'. "
-            f"Available drivers: {available}"
-        )
+        raise ValueError(f"Unknown storage driver '{driver_name}'. Available drivers: {available}")
 
     file_path, url = await handler(filename, content, upload_dir)
 

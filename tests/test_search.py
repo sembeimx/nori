@@ -8,6 +8,7 @@ Covers:
 - remove_document() dispatch
 - Error handling (unknown driver, no driver configured)
 """
+
 import os
 import sys
 
@@ -34,6 +35,7 @@ from core.search import (
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_driver(search_fn=None, index_fn=None, remove_fn=None):
     """Create a mock search driver dict with AsyncMock callables.
 
@@ -58,6 +60,7 @@ def _cleanup_drivers():
 # register_search_driver
 # ---------------------------------------------------------------------------
 
+
 def test_register_search_driver():
     """A valid driver with all required keys registers successfully."""
     drv = _make_driver()
@@ -67,19 +70,20 @@ def test_register_search_driver():
 
 def test_register_search_driver_missing_keys():
     """A driver missing some required keys raises ValueError."""
-    with pytest.raises(ValueError, match="missing required keys"):
+    with pytest.raises(ValueError, match='missing required keys'):
         register_search_driver('bad', {'search': AsyncMock()})
 
 
 def test_register_search_driver_empty_dict():
     """An empty dict raises ValueError listing the missing keys."""
-    with pytest.raises(ValueError, match="index_document"):
+    with pytest.raises(ValueError, match='index_document'):
         register_search_driver('bad', {})
 
 
 # ---------------------------------------------------------------------------
 # get_search_drivers
 # ---------------------------------------------------------------------------
+
 
 def test_get_search_drivers_returns_set():
     """get_search_drivers() always returns a set."""
@@ -95,6 +99,7 @@ def test_get_search_drivers_after_register():
 # ---------------------------------------------------------------------------
 # search()
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.anyio
 async def test_search_dispatches_to_driver():
@@ -115,7 +120,8 @@ async def test_search_passes_filters_and_pagination():
     register_search_driver('test_drv', _make_driver(search_fn=mock_search))
 
     await search(
-        'products', 'laptop',
+        'products',
+        'laptop',
         filters={'brand': 'Nori'},
         limit=5,
         offset=10,
@@ -167,13 +173,14 @@ async def test_search_no_driver_configured():
     """Empty SEARCH_DRIVER in settings raises ValueError."""
     with patch.object(_search_mod, 'config') as mock_config:
         mock_config.get = lambda k, d=None: '' if k == 'SEARCH_DRIVER' else d
-        with pytest.raises(ValueError, match="No search driver configured"):
+        with pytest.raises(ValueError, match='No search driver configured'):
             await search('idx', 'q')
 
 
 # ---------------------------------------------------------------------------
 # index_document()
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.anyio
 async def test_index_document_dispatches():
@@ -189,13 +196,14 @@ async def test_index_document_dispatches():
 @pytest.mark.anyio
 async def test_index_document_unknown_driver():
     """An unknown driver raises ValueError."""
-    with pytest.raises(ValueError, match="Unknown search driver"):
+    with pytest.raises(ValueError, match='Unknown search driver'):
         await index_document('idx', 1, {}, driver='nope')
 
 
 # ---------------------------------------------------------------------------
 # remove_document()
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.anyio
 async def test_remove_document_dispatches():
@@ -211,5 +219,5 @@ async def test_remove_document_dispatches():
 @pytest.mark.anyio
 async def test_remove_document_unknown_driver():
     """An unknown driver raises ValueError."""
-    with pytest.raises(ValueError, match="Unknown search driver"):
+    with pytest.raises(ValueError, match='Unknown search driver'):
         await remove_document('idx', 1, driver='nope')

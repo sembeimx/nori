@@ -12,6 +12,7 @@ Usage after renaming to ``hello.py``::
     python3 nori.py hello
     python3 nori.py hello --name World
 """
+
 from __future__ import annotations
 
 
@@ -23,4 +24,4 @@ def register(subparsers) -> None:
 
 def handle(args) -> None:
     """Execute the command."""
-    print(f"Hello, {args.name}!")
+    print(f'Hello, {args.name}!')

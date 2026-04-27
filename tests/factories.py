@@ -10,6 +10,7 @@ Usage::
     root = await make_category(name='Root')
     child = await make_category(name='Child', parent_id=root.id)
 """
+
 from __future__ import annotations
 
 from typing import Any

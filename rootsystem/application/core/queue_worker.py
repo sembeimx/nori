@@ -21,7 +21,7 @@ _should_exit = False
 
 def _handle_exit(sig, frame):
     global _should_exit
-    _log.info("Shutdown signal received, finishing current job...")
+    _log.info('Shutdown signal received, finishing current job...')
     _should_exit = True
 
 
@@ -50,14 +50,11 @@ async def _work_database(queue_name: str, sleep: int = 3):
     global _should_exit
 
     _register_signals()
-    _log.info("Queue worker started [driver=database, queue=%s, max_attempts=%d]", queue_name, MAX_ATTEMPTS)
+    _log.info('Queue worker started [driver=database, queue=%s, max_attempts=%d]', queue_name, MAX_ATTEMPTS)
 
     while not _should_exit:
         job = await Job.filter(
-            queue=queue_name,
-            reserved_at__isnull=True,
-            available_at__lte=now(),
-            failed_at__isnull=True
+            queue=queue_name, reserved_at__isnull=True, available_at__lte=now(), failed_at__isnull=True
         ).first()
 
         if not job:
@@ -77,16 +74,23 @@ async def _work_database(queue_name: str, sleep: int = 3):
 
             if job.attempts >= MAX_ATTEMPTS:
                 job.failed_at = now()
-                _log.error("Job %d failed permanently after %d attempts: %s", job.id, MAX_ATTEMPTS, e, exc_info=True)
+                _log.error('Job %d failed permanently after %d attempts: %s', job.id, MAX_ATTEMPTS, e, exc_info=True)
             else:
-                wait_seconds = (job.attempts ** 4) * 15
+                wait_seconds = (job.attempts**4) * 15
                 job.available_at = now() + timedelta(seconds=wait_seconds)
-                _log.warning("Job %d failed (attempt %d): %s. Retrying in %ds", job.id, job.attempts, e, wait_seconds, exc_info=True)
+                _log.warning(
+                    'Job %d failed (attempt %d): %s. Retrying in %ds',
+                    job.id,
+                    job.attempts,
+                    e,
+                    wait_seconds,
+                    exc_info=True,
+                )
 
             await job.save()
             await asyncio.sleep(sleep)
 
-    _log.info("Worker stopped cleanly.")
+    _log.info('Worker stopped cleanly.')
 
 
 async def _work_redis(queue_name: str):
@@ -99,7 +103,7 @@ async def _work_redis(queue_name: str):
     failed_key = f'{key}:failed'
 
     _register_signals()
-    _log.info("Queue worker started [driver=redis, queue=%s, max_attempts=%d]", queue_name, MAX_ATTEMPTS)
+    _log.info('Queue worker started [driver=redis, queue=%s, max_attempts=%d]', queue_name, MAX_ATTEMPTS)
 
     global _should_exit
     while not _should_exit:
@@ -127,13 +131,13 @@ async def _work_redis(queue_name: str):
             if attempts >= MAX_ATTEMPTS:
                 job_data['failed_at'] = time.time()
                 await r.lpush(failed_key, json.dumps(job_data))
-                _log.error("Job failed permanently after %d attempts: %s", MAX_ATTEMPTS, e, exc_info=True)
+                _log.error('Job failed permanently after %d attempts: %s', MAX_ATTEMPTS, e, exc_info=True)
             else:
-                wait_seconds = (attempts ** 4) * 15
+                wait_seconds = (attempts**4) * 15
                 await r.zadd(delayed_key, {json.dumps(job_data): time.time() + wait_seconds})
-                _log.warning("Job failed (attempt %d): %s. Retrying in %ds", attempts, e, wait_seconds, exc_info=True)
+                _log.warning('Job failed (attempt %d): %s. Retrying in %ds', attempts, e, wait_seconds, exc_info=True)
 
-    _log.info("Worker stopped cleanly.")
+    _log.info('Worker stopped cleanly.')
 
 
 def _register_signals():

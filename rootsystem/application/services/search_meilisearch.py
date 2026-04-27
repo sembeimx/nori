@@ -228,8 +228,11 @@ def register() -> None:
         from services.search_meilisearch import register
         register()
     """
-    register_search_driver('meilisearch', {
-        'search': _search,
-        'index_document': _index_document,
-        'remove_document': _remove_document,
-    })
+    register_search_driver(
+        'meilisearch',
+        {
+            'search': _search,
+            'index_document': _index_document,
+            'remove_document': _remove_document,
+        },
+    )

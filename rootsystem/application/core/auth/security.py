@@ -16,14 +16,9 @@ class Security:
         """
         iterations = iterations or DEFAULT_ITERATIONS
         salt = secrets.token_hex(16)
-        hash_bytes = hashlib.pbkdf2_hmac(
-            'sha256',
-            password.encode('utf-8'),
-            salt.encode('utf-8'),
-            iterations
-        )
+        hash_bytes = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), salt.encode('utf-8'), iterations)
         hash_hex = hash_bytes.hex()
-        return f"pbkdf2_sha256${iterations}${salt}${hash_hex}"
+        return f'pbkdf2_sha256${iterations}${salt}${hash_hex}'
 
     @staticmethod
     def verify_password(plain_password: str, password_hash: str) -> bool:
@@ -48,12 +43,7 @@ class Security:
         if method != 'pbkdf2_sha256':
             return False
 
-        hash_bytes = hashlib.pbkdf2_hmac(
-            'sha256',
-            plain_password.encode('utf-8'),
-            salt.encode('utf-8'),
-            iterations
-        )
+        hash_bytes = hashlib.pbkdf2_hmac('sha256', plain_password.encode('utf-8'), salt.encode('utf-8'), iterations)
         return hmac.compare_digest(hash_bytes.hex(), stored_hash)
 
     @staticmethod

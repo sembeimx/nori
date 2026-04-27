@@ -14,6 +14,7 @@ Usage::
         audit(request, 'create', model_name='Article', record_id=article.id)
         return JSONResponse({'ok': True})
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -75,8 +76,13 @@ def audit(
     request_id = getattr(request.state, 'request_id', None)
 
     _log.info(
-        "action=%s user=%s model=%s record=%s ip=%s request_id=%s",
-        action, resolved_user_id, model_name, record_id, ip, request_id,
+        'action=%s user=%s model=%s record=%s ip=%s request_id=%s',
+        action,
+        resolved_user_id,
+        model_name,
+        record_id,
+        ip,
+        request_id,
     )
 
     async def _write() -> None:
@@ -92,7 +98,7 @@ def audit(
                 request_id=request_id,
             )
         except Exception:
-            _log.exception("Failed to write audit log entry")
+            _log.exception('Failed to write audit log entry')
 
     try:
         loop = asyncio.get_running_loop()

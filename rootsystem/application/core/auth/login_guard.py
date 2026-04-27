@@ -20,6 +20,7 @@ Usage::
         await clear_failed_logins(email)
         # ... start session ...
 """
+
 from __future__ import annotations
 
 import time
@@ -49,7 +50,7 @@ async def check_login_allowed(identifier: str) -> tuple[bool, int]:
     When allowed is True, retry_after is 0.
     When allowed is False, retry_after is the seconds remaining until the lockout expires.
     """
-    data = await cache_get(f"{_PREFIX}{identifier}")
+    data = await cache_get(f'{_PREFIX}{identifier}')
     if data is None:
         return True, 0
 
@@ -65,7 +66,7 @@ async def record_failed_login(identifier: str) -> None:
     Record a failed login attempt. After ``_MAX_ATTEMPTS`` consecutive failures,
     the account is locked with escalating duration.
     """
-    key = f"{_PREFIX}{identifier}"
+    key = f'{_PREFIX}{identifier}'
     data = await cache_get(key) or {'attempts': 0, 'lockouts': 0, 'locked_until': 0}
 
     # If currently locked, don't count additional attempts
@@ -80,11 +81,11 @@ async def record_failed_login(identifier: str) -> None:
         data['locked_until'] = time.time() + duration
         data['lockouts'] = lockouts + 1
         data['attempts'] = 0
-        _log.warning("Account locked: %s (lockout #%d, %ds)", identifier, data['lockouts'], duration)
+        _log.warning('Account locked: %s (lockout #%d, %ds)', identifier, data['lockouts'], duration)
 
     await cache_set(key, data, _TRACKING_TTL)
 
 
 async def clear_failed_logins(identifier: str) -> None:
     """Clear all failed login tracking for the given identifier (call on successful login)."""
-    await cache_delete(f"{_PREFIX}{identifier}")
+    await cache_delete(f'{_PREFIX}{identifier}')

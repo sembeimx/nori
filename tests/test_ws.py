@@ -1,4 +1,5 @@
 """Tests for WebSocket handlers."""
+
 import os
 import sys
 

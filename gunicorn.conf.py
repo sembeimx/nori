@@ -1,8 +1,8 @@
 from multiprocessing import cpu_count
 
 workers = cpu_count() * 2 + 1
-worker_class = "uvicorn.workers.UvicornWorker"
-bind = "0.0.0.0:8000"
+worker_class = 'uvicorn.workers.UvicornWorker'
+bind = '0.0.0.0:8000'
 
 # Trust X-Forwarded-* headers from any upstream. Gunicorn propagates this
 # value to the uvicorn worker, which would otherwise default to 127.0.0.1 only.
@@ -19,4 +19,4 @@ bind = "0.0.0.0:8000"
 # private network — an attacker can spoof X-Forwarded-For to bypass rate
 # limits, audit logs, and IP-based ACLs. Either firewall the port or set
 # the CIDR of your proxy.
-forwarded_allow_ips = "*"
+forwarded_allow_ips = '*'

@@ -11,6 +11,7 @@ Covers:
 - Driver registration and introspection
 - Edge case: file without filename
 """
+
 import os
 import tempfile
 from unittest.mock import AsyncMock, patch
@@ -64,6 +65,7 @@ def _cleanup_drivers():
 # ---------------------------------------------------------------------------
 # Validation
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.anyio
 async def test_save_upload_success():
@@ -128,6 +130,7 @@ async def test_save_upload_no_filename():
 # ---------------------------------------------------------------------------
 # Magic byte verification
 # ---------------------------------------------------------------------------
+
 
 def test_magic_bytes_valid_jpeg():
     """Valid JPEG magic bytes pass verification."""
@@ -195,6 +198,7 @@ async def test_save_upload_rejects_disguised_file():
 # _store_local
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.anyio
 async def test_store_local():
     """Local driver writes file to disk and returns (path, url)."""
@@ -210,13 +214,13 @@ async def test_store_local():
 # Driver dispatch
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.anyio
 async def test_save_upload_dispatches_to_local():
     """Default driver dispatches to the local handler."""
     mock_local = AsyncMock(return_value=('/tmp/file.jpg', '/uploads/file.jpg'))
     _cfg = {'STORAGE_DRIVER': 'local', 'UPLOAD_MAX_SIZE': 10 * 1024 * 1024, 'UPLOAD_DIR': '/tmp'}
-    with patch.dict(_DRIVERS, {'local': mock_local}), \
-         patch.object(upload_module, 'config') as mock_config:
+    with patch.dict(_DRIVERS, {'local': mock_local}), patch.object(upload_module, 'config') as mock_config:
         mock_config.get = lambda k, d=None: _cfg.get(k, d)
         f = FakeUploadFile(filename='photo.jpg', content_type='image/jpeg')
         result = await save_upload(f, allowed_types=['jpg'])
@@ -250,6 +254,7 @@ async def test_save_upload_unknown_driver():
 # register_storage_driver / get_storage_drivers
 # ---------------------------------------------------------------------------
 
+
 def test_register_storage_driver():
     """A custom driver appears in the registry after registration."""
     mock = AsyncMock()
@@ -267,6 +272,7 @@ def test_get_storage_drivers():
 # Edge cases for recent fixes
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.anyio
 async def test_save_upload_empty_file_rejected():
     """Empty files (0 bytes) are rejected."""
@@ -280,8 +286,7 @@ async def test_save_upload_empty_file_rejected():
 async def test_save_upload_mime_with_charset_accepted():
     """MIME type with charset parameter should not cause false rejection."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        f = FakeUploadFile(filename='photo.jpg', content_type='image/jpeg; charset=utf-8',
-                           content=b'\xff\xd8\xff' * 10)
+        f = FakeUploadFile(filename='photo.jpg', content_type='image/jpeg; charset=utf-8', content=b'\xff\xd8\xff' * 10)
         result = await save_upload(f, allowed_types=['jpg'], upload_dir=tmpdir)
         assert result.original_name == 'photo.jpg'
 

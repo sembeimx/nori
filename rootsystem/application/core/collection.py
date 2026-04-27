@@ -27,11 +27,11 @@ class NoriCollection(list[T]):
 
     def pluck(self, key: str) -> list[Any]:
         """Extract values from a field."""
-        return [getattr(item, key, item.get(key) if isinstance(item, dict) else None)
-                for item in self]
+        return [getattr(item, key, item.get(key) if isinstance(item, dict) else None) for item in self]
 
     def where(self, key: str, operator_or_value: Any = _SENTINEL, value: Any = _SENTINEL) -> NoriCollection[T]:
         """Filter in-memory with operators."""
+
         def _get_val(item: Any) -> Any:
             return getattr(item, key, item.get(key) if isinstance(item, dict) else None)
 
@@ -42,10 +42,10 @@ class NoriCollection(list[T]):
 
         op = operator_or_value
         ops: dict[str, Callable[[Any, Any], bool]] = {
-            '=':  lambda a, b: a == b,
+            '=': lambda a, b: a == b,
             '!=': lambda a, b: a != b,
-            '>':  lambda a, b: a is not None and a > b,
-            '<':  lambda a, b: a is not None and a < b,
+            '>': lambda a, b: a is not None and a > b,
+            '<': lambda a, b: a is not None and a < b,
             '>=': lambda a, b: a is not None and a >= b,
             '<=': lambda a, b: a is not None and a <= b,
         }
@@ -54,11 +54,13 @@ class NoriCollection(list[T]):
 
     def sort_by(self, key: str, reverse: bool = False) -> NoriCollection[T]:
         """Sort by field. None values are sorted to the end."""
-        return NoriCollection(sorted(
-            self,
-            key=lambda i: (getattr(i, key, None) is None, getattr(i, key, None)),
-            reverse=reverse,
-        ))
+        return NoriCollection(
+            sorted(
+                self,
+                key=lambda i: (getattr(i, key, None) is None, getattr(i, key, None)),
+                reverse=reverse,
+            )
+        )
 
     def group_by(self, key: str) -> dict[Any, NoriCollection[T]]:
         groups: dict[Any, NoriCollection[T]] = {}
@@ -80,7 +82,7 @@ class NoriCollection(list[T]):
         return result
 
     def chunk(self, size: int) -> list[NoriCollection[T]]:
-        return [NoriCollection(self[i:i + size]) for i in range(0, len(self), size)]
+        return [NoriCollection(self[i : i + size]) for i in range(0, len(self), size)]
 
     def map(self, fn: Callable[[T], Any]) -> NoriCollection[Any]:
         return NoriCollection(fn(item) for item in self)

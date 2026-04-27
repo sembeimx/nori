@@ -8,12 +8,14 @@ Covers:
 - protected_fields: interaction with explicit exclude list
 - Models without protected_fields work as before (backwards compatibility)
 """
+
 import pytest
 from test_models import SampleArticle, SampleUser
 
 # ---------------------------------------------------------------------------
 # Basic to_dict (backwards compatibility)
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_to_dict_returns_all_fields():
@@ -55,6 +57,7 @@ async def test_to_dict_empty_exclude():
 # ---------------------------------------------------------------------------
 # protected_fields
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_protected_fields_excluded_by_default():

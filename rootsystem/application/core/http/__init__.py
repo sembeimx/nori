@@ -8,6 +8,10 @@ __all__ = [
     'validate',
     'flash',
     'throttle',
-    'save_upload', 'UploadResult', 'UploadError', 'register_storage_driver', 'get_storage_drivers',
+    'save_upload',
+    'UploadResult',
+    'UploadError',
+    'register_storage_driver',
+    'get_storage_drivers',
     'inject',
 ]

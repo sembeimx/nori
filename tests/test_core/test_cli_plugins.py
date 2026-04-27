@@ -1,4 +1,5 @@
 """Tests for the CLI plugin system (_load_user_commands)."""
+
 from __future__ import annotations
 
 import argparse
@@ -30,6 +31,7 @@ def commands_dir(tmp_path, monkeypatch):
     fake_cli_file = fake_core / 'cli.py'
     fake_cli_file.touch()
     import core.cli as _cli_mod
+
     monkeypatch.setattr(_cli_mod, '__file__', str(fake_cli_file))
 
     monkeypatch.chdir(tmp_path)  # harmless; some tests may still rely on CWD
@@ -51,6 +53,7 @@ def _make_parser():
 # Tests
 # ---------------------------------------------------------------------------
 
+
 def test_no_commands_dir(tmp_path, monkeypatch):
     """Returns empty dict when commands/ does not exist."""
     monkeypatch.chdir(tmp_path)
@@ -68,10 +71,7 @@ def test_empty_commands_dir(commands_dir):
 
 def test_underscore_prefix_skipped(commands_dir):
     """Files starting with _ are skipped."""
-    (commands_dir / '_example.py').write_text(
-        "def register(s): s.add_parser('skip')\n"
-        "def handle(a): pass\n"
-    )
+    (commands_dir / '_example.py').write_text("def register(s): s.add_parser('skip')\ndef handle(a): pass\n")
     subparsers = _make_parser()
     handlers = _load_user_commands(subparsers)
     assert 'skip' not in handlers
@@ -80,10 +80,10 @@ def test_underscore_prefix_skipped(commands_dir):
 def test_valid_plugin_loaded(commands_dir):
     """A valid plugin with register() and handle() is loaded correctly."""
     (commands_dir / 'greet.py').write_text(
-        "def register(subparsers):\n"
+        'def register(subparsers):\n'
         "    subparsers.add_parser('app:greet', help='Say hi')\n"
-        "\n"
-        "def handle(args):\n"
+        '\n'
+        'def handle(args):\n'
         "    print('Hello!')\n"
     )
     subparsers = _make_parser()
@@ -94,14 +94,8 @@ def test_valid_plugin_loaded(commands_dir):
 
 def test_multiple_plugins_loaded(commands_dir):
     """Multiple plugin files are all loaded."""
-    (commands_dir / 'alpha.py').write_text(
-        "def register(s): s.add_parser('alpha')\n"
-        "def handle(a): pass\n"
-    )
-    (commands_dir / 'beta.py').write_text(
-        "def register(s): s.add_parser('beta')\n"
-        "def handle(a): pass\n"
-    )
+    (commands_dir / 'alpha.py').write_text("def register(s): s.add_parser('alpha')\ndef handle(a): pass\n")
+    (commands_dir / 'beta.py').write_text("def register(s): s.add_parser('beta')\ndef handle(a): pass\n")
     subparsers = _make_parser()
     handlers = _load_user_commands(subparsers)
     assert 'alpha' in handlers
@@ -110,9 +104,7 @@ def test_multiple_plugins_loaded(commands_dir):
 
 def test_missing_register_skipped(commands_dir, capsys):
     """Plugin without register() is skipped with a warning."""
-    (commands_dir / 'bad.py').write_text(
-        "def handle(a): pass\n"
-    )
+    (commands_dir / 'bad.py').write_text('def handle(a): pass\n')
     subparsers = _make_parser()
     handlers = _load_user_commands(subparsers)
     assert handlers == {}
@@ -122,9 +114,7 @@ def test_missing_register_skipped(commands_dir, capsys):
 
 def test_missing_handle_skipped(commands_dir, capsys):
     """Plugin without handle() is skipped with a warning."""
-    (commands_dir / 'nohandle.py').write_text(
-        "def register(s): s.add_parser('nohandle')\n"
-    )
+    (commands_dir / 'nohandle.py').write_text("def register(s): s.add_parser('nohandle')\n")
     subparsers = _make_parser()
     handlers = _load_user_commands(subparsers)
     assert handlers == {}
@@ -135,9 +125,7 @@ def test_missing_handle_skipped(commands_dir, capsys):
 def test_import_error_skipped(commands_dir, capsys):
     """Plugin with import error is skipped with a warning."""
     (commands_dir / 'broken.py').write_text(
-        "import nonexistent_module_xyz\n"
-        "def register(s): pass\n"
-        "def handle(a): pass\n"
+        'import nonexistent_module_xyz\ndef register(s): pass\ndef handle(a): pass\n'
     )
     subparsers = _make_parser()
     handlers = _load_user_commands(subparsers)
@@ -148,10 +136,7 @@ def test_import_error_skipped(commands_dir, capsys):
 
 def test_register_error_skipped(commands_dir, capsys):
     """Plugin whose register() raises is skipped with a warning."""
-    (commands_dir / 'crashy.py').write_text(
-        "def register(s): raise RuntimeError('boom')\n"
-        "def handle(a): pass\n"
-    )
+    (commands_dir / 'crashy.py').write_text("def register(s): raise RuntimeError('boom')\ndef handle(a): pass\n")
     subparsers = _make_parser()
     handlers = _load_user_commands(subparsers)
     assert handlers == {}
@@ -162,11 +147,11 @@ def test_register_error_skipped(commands_dir, capsys):
 def test_plugin_with_arguments(commands_dir):
     """Plugin can register subparser with arguments."""
     (commands_dir / 'withargs.py').write_text(
-        "def register(s):\n"
+        'def register(s):\n'
         "    p = s.add_parser('app:deploy')\n"
         "    p.add_argument('--env', default='staging')\n"
-        "\n"
-        "def handle(args):\n"
+        '\n'
+        'def handle(args):\n'
         "    print(f'Deploying to {args.env}')\n"
     )
     subparsers = _make_parser()
@@ -176,10 +161,7 @@ def test_plugin_with_arguments(commands_dir):
 
 def test_init_py_skipped(commands_dir):
     """__init__.py is not loaded as a plugin."""
-    (commands_dir / '__init__.py').write_text(
-        "def register(s): s.add_parser('init')\n"
-        "def handle(a): pass\n"
-    )
+    (commands_dir / '__init__.py').write_text("def register(s): s.add_parser('init')\ndef handle(a): pass\n")
     subparsers = _make_parser()
     handlers = _load_user_commands(subparsers)
     assert 'init' not in handlers

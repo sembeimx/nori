@@ -1,4 +1,5 @@
 """Tests for the Redis queue driver (core.queue + core.queue_worker)."""
+
 from __future__ import annotations
 
 import json
@@ -12,6 +13,7 @@ from core.queue_worker import _work_redis, execute_payload
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def mock_redis():
@@ -29,6 +31,7 @@ def mock_redis():
 def _reset_redis_client():
     """Reset the global _redis_client between tests."""
     import core.queue as q
+
     original = q._redis_client
     q._redis_client = None
     yield
@@ -38,6 +41,7 @@ def _reset_redis_client():
 # ---------------------------------------------------------------------------
 # _redis_handler tests
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_redis_handler_immediate_push(mock_redis):
@@ -89,6 +93,7 @@ async def test_redis_handler_custom_queue_name(mock_redis):
 async def test_push_dispatches_to_redis(mock_redis, monkeypatch):
     """push() routes to the Redis handler when QUEUE_DRIVER=redis."""
     import settings
+
     monkeypatch.setattr(settings, 'QUEUE_DRIVER', 'redis')
     with patch('core.queue._get_redis', return_value=mock_redis):
         await push('mod:func', 'arg1', queue='test')
@@ -100,22 +105,28 @@ async def test_push_dispatches_to_redis(mock_redis, monkeypatch):
 # _work_redis tests
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_redis_worker_processes_job(mock_redis):
     """Worker picks up a job via BRPOP and executes it."""
-    job_data = json.dumps({
-        'func': 'tests.test_core.test_queue_redis:_dummy_task',
-        'args': [],
-        'kwargs': {},
-        'attempts': 0,
-    })
+    job_data = json.dumps(
+        {
+            'func': 'tests.test_core.test_queue_redis:_dummy_task',
+            'args': [],
+            'kwargs': {},
+            'attempts': 0,
+        }
+    )
     # First call returns a job, second returns None (to exit loop)
-    mock_redis.brpop = AsyncMock(side_effect=[
-        (b'nori:queue:default', job_data.encode()),
-        None,
-    ])
+    mock_redis.brpop = AsyncMock(
+        side_effect=[
+            (b'nori:queue:default', job_data.encode()),
+            None,
+        ]
+    )
 
     import core.queue_worker as qw
+
     qw._should_exit = False
 
     async def _stop_after_one(*a, **kw):
@@ -144,25 +155,27 @@ async def test_redis_worker_processes_job(mock_redis):
 @pytest.mark.asyncio
 async def test_redis_worker_retries_failed_job(mock_redis):
     """Failed jobs are re-queued to the delayed sorted set with backoff."""
-    job_data = json.dumps({
-        'func': 'tests.test_core.test_queue_redis:_failing_task',
-        'args': [],
-        'kwargs': {},
-        'attempts': 0,
-    })
+    job_data = json.dumps(
+        {
+            'func': 'tests.test_core.test_queue_redis:_failing_task',
+            'args': [],
+            'kwargs': {},
+            'attempts': 0,
+        }
+    )
 
-    mock_redis.brpop = AsyncMock(return_value=(
-        b'nori:queue:retry', job_data.encode()
-    ))
+    mock_redis.brpop = AsyncMock(return_value=(b'nori:queue:retry', job_data.encode()))
 
     import core.queue_worker as qw
+
     qw._should_exit = False
 
     with patch('core.queue._get_redis', return_value=mock_redis):
         with patch('core.queue_worker._register_signals'):
+
             async def _fail_and_stop(payload):
                 qw._should_exit = True
-                raise Exception("Intentional failure")
+                raise Exception('Intentional failure')
 
             with patch('core.queue_worker.execute_payload', side_effect=_fail_and_stop):
                 await _work_redis('retry')
@@ -182,25 +195,27 @@ async def test_redis_worker_dead_letters_after_max_attempts(mock_redis):
     """After MAX_ATTEMPTS, failed jobs go to the :failed list."""
     from core.queue_worker import MAX_ATTEMPTS
 
-    job_data = json.dumps({
-        'func': 'tests.test_core.test_queue_redis:_failing_task',
-        'args': [],
-        'kwargs': {},
-        'attempts': MAX_ATTEMPTS - 1,
-    })
+    job_data = json.dumps(
+        {
+            'func': 'tests.test_core.test_queue_redis:_failing_task',
+            'args': [],
+            'kwargs': {},
+            'attempts': MAX_ATTEMPTS - 1,
+        }
+    )
 
-    mock_redis.brpop = AsyncMock(return_value=(
-        b'nori:queue:dead', job_data.encode()
-    ))
+    mock_redis.brpop = AsyncMock(return_value=(b'nori:queue:dead', job_data.encode()))
 
     import core.queue_worker as qw
+
     qw._should_exit = False
 
     with patch('core.queue._get_redis', return_value=mock_redis):
         with patch('core.queue_worker._register_signals'):
+
             async def _fail_and_stop(payload):
                 qw._should_exit = True
-                raise Exception("Final failure")
+                raise Exception('Final failure')
 
             with patch('core.queue_worker.execute_payload', side_effect=_fail_and_stop):
                 await _work_redis('dead')
@@ -220,14 +235,20 @@ async def test_redis_worker_dead_letters_after_max_attempts(mock_redis):
 @pytest.mark.asyncio
 async def test_redis_worker_promotes_delayed_jobs(mock_redis):
     """Delayed jobs whose time has come are promoted to the main queue."""
-    delayed_job = json.dumps({
-        'func': 'mod:task', 'args': [], 'kwargs': {}, 'attempts': 0,
-    }).encode()
+    delayed_job = json.dumps(
+        {
+            'func': 'mod:task',
+            'args': [],
+            'kwargs': {},
+            'attempts': 0,
+        }
+    ).encode()
 
     mock_redis.zrangebyscore = AsyncMock(return_value=[delayed_job])
     mock_redis.brpop = AsyncMock(return_value=None)
 
     import core.queue_worker as qw
+
     qw._should_exit = False
 
     call_count = 0
@@ -257,9 +278,10 @@ async def test_redis_worker_promotes_delayed_jobs(mock_redis):
 # Dummy tasks for testing
 # ---------------------------------------------------------------------------
 
+
 async def _dummy_task():
     pass
 
 
 async def _failing_task():
-    raise Exception("I always fail")
+    raise Exception('I always fail')

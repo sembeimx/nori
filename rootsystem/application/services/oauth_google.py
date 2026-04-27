@@ -112,14 +112,17 @@ async def handle_callback(
     code_verifier = get_pkce_verifier(session)
 
     async with httpx.AsyncClient() as client:
-        token_resp = await client.post(_TOKEN_URL, data={
-            'client_id': config.GOOGLE_CLIENT_ID,
-            'client_secret': config.GOOGLE_CLIENT_SECRET,
-            'code': code,
-            'redirect_uri': redirect_uri,
-            'grant_type': 'authorization_code',
-            'code_verifier': code_verifier,
-        })
+        token_resp = await client.post(
+            _TOKEN_URL,
+            data={
+                'client_id': config.GOOGLE_CLIENT_ID,
+                'client_secret': config.GOOGLE_CLIENT_SECRET,
+                'code': code,
+                'redirect_uri': redirect_uri,
+                'grant_type': 'authorization_code',
+                'code_verifier': code_verifier,
+            },
+        )
         token_resp.raise_for_status()
         tokens = token_resp.json()
 

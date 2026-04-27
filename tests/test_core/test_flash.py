@@ -1,9 +1,11 @@
 """Tests for flash message helpers."""
+
 from core.http.flash import flash, get_flashed_messages
 
 
 class FakeRequest:
     """Minimal request stub with session dict."""
+
     def __init__(self):
         self.session = {}
 
@@ -31,10 +33,12 @@ def test_flash_multiple_messages():
 
 
 def test_get_flashed_messages_returns_all():
-    session = {'_flash_messages': [
-        {'message': 'A', 'category': 'success'},
-        {'message': 'B', 'category': 'error'},
-    ]}
+    session = {
+        '_flash_messages': [
+            {'message': 'A', 'category': 'success'},
+            {'message': 'B', 'category': 'error'},
+        ]
+    }
     msgs = get_flashed_messages(session)
     assert len(msgs) == 2
     assert msgs[0]['message'] == 'A'

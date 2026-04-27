@@ -23,7 +23,7 @@ def register_queue_driver(name: str, handler: Callable):
 async def push(func_path: str, *args, queue: str = 'default', delay: int = 0, **kwargs):
     driver_name = config.get('QUEUE_DRIVER', 'memory')
     handler = _DRIVERS.get(driver_name, _DRIVERS.get('memory'))
-    payload = {"func": func_path, "args": args, "kwargs": kwargs}
+    payload = {'func': func_path, 'args': args, 'kwargs': kwargs}
     await handler(queue, payload, delay=delay)
 
 
@@ -61,6 +61,7 @@ def _get_redis():
     global _redis_client
     if _redis_client is None:
         import redis.asyncio as aioredis
+
         redis_url = config.get('REDIS_URL', 'redis://localhost:6379')
         _redis_client = aioredis.from_url(redis_url, socket_connect_timeout=5)
     return _redis_client

@@ -1,4 +1,5 @@
 """Tests for test factories."""
+
 import pytest
 from factories import make_article, make_category, make_post, reset_counters
 from test_models import SampleArticle, SampleCategory, SamplePost

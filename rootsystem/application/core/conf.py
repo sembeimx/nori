@@ -56,15 +56,11 @@ class _Config:
         if key.startswith('_'):
             raise AttributeError(key)
         if self._settings is None:
-            raise RuntimeError(
-                'Nori config not initialised — call core.conf.configure(settings) at startup'
-            )
+            raise RuntimeError('Nori config not initialised — call core.conf.configure(settings) at startup')
         try:
             return getattr(self._settings, key)
         except AttributeError:
-            raise AttributeError(
-                f"Settings has no attribute '{key}'"
-            ) from None
+            raise AttributeError(f"Settings has no attribute '{key}'") from None
 
 
 # Singleton — importable as ``from core.conf import config``

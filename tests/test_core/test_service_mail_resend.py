@@ -1,4 +1,5 @@
 """Tests for services/mail_resend.py — Resend mail driver."""
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -11,6 +12,7 @@ from services.mail_resend import _send_via_resend, register
 def _resend_settings(monkeypatch):
     """Ensure MAIL_FROM and RESEND_API_KEY exist on settings."""
     import settings
+
     monkeypatch.setattr(settings, 'MAIL_FROM', 'nori@test.com', raising=False)
     monkeypatch.setattr(settings, 'RESEND_API_KEY', 'test-key-123', raising=False)
 
@@ -18,6 +20,7 @@ def _resend_settings(monkeypatch):
 # ---------------------------------------------------------------------------
 # register()
 # ---------------------------------------------------------------------------
+
 
 def test_register_adds_resend_driver():
     with patch('services.mail_resend.register_mail_driver') as mock_reg:
@@ -28,6 +31,7 @@ def test_register_adds_resend_driver():
 # ---------------------------------------------------------------------------
 # _send_via_resend()
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_send_via_resend_basic():
@@ -86,6 +90,7 @@ async def test_send_via_resend_with_text_body():
 async def test_send_via_resend_raises_on_http_error():
     """Propagates httpx.HTTPStatusError on API failure."""
     import httpx
+
     mock_response = MagicMock()
     mock_response.raise_for_status = MagicMock(
         side_effect=httpx.HTTPStatusError('error', request=MagicMock(), response=MagicMock())

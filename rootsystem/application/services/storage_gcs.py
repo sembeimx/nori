@@ -70,9 +70,7 @@ def _load_credentials() -> dict:
     if creds_json:
         return json.loads(creds_json)
 
-    raise RuntimeError(
-        'GCS driver requires GCS_CREDENTIALS_FILE or GCS_CREDENTIALS_JSON'
-    )
+    raise RuntimeError('GCS driver requires GCS_CREDENTIALS_FILE or GCS_CREDENTIALS_JSON')
 
 
 def _build_jwt(client_email: str, private_key_pem: str, token_uri: str) -> str:
@@ -103,12 +101,8 @@ def _build_jwt(client_email: str, private_key_pem: str, token_uri: str) -> str:
     claims_b64 = _b64url(json.dumps(claims, separators=(',', ':')).encode())
     signing_input = f'{header_b64}.{claims_b64}'
 
-    private_key = serialization.load_pem_private_key(
-        private_key_pem.encode(), password=None
-    )
-    signature = private_key.sign(
-        signing_input.encode(), padding.PKCS1v15(), hashes.SHA256()
-    )
+    private_key = serialization.load_pem_private_key(private_key_pem.encode(), password=None)
+    signature = private_key.sign(signing_input.encode(), padding.PKCS1v15(), hashes.SHA256())
 
     return f'{signing_input}.{_b64url(signature)}'
 
@@ -179,7 +173,7 @@ async def _store_gcs(
     bucket = config.GCS_BUCKET
     url_prefix = config.get('GCS_URL_PREFIX', None)
 
-    key = f"{upload_dir.strip('/')}/{filename}" if upload_dir else filename
+    key = f'{upload_dir.strip("/")}/{filename}' if upload_dir else filename
 
     token = await _get_access_token()
     put_url = f'https://storage.googleapis.com/{bucket}/{key}'
@@ -197,7 +191,7 @@ async def _store_gcs(
         resp.raise_for_status()
 
     if url_prefix:
-        public_url = f"{url_prefix.rstrip('/')}/{key}"
+        public_url = f'{url_prefix.rstrip("/")}/{key}'
     else:
         public_url = put_url
 

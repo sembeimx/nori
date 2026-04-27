@@ -1,4 +1,5 @@
 """Tests for services/storage_s3.py — S3 storage driver."""
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -11,6 +12,7 @@ from services.storage_s3 import _sign_aws4, _store_s3, register
 def _s3_settings(monkeypatch):
     """Ensure S3 settings exist on the settings module."""
     import settings
+
     monkeypatch.setattr(settings, 'S3_BUCKET', 'test-bucket', raising=False)
     monkeypatch.setattr(settings, 'S3_REGION', 'us-east-1', raising=False)
     monkeypatch.setattr(settings, 'S3_ACCESS_KEY', 'AKIATEST', raising=False)
@@ -25,6 +27,7 @@ def _s3_settings(monkeypatch):
 # register()
 # ---------------------------------------------------------------------------
 
+
 def test_register_adds_s3_driver():
     with patch('services.storage_s3.register_storage_driver') as mock_reg:
         register()
@@ -34,6 +37,7 @@ def test_register_adds_s3_driver():
 # ---------------------------------------------------------------------------
 # _sign_aws4()
 # ---------------------------------------------------------------------------
+
 
 def test_sign_aws4_returns_authorization_header():
     """AWS4 signing produces an Authorization header."""
@@ -71,10 +75,12 @@ def test_sign_aws4_includes_signed_headers():
 # _store_s3()
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_store_s3_default_endpoint(monkeypatch):
     """Uses default AWS S3 URL when no custom endpoint is set."""
     import settings
+
     monkeypatch.setattr(settings, 'S3_BUCKET', 'mybucket')
     monkeypatch.setattr(settings, 'S3_REGION', 'us-west-2')
 
@@ -100,6 +106,7 @@ async def test_store_s3_default_endpoint(monkeypatch):
 async def test_store_s3_custom_endpoint(monkeypatch):
     """Uses custom endpoint for R2/Spaces/MinIO."""
     import settings
+
     monkeypatch.setattr(settings, 'S3_BUCKET', 'files')
     monkeypatch.setattr(settings, 'S3_REGION', 'auto')
     monkeypatch.setattr(settings, 'S3_ENDPOINT', 'https://r2.example.com', raising=False)
@@ -123,6 +130,7 @@ async def test_store_s3_custom_endpoint(monkeypatch):
 async def test_store_s3_url_prefix(monkeypatch):
     """Uses S3_URL_PREFIX for public URL when set."""
     import settings
+
     monkeypatch.setattr(settings, 'S3_BUCKET', 'media')
     monkeypatch.setattr(settings, 'S3_URL_PREFIX', 'https://cdn.example.com', raising=False)
 

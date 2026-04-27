@@ -1,4 +1,5 @@
 """Tests for core.auth.jwt."""
+
 import os
 import sys
 
@@ -63,9 +64,10 @@ def test_token_within_leeway_accepted():
 def test_wrong_algorithm_rejected():
     """Token with alg != HS256 is rejected."""
     import json
+
     header = _base64url_encode(json.dumps({'alg': 'none', 'typ': 'JWT'}, separators=(',', ':')).encode())
     payload = _base64url_encode(json.dumps({'user_id': 1, 'iat': 0, 'exp': 9999999999}, separators=(',', ':')).encode())
-    fake_token = f"{header}.{payload}.fakesig"
+    fake_token = f'{header}.{payload}.fakesig'
     assert verify_token(fake_token) is None
 
 

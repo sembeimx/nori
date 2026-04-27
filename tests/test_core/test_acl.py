@@ -1,9 +1,11 @@
 """Tests for ACL — require_permission decorator and load_permissions."""
+
 import pytest
 from core.auth.decorators import load_permissions, require_permission
 from starlette.responses import JSONResponse
 
 # -- Fakes -------------------------------------------------------------------
+
 
 class FakeSession(dict):
     pass
@@ -36,6 +38,7 @@ class FakeController:
 
 
 # -- require_permission -------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_no_user_returns_401():
@@ -97,6 +100,7 @@ async def test_no_permissions_key_returns_403():
 
 
 # -- load_permissions (DB integration) ----------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_load_permissions_from_db():

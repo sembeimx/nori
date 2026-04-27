@@ -18,7 +18,7 @@ from httpx import ASGITransport, AsyncClient
 from tortoise import Tortoise
 
 
-@pytest_asyncio.fixture(scope="session", autouse=True, loop_scope="session")
+@pytest_asyncio.fixture(scope='session', autouse=True, loop_scope='session')
 async def initialize_tests():
     config = {
         'connections': settings.TORTOISE_ORM['connections'],
@@ -41,5 +41,5 @@ async def initialize_tests():
 
 @pytest_asyncio.fixture
 async def client():
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url='http://test') as ac:
         yield ac

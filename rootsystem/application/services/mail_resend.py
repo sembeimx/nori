@@ -35,18 +35,18 @@ async def _send_via_resend(
         httpx.HTTPStatusError: If the Resend API returns a non-2xx response.
     """
     payload = {
-        "from": config.MAIL_FROM,
-        "to": to,
-        "subject": subject,
-        "html": body_html,
+        'from': config.MAIL_FROM,
+        'to': to,
+        'subject': subject,
+        'html': body_html,
     }
     if body_text:
-        payload["text"] = body_text
+        payload['text'] = body_text
 
     async with httpx.AsyncClient() as client:
         resp = await client.post(
-            "https://api.resend.com/emails",
-            headers={"Authorization": f"Bearer {config.RESEND_API_KEY}"},
+            'https://api.resend.com/emails',
+            headers={'Authorization': f'Bearer {config.RESEND_API_KEY}'},
             json=payload,
         )
         resp.raise_for_status()

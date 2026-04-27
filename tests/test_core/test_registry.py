@@ -1,4 +1,5 @@
 """Tests for core.registry — model registry."""
+
 from __future__ import annotations
 
 import pytest

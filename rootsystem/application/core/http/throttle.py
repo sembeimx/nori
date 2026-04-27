@@ -24,7 +24,7 @@ def _parse_rate(rate: str) -> tuple[int, int]:
         raise ValueError(f"Invalid rate format: '{rate}'. Use 'N/unit' (e.g. '10/minute').")
     max_requests = int(parts[0])
     if max_requests <= 0:
-        raise ValueError(f"Rate must be positive, got: {max_requests}")
+        raise ValueError(f'Rate must be positive, got: {max_requests}')
     unit = parts[1].strip().lower()
     if unit not in _UNITS:
         raise ValueError(f"Unknown time unit: '{unit}'. Use: {', '.join(_UNITS)}.")
@@ -45,7 +45,7 @@ def throttle(rate: str) -> Callable[..., Any]:
         async def wrapper(self: Any, request: Request, *args: Any, **kwargs: Any) -> Response:
             now = time.time()
             ip = get_client_ip(request) or 'unknown'
-            key = f"{ip}:{request.url.path}"
+            key = f'{ip}:{request.url.path}'
 
             backend = get_backend()
 
@@ -84,5 +84,7 @@ def throttle(rate: str) -> Callable[..., Any]:
             response.headers['X-RateLimit-Reset'] = str(reset)
 
             return response
+
         return wrapper
+
     return decorator

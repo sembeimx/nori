@@ -7,6 +7,7 @@ Covers:
 - Template rendering before dispatch
 - Validation (missing body)
 """
+
 import os
 import sys
 
@@ -38,6 +39,7 @@ def _cleanup_drivers():
 # ---------------------------------------------------------------------------
 # _build_message
 # ---------------------------------------------------------------------------
+
 
 def test_build_message_html_only():
     """HTML-only message has correct headers and a single text/html part."""
@@ -74,6 +76,7 @@ def test_build_message_mime_structure():
 # _normalize_recipients
 # ---------------------------------------------------------------------------
 
+
 def test_normalize_recipients_str():
     """A single string address is wrapped in a list."""
     assert _normalize_recipients('a@b.com') == ['a@b.com']
@@ -89,12 +92,12 @@ def test_normalize_recipients_list():
 # send_mail — dispatch
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.anyio
 async def test_send_mail_dispatches_to_smtp():
     """Default driver dispatches to the smtp handler."""
     mock_smtp = AsyncMock()
-    with patch.dict(_DRIVERS, {'smtp': mock_smtp}), \
-         patch.object(mail_module, 'config') as mock_config:
+    with patch.dict(_DRIVERS, {'smtp': mock_smtp}), patch.object(mail_module, 'config') as mock_config:
         mock_config.get = lambda k, d=None: 'smtp' if k == 'MAIL_DRIVER' else d
         await send_mail(to='a@b.com', subject='Hi', body_html='<p>hi</p>')
         mock_smtp.assert_called_once_with(['a@b.com'], 'Hi', '<p>hi</p>', None)
@@ -104,8 +107,7 @@ async def test_send_mail_dispatches_to_smtp():
 async def test_send_mail_driver_override():
     """Per-call driver= overrides settings.MAIL_DRIVER."""
     mock_log = AsyncMock()
-    with patch.dict(_DRIVERS, {'log': mock_log}), \
-         patch.object(mail_module, 'config') as mock_config:
+    with patch.dict(_DRIVERS, {'log': mock_log}), patch.object(mail_module, 'config') as mock_config:
         mock_config.get = lambda k, d=None: 'smtp' if k == 'MAIL_DRIVER' else d
         await send_mail(to='a@b.com', subject='Hi', body_html='<p>hi</p>', driver='log')
         mock_log.assert_called_once()
@@ -121,13 +123,14 @@ async def test_send_mail_unknown_driver():
 @pytest.mark.anyio
 async def test_send_mail_missing_body_and_template():
     """Calling send_mail without body_html or template raises ValueError."""
-    with pytest.raises(ValueError, match="Either body_html or template is required"):
+    with pytest.raises(ValueError, match='Either body_html or template is required'):
         await send_mail(to='a@b.com', subject='Hi')
 
 
 # ---------------------------------------------------------------------------
 # register_mail_driver
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.anyio
 async def test_register_mail_driver():
@@ -143,6 +146,7 @@ async def test_register_mail_driver():
 # get_mail_drivers
 # ---------------------------------------------------------------------------
 
+
 def test_get_mail_drivers():
     """Built-in drivers smtp and log are always present."""
     drivers = get_mail_drivers()
@@ -154,6 +158,7 @@ def test_get_mail_drivers():
 # _send_via_log
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.anyio
 async def test_send_via_log():
     """Log driver completes without raising."""
@@ -163,6 +168,7 @@ async def test_send_via_log():
 # ---------------------------------------------------------------------------
 # _send_via_smtp
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.anyio
 async def test_send_via_smtp():
@@ -179,13 +185,16 @@ async def test_send_via_smtp():
 # send_mail — template rendering
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.anyio
 async def test_send_mail_renders_template():
     """Template is rendered to HTML before dispatching to the driver."""
     mock_smtp = AsyncMock()
-    with patch.object(mail_module, '_render_template', return_value='<p>rendered</p>') as mock_render, \
-         patch.dict(_DRIVERS, {'smtp': mock_smtp}), \
-         patch.object(mail_module, 'config') as mock_config:
+    with (
+        patch.object(mail_module, '_render_template', return_value='<p>rendered</p>') as mock_render,
+        patch.dict(_DRIVERS, {'smtp': mock_smtp}),
+        patch.object(mail_module, 'config') as mock_config,
+    ):
         mock_config.get = lambda k, d=None: 'smtp' if k == 'MAIL_DRIVER' else d
         await send_mail(to='a@b.com', subject='S', template='email/test.html', context={'k': 'v'})
         mock_render.assert_called_once_with('email/test.html', {'k': 'v'})

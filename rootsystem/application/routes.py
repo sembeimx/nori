@@ -13,10 +13,8 @@ health = HealthController()
 routes = [
     # Health
     Route('/health', endpoint=health.check, methods=['GET'], name='health.check'),
-
     # Pages
     Route('/', endpoint=page.home, methods=['GET'], name='page.home'),
-
     # WebSockets
     WebSocketRoute('/ws/echo', endpoint=echo, name='ws.echo'),
 ]

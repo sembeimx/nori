@@ -1,4 +1,5 @@
 """Tests for the routes:list CLI command."""
+
 from __future__ import annotations
 
 import subprocess
@@ -9,7 +10,8 @@ def test_routes_list_shows_registered_routes():
     """routes:list should display the routes from routes.py."""
     result = subprocess.run(
         [sys.executable, 'nori.py', 'routes:list'],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
     assert result.returncode == 0
     output = result.stdout

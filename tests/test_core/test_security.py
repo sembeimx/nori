@@ -1,7 +1,9 @@
 """Tests for core.auth.security."""
+
 from core.auth.security import Security
 
 # --- hash_password / verify_password ---
+
 
 def test_hash_and_verify():
     hashed = Security.hash_password('mypassword')
@@ -44,6 +46,7 @@ def test_verify_wrong_method():
 
 # --- generate_token ---
 
+
 def test_generate_token_length():
     token = Security.generate_token(16)
     assert len(token) == 32  # hex = 2x bytes
@@ -56,6 +59,7 @@ def test_generate_token_unique():
 
 
 # --- generate_csrf_token ---
+
 
 def test_csrf_token_length():
     token = Security.generate_csrf_token()

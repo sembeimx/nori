@@ -1,4 +1,5 @@
 """Tests for core.pagination module."""
+
 import pytest
 from core.pagination import paginate
 
@@ -21,7 +22,7 @@ class _FakeQuerySet:
         return self
 
     async def all(self):
-        return self._items[self._offset:self._offset + self._limit]
+        return self._items[self._offset : self._offset + self._limit]
 
 
 @pytest.mark.asyncio
@@ -94,6 +95,7 @@ async def test_paginate_exact_division():
 @pytest.mark.asyncio
 async def test_paginate_returns_nori_collection():
     from core.collection import NoriCollection
+
     qs = _FakeQuerySet(list(range(5)))
     result = await paginate(qs, page=1, per_page=10)
     assert isinstance(result['data'], NoriCollection)

@@ -1,4 +1,5 @@
 """Tests for core.http.throttle."""
+
 import time
 
 import pytest
@@ -6,6 +7,7 @@ from core.http.throttle import throttle
 from core.http.throttle_backends import get_backend, reset_backend
 
 # --- Helpers ---
+
 
 class FakeClient:
     def __init__(self, host: str = '127.0.0.1'):
@@ -57,6 +59,7 @@ def _reset():
 
 
 # --- Tests ---
+
 
 @pytest.mark.asyncio
 async def test_allows_within_limit():

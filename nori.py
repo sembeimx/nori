@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Nori CLI — thin bootstrap. All logic lives in core/cli.py."""
+
 import os
 import sys
 

@@ -3,6 +3,7 @@ CSRF Middleware for Starlette.
 Validates tokens on state-changing requests (POST, PUT, DELETE, PATCH).
 Must be placed AFTER SessionMiddleware in the stack.
 """
+
 import hmac
 from html import escape as _html_escape
 from urllib.parse import parse_qs
@@ -67,7 +68,7 @@ class CsrfMiddleware:
         expected = session.get(_CSRF_SESSION_KEY) if session else None
 
         if not token or not expected or not hmac.compare_digest(token, expected):
-            log.warning("CSRF validation failed for %s %s", method, path)
+            log.warning('CSRF validation failed for %s %s', method, path)
             return await self._send_403(send)
 
         # Replay body so downstream can read it multiple times
@@ -100,7 +101,7 @@ class CsrfMiddleware:
             for part in content_type.split(';'):
                 part = part.strip()
                 if part.startswith('boundary='):
-                    boundary = part[len('boundary='):]
+                    boundary = part[len('boundary=') :]
                     # Strip quotes per RFC 2046
                     if len(boundary) >= 2 and boundary[0] in ('"', "'") and boundary[-1] == boundary[0]:
                         boundary = boundary[1:-1]
@@ -130,33 +131,41 @@ class CsrfMiddleware:
             message = await receive()
             body += message.get('body', b'')
             if len(body) > _MAX_BODY_SIZE:
-                raise ValueError(f"Body exceeds max size ({_MAX_BODY_SIZE} bytes)")
+                raise ValueError(f'Body exceeds max size ({_MAX_BODY_SIZE} bytes)')
             if not message.get('more_body', False):
                 break
         return body
 
     async def _send_403(self, send):
-        await send({
-            'type': 'http.response.start',
-            'status': 403,
-            'headers': [(b'content-type', b'text/plain; charset=utf-8')],
-        })
-        await send({
-            'type': 'http.response.body',
-            'body': b'403 Forbidden - CSRF token missing or invalid',
-        })
+        await send(
+            {
+                'type': 'http.response.start',
+                'status': 403,
+                'headers': [(b'content-type', b'text/plain; charset=utf-8')],
+            }
+        )
+        await send(
+            {
+                'type': 'http.response.body',
+                'body': b'403 Forbidden - CSRF token missing or invalid',
+            }
+        )
 
     async def _send_413(self, send):
         """Send a 413 Payload Too Large response."""
-        await send({
-            'type': 'http.response.start',
-            'status': 413,
-            'headers': [(b'content-type', b'text/plain; charset=utf-8')],
-        })
-        await send({
-            'type': 'http.response.body',
-            'body': b'413 Payload Too Large',
-        })
+        await send(
+            {
+                'type': 'http.response.start',
+                'status': 413,
+                'headers': [(b'content-type', b'text/plain; charset=utf-8')],
+            }
+        )
+        await send(
+            {
+                'type': 'http.response.body',
+                'body': b'413 Payload Too Large',
+            }
+        )
 
 
 def csrf_field(session):

@@ -80,16 +80,16 @@ class NoriTreeMixin(Model):
         # Validate identifiers to prevent SQL injection
         for ident in (table, pk_col, parent_col):
             if not ident.replace('_', '').isalnum():
-                raise ValueError(f"Invalid SQL identifier: {ident}")
+                raise ValueError(f'Invalid SQL identifier: {ident}')
 
         ph = _placeholders(2)
         sql = (
-            f"WITH RECURSIVE ancestors AS ("
-            f"  SELECT * FROM {table} WHERE {pk_col} = {ph[0]}"
-            f"  UNION ALL"
-            f"  SELECT t.* FROM {table} t"
-            f"  INNER JOIN ancestors a ON t.{pk_col} = a.{parent_col}"
-            f") SELECT * FROM ancestors WHERE {pk_col} != {ph[1]}"
+            f'WITH RECURSIVE ancestors AS ('
+            f'  SELECT * FROM {table} WHERE {pk_col} = {ph[0]}'
+            f'  UNION ALL'
+            f'  SELECT t.* FROM {table} t'
+            f'  INNER JOIN ancestors a ON t.{pk_col} = a.{parent_col}'
+            f') SELECT * FROM ancestors WHERE {pk_col} != {ph[1]}'
         )
 
         conn = Tortoise.get_connection('default')
@@ -108,16 +108,16 @@ class NoriTreeMixin(Model):
 
         for ident in (table, pk_col, parent_col):
             if not ident.replace('_', '').isalnum():
-                raise ValueError(f"Invalid SQL identifier: {ident}")
+                raise ValueError(f'Invalid SQL identifier: {ident}')
 
         ph = _placeholders(1)
         sql = (
-            f"WITH RECURSIVE descendants AS ("
-            f"  SELECT * FROM {table} WHERE {parent_col} = {ph[0]}"
-            f"  UNION ALL"
-            f"  SELECT t.* FROM {table} t"
-            f"  INNER JOIN descendants d ON t.{parent_col} = d.{pk_col}"
-            f") SELECT * FROM descendants"
+            f'WITH RECURSIVE descendants AS ('
+            f'  SELECT * FROM {table} WHERE {parent_col} = {ph[0]}'
+            f'  UNION ALL'
+            f'  SELECT t.* FROM {table} t'
+            f'  INNER JOIN descendants d ON t.{parent_col} = d.{pk_col}'
+            f') SELECT * FROM descendants'
         )
 
         conn = Tortoise.get_connection('default')
@@ -148,13 +148,13 @@ class NoriTreeMixin(Model):
         Validates that a node cannot be moved to itself or to one of its descendants.
         """
         if new_parent_id == self.pk:
-            raise ValueError("Cannot move a node to itself")
+            raise ValueError('Cannot move a node to itself')
 
         if new_parent_id is not None:
             descendants = await self.descendants()
             descendant_ids = {d.pk for d in descendants}
             if new_parent_id in descendant_ids:
-                raise ValueError("Cannot move a node to one of its descendants")
+                raise ValueError('Cannot move a node to one of its descendants')
 
         setattr(self, self._parent_field, new_parent_id)
         await self.save(update_fields=[self._parent_field])

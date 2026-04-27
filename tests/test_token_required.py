@@ -1,4 +1,5 @@
 """Tests for @token_required decorator."""
+
 import pytest
 from core.auth.decorators import token_required
 from core.auth.jwt import create_token
@@ -114,7 +115,7 @@ async def test_blacklisted_token_rejected():
     from core.auth.jwt import revoke_token
     from core.cache import reset_backend
 
-    reset_backend() # Ensure clean memory cache
+    reset_backend()  # Ensure clean memory cache
     ctrl = FakeController()
     token = create_token({'user_id': 99}, expires_in=3600)
 

@@ -1,10 +1,12 @@
 """Tests for core.audit — audit logging utility."""
+
 import asyncio
 
 import pytest
 from core.audit import audit, get_client_ip
 
 # -- Fakes -------------------------------------------------------------------
+
 
 class FakeClient:
     def __init__(self, host='127.0.0.1'):
@@ -20,8 +22,7 @@ class FakeSession(dict):
 
 
 class FakeRequest:
-    def __init__(self, *, ip='127.0.0.1', user_id=None, request_id=None,
-                 forwarded_for=None):
+    def __init__(self, *, ip='127.0.0.1', user_id=None, request_id=None, forwarded_for=None):
         self.client = FakeClient(ip) if ip else None
         self.session = FakeSession()
         if user_id is not None:
@@ -40,6 +41,7 @@ class FakeRequest:
 
 # -- get_client_ip -----------------------------------------------------------
 
+
 def test_get_client_ip_from_client():
     req = FakeRequest(ip='10.0.0.1')
     assert get_client_ip(req) == '10.0.0.1'
@@ -47,6 +49,7 @@ def test_get_client_ip_from_client():
 
 def test_get_client_ip_from_forwarded_for(monkeypatch):
     import settings
+
     monkeypatch.setattr(settings, 'TRUSTED_PROXIES', ['10.0.0.1'])
     req = FakeRequest(ip='10.0.0.1', forwarded_for='203.0.113.5, 10.0.0.1')
     assert get_client_ip(req) == '203.0.113.5'
@@ -65,6 +68,7 @@ def test_get_client_ip_no_client():
 
 # -- audit() -----------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_audit_returns_asyncio_task():
     req = FakeRequest(user_id=1)
@@ -77,13 +81,16 @@ async def test_audit_returns_asyncio_task():
 async def test_audit_writes_to_database():
     req = FakeRequest(user_id=5, ip='192.168.1.1', request_id='abc-123')
     task = audit(
-        req, 'update',
-        model_name='Article', record_id=7,
+        req,
+        'update',
+        model_name='Article',
+        record_id=7,
         changes={'title': {'before': 'Old', 'after': 'New'}},
     )
     await task
 
     from models.framework.audit_log import AuditLog
+
     log = await AuditLog.filter(request_id='abc-123').first()
     assert log is not None
     assert log.user_id == 5
@@ -101,6 +108,7 @@ async def test_audit_resolves_user_from_session():
     await task
 
     from models.framework.audit_log import AuditLog
+
     log = await AuditLog.filter(user_id=99, action='login').first()
     assert log is not None
 
@@ -112,6 +120,7 @@ async def test_audit_explicit_user_id_overrides_session():
     await task
 
     from models.framework.audit_log import AuditLog
+
     log = await AuditLog.filter(user_id=42, action='delete').first()
     assert log is not None
 
@@ -123,6 +132,7 @@ async def test_audit_nullable_fields():
     await task
 
     from models.framework.audit_log import AuditLog
+
     log = await AuditLog.filter(action='custom_action').first()
     assert log is not None
     assert log.user_id is None
@@ -134,6 +144,7 @@ async def test_audit_nullable_fields():
 def test_get_client_ip_trusted_proxy_empty_forwarded(monkeypatch):
     """Empty X-Forwarded-For from trusted proxy falls back to direct IP."""
     import settings
+
     monkeypatch.setattr(settings, 'TRUSTED_PROXIES', ['10.0.0.1'])
     req = FakeRequest(ip='10.0.0.1', forwarded_for='')
     assert get_client_ip(req) == '10.0.0.1'
@@ -147,6 +158,7 @@ async def test_audit_casts_string_user_id():
     await task
 
     from models.framework.audit_log import AuditLog
+
     log = await AuditLog.filter(action='cast_test').first()
     assert log is not None
     assert log.user_id == 42
@@ -159,7 +171,7 @@ async def test_audit_handles_db_failure(monkeypatch):
     from models.framework.audit_log import AuditLog
 
     async def _fail(*args, **kwargs):
-        raise Exception("DB is down")
+        raise Exception('DB is down')
 
     monkeypatch.setattr(AuditLog, 'create', _fail)
 
@@ -167,14 +179,17 @@ async def test_audit_handles_db_failure(monkeypatch):
     # but for simplicity, we just ensure it doesn't raise exception here
     req = FakeRequest()
     task = audit(req, 'fail_test')
-    await task # Task should complete without raising
+    await task  # Task should complete without raising
 
 
 def test_audit_no_loop_warning(monkeypatch):
     """Calling audit() without a running loop logs a warning and returns None."""
     # Mock asyncio.get_running_loop to raise RuntimeError
     import asyncio
-    def _no_loop(): raise RuntimeError("no loop")
+
+    def _no_loop():
+        raise RuntimeError('no loop')
+
     monkeypatch.setattr(asyncio, 'get_running_loop', _no_loop)
 
     req = FakeRequest()

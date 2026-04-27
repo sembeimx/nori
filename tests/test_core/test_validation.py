@@ -1,10 +1,12 @@
 """Tests for core.http.validation."""
+
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from core.http.validation import validate, validate_async
 
 # --- required ---
+
 
 def test_required_missing():
     errors = validate({}, {'name': 'required'})
@@ -23,6 +25,7 @@ def test_required_present():
 
 
 # --- min / max ---
+
 
 def test_min_too_short():
     errors = validate({'pw': '123'}, {'pw': 'required|min:6'})
@@ -48,6 +51,7 @@ def test_max_ok():
 
 # --- email ---
 
+
 def test_email_valid():
     errors = validate({'email': 'user@example.com'}, {'email': 'required|email'})
     assert errors == {}
@@ -64,6 +68,7 @@ def test_email_missing_domain():
 
 
 # --- numeric ---
+
 
 def test_numeric_valid():
     errors = validate({'price': '19.99'}, {'price': 'required|numeric'})
@@ -82,6 +87,7 @@ def test_numeric_invalid():
 
 # --- matches ---
 
+
 def test_matches_ok():
     data = {'password': 'secret', 'confirm': 'secret'}
     errors = validate(data, {'confirm': 'required|matches:password'})
@@ -96,6 +102,7 @@ def test_matches_fail():
 
 # --- in ---
 
+
 def test_in_valid():
     errors = validate({'role': 'admin'}, {'role': 'required|in:admin,user,editor'})
     assert errors == {}
@@ -109,11 +116,15 @@ def test_in_invalid():
 
 # --- multiple rules ---
 
+
 def test_multiple_errors():
-    errors = validate({'email': 'x', 'pw': ''}, {
-        'email': 'required|email|max:255',
-        'pw': 'required|min:8',
-    })
+    errors = validate(
+        {'email': 'x', 'pw': ''},
+        {
+            'email': 'required|email|max:255',
+            'pw': 'required|min:8',
+        },
+    )
     assert 'email' in errors
     assert 'pw' in errors
 
@@ -127,12 +138,14 @@ def test_required_stops_chain():
 
 # --- rules as list ---
 
+
 def test_rules_as_list():
     errors = validate({'name': ''}, {'name': ['required', 'max:100']})
     assert 'name' in errors
 
 
 # --- all valid ---
+
 
 def test_all_valid():
     data = {
@@ -150,23 +163,33 @@ def test_all_valid():
 
 # --- custom messages ---
 
+
 def test_custom_message_overrides_default():
-    errors = validate({}, {'email': 'required'}, {
-        'email.required': 'Email is mandatory',
-    })
+    errors = validate(
+        {},
+        {'email': 'required'},
+        {
+            'email.required': 'Email is mandatory',
+        },
+    )
     assert errors['email'][0] == 'Email is mandatory'
 
 
 def test_custom_message_only_affects_target_field():
-    errors = validate({}, {'email': 'required', 'name': 'required'}, {
-        'email.required': 'Email is mandatory',
-    })
+    errors = validate(
+        {},
+        {'email': 'required', 'name': 'required'},
+        {
+            'email.required': 'Email is mandatory',
+        },
+    )
     assert errors['email'][0] == 'Email is mandatory'
     assert 'is required' in errors['name'][0]
     assert errors['name'][0] != 'Email is mandatory'
 
 
 # --- numeric edge cases ---
+
 
 def test_numeric_rejects_infinity():
     errors = validate({'n': 'inf'}, {'n': 'required|numeric'})
@@ -190,6 +213,7 @@ def test_numeric_accepts_negative():
 
 # --- email edge cases ---
 
+
 def test_email_rejects_consecutive_dots():
     errors = validate({'email': 'user..name@example.com'}, {'email': 'required|email'})
     assert 'email' in errors
@@ -207,10 +231,12 @@ def test_email_accepts_plus_tag():
 
 # --- file_max edge cases ---
 
+
 def test_file_max_rejects_negative_size():
     """Negative size in file_max rule raises ValueError."""
     import pytest as pt
     from core.http.validation import _parse_size
+
     with pt.raises(ValueError, match='positive'):
         _parse_size('-5mb')
 
@@ -218,20 +244,24 @@ def test_file_max_rejects_negative_size():
 def test_file_max_rejects_zero_size():
     import pytest as pt
     from core.http.validation import _parse_size
+
     with pt.raises(ValueError, match='positive'):
         _parse_size('0')
 
 
 def test_file_max_invalid_size_returns_error():
     """file_max with an invalid size string should return a validation error, not crash."""
+
     class FakeFile:
         filename = 'test.jpg'
         size = 100
+
     errors = validate({'avatar': FakeFile()}, {'avatar': 'file|file_max:-5mb'})
     assert 'avatar' in errors
 
 
 # --- url ---
+
 
 def test_url_valid_http():
     errors = validate({'site': 'http://example.com'}, {'site': 'required|url'})
@@ -260,6 +290,7 @@ def test_url_empty_skipped():
 
 # --- date ---
 
+
 def test_date_valid_iso():
     errors = validate({'dob': '2024-01-15'}, {'dob': 'required|date'})
     assert errors == {}
@@ -282,6 +313,7 @@ def test_date_empty_skipped():
 
 # --- confirmed ---
 
+
 def test_confirmed_match():
     data = {'password': 'secret123', 'password_confirmation': 'secret123'}
     errors = validate(data, {'password': 'required|confirmed'})
@@ -301,6 +333,7 @@ def test_confirmed_missing_confirmation_field():
 
 
 # --- nullable ---
+
 
 def test_nullable_skips_empty():
     errors = validate({'bio': ''}, {'bio': 'nullable|min:10'})
@@ -324,6 +357,7 @@ def test_nullable_valid_value():
 
 # --- array ---
 
+
 def test_array_valid():
     errors = validate({'tags': ['a', 'b']}, {'tags': 'required|array'})
     assert errors == {}
@@ -340,6 +374,7 @@ def test_array_none_skipped():
 
 
 # --- min_value / max_value ---
+
 
 def test_min_value_valid():
     errors = validate({'age': '18'}, {'age': 'required|min_value:0'})
@@ -385,6 +420,7 @@ def test_max_value_empty_skipped():
 
 # --- regex ---
 
+
 def test_regex_match():
     errors = validate({'code': 'ABC'}, {'code': r'required|regex:^[A-Z]{3}$'})
     assert errors == {}
@@ -407,20 +443,25 @@ def test_regex_empty_skipped():
 
 # --- combined new rules ---
 
+
 def test_combined_nullable_url():
     errors = validate({'website': ''}, {'website': 'nullable|url'})
     assert errors == {}
 
 
 def test_combined_date_min_max():
-    errors = validate({'age': '25', 'dob': '1999-01-01'}, {
-        'age': 'required|numeric|min_value:18|max_value:120',
-        'dob': 'required|date',
-    })
+    errors = validate(
+        {'age': '25', 'dob': '1999-01-01'},
+        {
+            'age': 'required|numeric|min_value:18|max_value:120',
+            'dob': 'required|date',
+        },
+    )
     assert errors == {}
 
 
 # --- unique (sync validate ignores it) ---
+
 
 def test_unique_ignored_in_sync_validate():
     """The unique rule is silently skipped in sync validate()."""
@@ -429,6 +470,7 @@ def test_unique_ignored_in_sync_validate():
 
 
 # --- validate_async ---
+
 
 def _mock_conn(rows):
     """Create a mock Tortoise connection returning given rows."""

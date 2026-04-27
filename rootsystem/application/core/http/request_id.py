@@ -8,6 +8,7 @@ Generates a UUID per HTTP request and:
 
 The JsonFormatter in ``core.logger`` already supports ``record.request_id``.
 """
+
 from __future__ import annotations
 
 import uuid

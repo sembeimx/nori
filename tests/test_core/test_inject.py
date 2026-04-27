@@ -1,4 +1,5 @@
 """Tests for @inject() dependency injection decorator."""
+
 from core.http.inject import inject
 from starlette.applications import Starlette
 from starlette.requests import Request
@@ -9,6 +10,7 @@ from starlette.testclient import TestClient
 # ---------------------------------------------------------------------------
 # Controller stubs
 # ---------------------------------------------------------------------------
+
 
 class _Controller:
     """Fake controller for testing @inject()."""
@@ -41,14 +43,16 @@ class _Controller:
 
 ctrl = _Controller()
 
-app = Starlette(routes=[
-    Route('/form', endpoint=ctrl.with_form, methods=['POST']),
-    Route('/items/{item_id}', endpoint=ctrl.with_path_int, methods=['GET']),
-    Route('/search', endpoint=ctrl.with_query, methods=['GET']),
-    Route('/defaults', endpoint=ctrl.with_defaults, methods=['GET']),
-    Route('/invalid/{num}', endpoint=ctrl.with_invalid_type, methods=['GET']),
-    Route('/generic/{items}', endpoint=ctrl.with_generic_type, methods=['GET']),
-])
+app = Starlette(
+    routes=[
+        Route('/form', endpoint=ctrl.with_form, methods=['POST']),
+        Route('/items/{item_id}', endpoint=ctrl.with_path_int, methods=['GET']),
+        Route('/search', endpoint=ctrl.with_query, methods=['GET']),
+        Route('/defaults', endpoint=ctrl.with_defaults, methods=['GET']),
+        Route('/invalid/{num}', endpoint=ctrl.with_invalid_type, methods=['GET']),
+        Route('/generic/{items}', endpoint=ctrl.with_generic_type, methods=['GET']),
+    ]
+)
 
 client = TestClient(app)
 
@@ -56,6 +60,7 @@ client = TestClient(app)
 # ---------------------------------------------------------------------------
 # Form data injection
 # ---------------------------------------------------------------------------
+
 
 def test_inject_form_data():
     resp = client.post('/form', data={'name': 'Alice', 'age': '30'})
@@ -77,6 +82,7 @@ def test_inject_json_body():
 # Path params with type coercion
 # ---------------------------------------------------------------------------
 
+
 def test_inject_path_param_int():
     resp = client.get('/items/42')
     assert resp.status_code == 200
@@ -88,6 +94,7 @@ def test_inject_path_param_int():
 # ---------------------------------------------------------------------------
 # Query params
 # ---------------------------------------------------------------------------
+
 
 def test_inject_query_param():
     resp = client.get('/search?q=hello')
@@ -104,6 +111,7 @@ def test_inject_query_param_missing_uses_default():
 # ---------------------------------------------------------------------------
 # Defaults
 # ---------------------------------------------------------------------------
+
 
 def test_inject_defaults_when_no_params():
     resp = client.get('/defaults')
@@ -123,6 +131,7 @@ def test_inject_query_overrides_defaults():
 # Invalid type coercion falls back to default
 # ---------------------------------------------------------------------------
 
+
 def test_inject_invalid_type_falls_back_to_default():
     resp = client.get('/invalid/abc')
     assert resp.status_code == 200
@@ -135,10 +144,10 @@ def test_inject_invalid_type_falls_back_to_default():
 # Malformed body returns 400
 # ---------------------------------------------------------------------------
 
+
 def test_inject_malformed_json_returns_400():
     """Invalid JSON body returns 400 instead of silently proceeding."""
-    resp = client.post('/form', content=b'{not valid json}',
-                       headers={'Content-Type': 'application/json'})
+    resp = client.post('/form', content=b'{not valid json}', headers={'Content-Type': 'application/json'})
     assert resp.status_code == 400
     assert 'error' in resp.json()
 
@@ -146,6 +155,7 @@ def test_inject_malformed_json_returns_400():
 # ---------------------------------------------------------------------------
 # Whitelist and Generic types
 # ---------------------------------------------------------------------------
+
 
 def test_inject_generic_type_not_coerced():
     """Generic types like list[int] are not coerced; raw value is passed."""
@@ -160,8 +170,10 @@ def test_inject_generic_type_not_coerced():
 
 def test_inject_non_whitelisted_primitive_not_coerced():
     """Complex or non-whitelisted types are not coerced."""
+
     class Custom:
-        def __init__(self, val): self.val = val
+        def __init__(self, val):
+            self.val = val
 
     class DummyController:
         @inject()

@@ -21,6 +21,7 @@ Quick start in your ``conftest.py``::
         async with create_test_client() as c:
             yield c
 """
+
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
@@ -45,6 +46,7 @@ __all__ = [
 # Test client
 # ---------------------------------------------------------------------------
 
+
 @asynccontextmanager
 async def create_test_client(app=None, base_url: str = 'http://test'):
     """Create an ``httpx.AsyncClient`` wired to the Nori ASGI app.
@@ -61,6 +63,7 @@ async def create_test_client(app=None, base_url: str = 'http://test'):
     """
     if app is None:
         from asgi import app as _app
+
         app = _app
     async with AsyncClient(transport=ASGITransport(app=app), base_url=base_url) as client:
         yield client
@@ -69,6 +72,7 @@ async def create_test_client(app=None, base_url: str = 'http://test'):
 # ---------------------------------------------------------------------------
 # Database lifecycle
 # ---------------------------------------------------------------------------
+
 
 async def setup_test_db(extra_models: list[str] | None = None) -> None:
     """Initialize Tortoise ORM with an in-memory SQLite database.
@@ -111,6 +115,7 @@ async def teardown_test_db() -> None:
 # ---------------------------------------------------------------------------
 # Authentication helpers
 # ---------------------------------------------------------------------------
+
 
 def authenticate(
     client: AsyncClient,
@@ -172,6 +177,7 @@ def _set_session_cookie(
 
     if secret_key is None:
         from core.conf import config
+
         secret_key = config.SECRET_KEY
 
     payload = b64encode(json.dumps(session_data).encode('utf-8'))
@@ -208,6 +214,7 @@ def authenticate_api(
     """
     if token is None and payload is not None:
         from core.auth.jwt import create_token
+
         token = create_token(payload, expires_in=3600)
     if token:
         client.headers['Authorization'] = f'Bearer {token}'
@@ -216,6 +223,7 @@ def authenticate_api(
 # ---------------------------------------------------------------------------
 # Model factory
 # ---------------------------------------------------------------------------
+
 
 class ModelFactory:
     """Base class for test data factories.
@@ -308,6 +316,7 @@ class ModelFactory:
 # Assertion helpers
 # ---------------------------------------------------------------------------
 
+
 def assert_redirects(response, expected_path: str, status_code: int = 302) -> None:
     """Assert that a response is a redirect to the expected path.
 
@@ -316,13 +325,9 @@ def assert_redirects(response, expected_path: str, status_code: int = 302) -> No
         expected_path: The path (or full URL) expected in the ``Location`` header.
         status_code: Expected HTTP status (default: 302).
     """
-    assert response.status_code == status_code, (
-        f'Expected {status_code}, got {response.status_code}'
-    )
+    assert response.status_code == status_code, f'Expected {status_code}, got {response.status_code}'
     location = response.headers.get('location', '')
-    assert expected_path in location, (
-        f'Expected redirect to {expected_path!r}, got {location!r}'
-    )
+    assert expected_path in location, f'Expected redirect to {expected_path!r}, got {location!r}'
 
 
 def assert_json_error(response, status_code: int, message: str | None = None) -> None:
@@ -333,12 +338,8 @@ def assert_json_error(response, status_code: int, message: str | None = None) ->
         status_code: Expected HTTP status code.
         message: Optional substring to check in the ``error`` field.
     """
-    assert response.status_code == status_code, (
-        f'Expected {status_code}, got {response.status_code}'
-    )
+    assert response.status_code == status_code, f'Expected {status_code}, got {response.status_code}'
     body = response.json()
     assert 'error' in body, f'Response body has no "error" key: {body}'
     if message:
-        assert message in body['error'], (
-            f'Expected {message!r} in error, got {body["error"]!r}'
-        )
+        assert message in body['error'], f'Expected {message!r} in error, got {body["error"]!r}'

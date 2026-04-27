@@ -4,6 +4,7 @@ These tests cover the filter string conversion logic that is specific
 to the Meilisearch driver. The driver's HTTP calls are not tested here
 (they require a running Meilisearch instance or full HTTP mocking).
 """
+
 import os
 import sys
 

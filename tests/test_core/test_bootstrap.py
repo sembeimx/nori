@@ -1,4 +1,5 @@
 """Tests for the bootstrap hook loader (core.bootstrap)."""
+
 from __future__ import annotations
 
 import sys
@@ -31,41 +32,32 @@ def test_no_file_is_silent(bootstrap_env):
 
 
 def test_calls_bootstrap_function(bootstrap_env):
-    _write_bootstrap(bootstrap_env, (
-        "called = {'n': 0}\n"
-        "def bootstrap():\n"
-        "    called['n'] += 1\n"
-    ))
+    _write_bootstrap(bootstrap_env, ("called = {'n': 0}\ndef bootstrap():\n    called['n'] += 1\n"))
     load_bootstrap()
     import bootstrap as user_bootstrap
+
     assert user_bootstrap.called['n'] == 1
 
 
 def test_is_idempotent(bootstrap_env):
-    _write_bootstrap(bootstrap_env, (
-        "called = {'n': 0}\n"
-        "def bootstrap():\n"
-        "    called['n'] += 1\n"
-    ))
+    _write_bootstrap(bootstrap_env, ("called = {'n': 0}\ndef bootstrap():\n    called['n'] += 1\n"))
     load_bootstrap()
     load_bootstrap()
     load_bootstrap()
     import bootstrap as user_bootstrap
+
     assert user_bootstrap.called['n'] == 1
 
 
 def test_missing_function_is_silent(bootstrap_env):
-    _write_bootstrap(bootstrap_env, "x = 42\n")
+    _write_bootstrap(bootstrap_env, 'x = 42\n')
     with patch.object(bootstrap_mod, '_log') as mock_log:
         load_bootstrap()
     mock_log.warning.assert_not_called()
 
 
 def test_raising_hook_logs_warning(bootstrap_env):
-    _write_bootstrap(bootstrap_env, (
-        "def bootstrap():\n"
-        "    raise RuntimeError('boom')\n"
-    ))
+    _write_bootstrap(bootstrap_env, ("def bootstrap():\n    raise RuntimeError('boom')\n"))
     with patch.object(bootstrap_mod, '_log') as mock_log:
         load_bootstrap()
     mock_log.warning.assert_called_once()
@@ -75,7 +67,7 @@ def test_raising_hook_logs_warning(bootstrap_env):
 
 
 def test_import_error_logs_warning(bootstrap_env):
-    _write_bootstrap(bootstrap_env, "import a_package_that_does_not_exist_xyz\n")
+    _write_bootstrap(bootstrap_env, 'import a_package_that_does_not_exist_xyz\n')
     with patch.object(bootstrap_mod, '_log') as mock_log:
         load_bootstrap()
     mock_log.warning.assert_called_once()
@@ -83,7 +75,7 @@ def test_import_error_logs_warning(bootstrap_env):
 
 
 def test_syntax_error_logs_warning(bootstrap_env):
-    _write_bootstrap(bootstrap_env, "def bootstrap(:\n    pass\n")
+    _write_bootstrap(bootstrap_env, 'def bootstrap(:\n    pass\n')
     with patch.object(bootstrap_mod, '_log') as mock_log:
         load_bootstrap()
     mock_log.warning.assert_called_once()

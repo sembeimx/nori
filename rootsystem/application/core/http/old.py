@@ -20,6 +20,7 @@ session, so the form re-renders with whatever the user typed instead of
 empty fields. Sensitive fields (passwords) are excluded from the flash by
 default.
 """
+
 from __future__ import annotations
 
 from collections.abc import Iterable

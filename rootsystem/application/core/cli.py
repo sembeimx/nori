@@ -1,4 +1,5 @@
 """Nori CLI — all framework commands live here so they update with core."""
+
 from __future__ import annotations
 
 import argparse
@@ -22,16 +23,26 @@ _APP_DIR = os.path.join('rootsystem', 'application')
 # Dev server
 # ---------------------------------------------------------------------------
 
+
 def serve(host: str = '0.0.0.0', port: int = 8000) -> None:
-    print("Booting up Nori Framework (Uvicorn) in development mode...")
+    print('Booting up Nori Framework (Uvicorn) in development mode...')
     try:
-        subprocess.run([
-            sys.executable, '-m', 'uvicorn',
-            'asgi:app', '--reload',
-            '--reload-dir', '../templates',
-            '--host', host,
-            '--port', str(port),
-        ], cwd=_APP_DIR)
+        subprocess.run(
+            [
+                sys.executable,
+                '-m',
+                'uvicorn',
+                'asgi:app',
+                '--reload',
+                '--reload-dir',
+                '../templates',
+                '--host',
+                host,
+                '--port',
+                str(port),
+            ],
+            cwd=_APP_DIR,
+        )
     except KeyboardInterrupt:
         pass
 
@@ -39,6 +50,7 @@ def serve(host: str = '0.0.0.0', port: int = 8000) -> None:
 # ---------------------------------------------------------------------------
 # Interactive shell
 # ---------------------------------------------------------------------------
+
 
 def shell() -> None:
     """Open an async Python REPL with Tortoise initialized and registered models in scope.
@@ -51,8 +63,8 @@ def shell() -> None:
 
     without any imports or connection setup.
     """
-    print("Nori shell — async REPL with Tortoise + models loaded.")
-    print("Use `await` at the top level. Press Ctrl-D or type exit() to quit.\n")
+    print('Nori shell — async REPL with Tortoise + models loaded.')
+    print('Use `await` at the top level. Press Ctrl-D or type exit() to quit.\n')
 
     startup = textwrap.dedent("""\
         import asyncio
@@ -103,11 +115,12 @@ def shell() -> None:
 # Scaffolding
 # ---------------------------------------------------------------------------
 
+
 def make_controller(name: str) -> None:
     filename = name.lower() + '.py'
     filepath = os.path.join(_APP_DIR, 'modules', filename)
     if os.path.exists(filepath):
-        print(f"Error: {filepath} already exists.")
+        print(f'Error: {filepath} already exists.')
         return
 
     content = f"""from starlette.requests import Request
@@ -125,14 +138,14 @@ class {name}Controller:
 """
     with open(filepath, 'w') as f:
         f.write(content)
-    print(f"Controller created at: {filepath}")
+    print(f'Controller created at: {filepath}')
 
 
 def make_model(name: str) -> None:
     filename = name.lower() + '.py'
     filepath = os.path.join(_APP_DIR, 'models', filename)
     if os.path.exists(filepath):
-        print(f"Error: {filepath} already exists.")
+        print(f'Error: {filepath} already exists.')
         return
 
     content = f"""from tortoise.models import Model
@@ -151,7 +164,7 @@ class {name}(NoriModelMixin, Model):
 """
     with open(filepath, 'w') as f:
         f.write(content)
-    print(f"Model {name} created at: {filepath}")
+    print(f'Model {name} created at: {filepath}')
     print(f"Don't forget to register the model in {_APP_DIR}/models/__init__.py")
 
 
@@ -159,7 +172,7 @@ def make_seeder(name: str) -> None:
     filename = name.lower() + '_seeder.py'
     filepath = os.path.join(_APP_DIR, 'seeders', filename)
     if os.path.exists(filepath):
-        print(f"Error: {filepath} already exists.")
+        print(f'Error: {filepath} already exists.')
         return
 
     content = f"""\"\"\"Seeder for {name}.\"\"\"
@@ -173,13 +186,14 @@ async def run() -> None:
 """
     with open(filepath, 'w') as f:
         f.write(content)
-    print(f"Seeder created at: {filepath}")
+    print(f'Seeder created at: {filepath}')
     print("Don't forget to register it in seeders/database_seeder.py")
 
 
 # ---------------------------------------------------------------------------
 # Migrations
 # ---------------------------------------------------------------------------
+
 
 def _quiet_env() -> dict[str, str]:
     """Subprocess env that silences Tortoise's `Module "X" has no models` noise.
@@ -211,16 +225,20 @@ def _read_tortoise_apps() -> tuple[str, ...]:
     """
     script = (
         "import sys; sys.path.insert(0, '.')\n"
-        "import settings\n"
+        'import settings\n'
         "for app in settings.TORTOISE_ORM.get('apps', {}).keys():\n"
-        "    print(app)"
+        '    print(app)'
     )
     try:
-        out = subprocess.check_output(
-            [sys.executable, '-c', script],
-            cwd=_APP_DIR,
-            stderr=subprocess.DEVNULL,
-        ).decode().strip()
+        out = (
+            subprocess.check_output(
+                [sys.executable, '-c', script],
+                cwd=_APP_DIR,
+                stderr=subprocess.DEVNULL,
+            )
+            .decode()
+            .strip()
+        )
     except (subprocess.CalledProcessError, FileNotFoundError):
         return _DEFAULT_APPS
     apps = tuple(line.strip() for line in out.split('\n') if line.strip())
@@ -228,7 +246,7 @@ def _read_tortoise_apps() -> tuple[str, ...]:
 
 
 def migrate_init() -> None:
-    print("Initializing Aerich migrations...")
+    print('Initializing Aerich migrations...')
     subprocess.run(
         [sys.executable, '-m', 'aerich', 'init', '-t', 'settings.TORTOISE_ORM'],
         cwd=_APP_DIR,
@@ -242,8 +260,7 @@ def migrate_init() -> None:
     for app in _read_tortoise_apps():
         migrations_dir = os.path.join(_APP_DIR, 'migrations', app)
         already_inited = os.path.isdir(migrations_dir) and any(
-            f.endswith('.py') and f != '__init__.py'
-            for f in os.listdir(migrations_dir)
+            f.endswith('.py') and f != '__init__.py' for f in os.listdir(migrations_dir)
         )
         if already_inited:
             print(f"  App '{app}' already initialized — skipping.")
@@ -257,7 +274,7 @@ def migrate_init() -> None:
 
 
 def migrate_make(name: str, app: str = 'models') -> None:
-    print(f"Creating migration: {name} (app: {app})...")
+    print(f'Creating migration: {name} (app: {app})...')
     subprocess.run(
         [sys.executable, '-m', 'aerich', '--app', app, 'migrate', '--name', name],
         cwd=_APP_DIR,
@@ -268,7 +285,7 @@ def migrate_make(name: str, app: str = 'models') -> None:
 def migrate_upgrade(app: str | None = None) -> None:
     apps = [app] if app else list(_read_tortoise_apps())
     for a in apps:
-        print(f"Running migrations (upgrade) for app: {a}...")
+        print(f'Running migrations (upgrade) for app: {a}...')
         subprocess.run(
             [sys.executable, '-m', 'aerich', '--app', a, 'upgrade'],
             cwd=_APP_DIR,
@@ -277,7 +294,7 @@ def migrate_upgrade(app: str | None = None) -> None:
 
 
 def migrate_downgrade(steps: int = 1, delete: bool = False, app: str = 'models') -> None:
-    print(f"Rolling back {steps} migration(s) for app: {app}...")
+    print(f'Rolling back {steps} migration(s) for app: {app}...')
     cmd = [sys.executable, '-m', 'aerich', '--app', app, 'downgrade', '-v', str(steps)]
     if delete:
         cmd.append('-d')
@@ -285,7 +302,7 @@ def migrate_downgrade(steps: int = 1, delete: bool = False, app: str = 'models')
 
 
 def migrate_fix() -> None:
-    print("Fixing migration files to current Aerich format...")
+    print('Fixing migration files to current Aerich format...')
     subprocess.run(
         [sys.executable, '-m', 'aerich', 'fix-migrations'],
         cwd=_APP_DIR,
@@ -294,8 +311,8 @@ def migrate_fix() -> None:
 
 
 def migrate_fresh() -> None:
-    print("\n  Nori migrate:fresh")
-    print("  ------------------")
+    print('\n  Nori migrate:fresh')
+    print('  ------------------')
 
     # 1. Check for DEBUG=true (safety)
     script_check = (
@@ -303,41 +320,45 @@ def migrate_fresh() -> None:
         "print('DEBUG_TRUE' if getattr(settings, 'DEBUG', False) else 'DEBUG_FALSE')"
     )
     try:
-        result = subprocess.check_output(
-            [sys.executable, '-c', script_check],
-            cwd=_APP_DIR,
-            stderr=subprocess.STDOUT,
-        ).decode().strip()
+        result = (
+            subprocess.check_output(
+                [sys.executable, '-c', script_check],
+                cwd=_APP_DIR,
+                stderr=subprocess.STDOUT,
+            )
+            .decode()
+            .strip()
+        )
     except subprocess.CalledProcessError as e:
-        print(f"  Error: Could not read settings.py — {e.output.decode().strip()}")
+        print(f'  Error: Could not read settings.py — {e.output.decode().strip()}')
         return
 
     if result != 'DEBUG_TRUE':
-        print("  Error: migrate:fresh can only be run when DEBUG=true in settings.py")
+        print('  Error: migrate:fresh can only be run when DEBUG=true in settings.py')
         return
 
     # 2. Confirm action
-    confirm = input("  This will WIPE the database and reset migrations. Continue? [yes/no]: ")
+    confirm = input('  This will WIPE the database and reset migrations. Continue? [yes/no]: ')
     if confirm.lower() != 'yes':
-        print("  Aborted.")
+        print('  Aborted.')
         return
 
     # 3. Wipe database (DB-agnostic via Tortoise)
-    print("\n  1. Wiping database tables (DB-agnostic)...")
+    print('\n  1. Wiping database tables (DB-agnostic)...')
     script_drop = (
-        "import asyncio, sys, os\n"
+        'import asyncio, sys, os\n'
         "sys.path.insert(0, '.')\n"
-        "import settings\n"
-        "from tortoise import Tortoise\n"
-        "async def _drop():\n"
-        "    await Tortoise.init(config=settings.TORTOISE_ORM)\n"
-        "    await Tortoise._drop_databases()\n"
-        "    # Re-create the empty database (needed for MySQL/Postgres where\n"
-        "    # _drop_databases issues DROP DATABASE).  Mirrors the pattern\n"
+        'import settings\n'
+        'from tortoise import Tortoise\n'
+        'async def _drop():\n'
+        '    await Tortoise.init(config=settings.TORTOISE_ORM)\n'
+        '    await Tortoise._drop_databases()\n'
+        '    # Re-create the empty database (needed for MySQL/Postgres where\n'
+        '    # _drop_databases issues DROP DATABASE).  Mirrors the pattern\n'
         "    # used by Tortoise's own test runner.\n"
-        "    await Tortoise.init(config=settings.TORTOISE_ORM, _create_db=True)\n"
-        "    await Tortoise.close_connections()\n"
-        "asyncio.run(_drop())\n"
+        '    await Tortoise.init(config=settings.TORTOISE_ORM, _create_db=True)\n'
+        '    await Tortoise.close_connections()\n'
+        'asyncio.run(_drop())\n'
     )
     subprocess.run([sys.executable, '-c', script_drop], cwd=_APP_DIR)
 
@@ -348,58 +369,59 @@ def migrate_fresh() -> None:
     #    derived from the same framework model definitions on every machine,
     #    so regenerating them is lossless. Wiping all apps keeps "fresh"
     #    honest to its name.
-    print("  2. Deleting all migration files (will be regenerated)...")
+    print('  2. Deleting all migration files (will be regenerated)...')
     migrations_root = os.path.join(_APP_DIR, 'migrations')
     if os.path.exists(migrations_root):
         shutil.rmtree(migrations_root)
-        print(f"     Deleted {migrations_root}")
+        print(f'     Deleted {migrations_root}')
 
     # 5. Regenerate migrations and apply them. migrate_init() reads apps from
     #    settings.TORTOISE_ORM, so any third-party app the user has wired in
     #    gets initialized too.
-    print("  3. Regenerating migrations and applying them...")
+    print('  3. Regenerating migrations and applying them...')
     migrate_init()
 
-    print("\n  Fresh database ready.")
+    print('\n  Fresh database ready.')
 
 
 # ---------------------------------------------------------------------------
 # Database
 # ---------------------------------------------------------------------------
 
+
 def db_seed() -> None:
-    print("Running database seeders...")
+    print('Running database seeders...')
     script = (
-        "import asyncio, sys, os\n"
+        'import asyncio, sys, os\n'
         "sys.path.insert(0, '.')\n"
-        "import settings\n"
-        "from core.conf import configure; configure(settings)\n"
-        "import models\n"
-        "from tortoise import Tortoise\n"
-        "async def _seed():\n"
-        "    await Tortoise.init(config=settings.TORTOISE_ORM)\n"
-        "    from seeders.database_seeder import run\n"
-        "    await run()\n"
-        "    await Tortoise.close_connections()\n"
-        "asyncio.run(_seed())\n"
+        'import settings\n'
+        'from core.conf import configure; configure(settings)\n'
+        'import models\n'
+        'from tortoise import Tortoise\n'
+        'async def _seed():\n'
+        '    await Tortoise.init(config=settings.TORTOISE_ORM)\n'
+        '    from seeders.database_seeder import run\n'
+        '    await run()\n'
+        '    await Tortoise.close_connections()\n'
+        'asyncio.run(_seed())\n'
     )
     subprocess.run([sys.executable, '-c', script], cwd=_APP_DIR)
 
 
 def queue_work(name: str) -> None:
-    print(f"Starting queue worker for: {name}...")
+    print(f'Starting queue worker for: {name}...')
     script = (
-        "import asyncio, sys\n"
+        'import asyncio, sys\n'
         "sys.path.insert(0, '.')\n"
-        "import settings\n"
-        "from core.conf import configure; configure(settings)\n"
-        "import models\n"
-        "from tortoise import Tortoise\n"
-        "from core.queue_worker import work\n"
-        "async def run_worker():\n"
-        "    await Tortoise.init(config=settings.TORTOISE_ORM)\n"
+        'import settings\n'
+        'from core.conf import configure; configure(settings)\n'
+        'import models\n'
+        'from tortoise import Tortoise\n'
+        'from core.queue_worker import work\n'
+        'async def run_worker():\n'
+        '    await Tortoise.init(config=settings.TORTOISE_ORM)\n'
         f"    await work(queue_name='{name}')\n"
-        "asyncio.run(run_worker())\n"
+        'asyncio.run(run_worker())\n'
     )
     try:
         subprocess.run([sys.executable, '-c', script], cwd=_APP_DIR)
@@ -445,16 +467,19 @@ def _get_current_version() -> str:
     with open(version_file) as f:
         for line in f:
             if line.startswith('__version__'):
-                return line.split('=')[1].strip().strip("'\"")
+                return line.split('=')[1].strip().strip('\'"')
     return 'unknown'
 
 
 def _github_api(endpoint: str) -> dict | list:
     url = f'{_GITHUB_API}/repos/{_GITHUB_REPO}/{endpoint}'
-    req = Request(url, headers={
-        'User-Agent': 'Nori-Framework-Updater',
-        'Accept': 'application/vnd.github+json',
-    })
+    req = Request(
+        url,
+        headers={
+            'User-Agent': 'Nori-Framework-Updater',
+            'Accept': 'application/vnd.github+json',
+        },
+    )
     token = os.environ.get('GITHUB_TOKEN', '')
     if token:
         req.add_header('Authorization', f'Bearer {token}')
@@ -474,8 +499,8 @@ def _download_zip(url: str, dest: str) -> None:
 def framework_update(target_version: str | None = None, skip_backup: bool = False, force: bool = False) -> None:
     """Update the framework core from a GitHub release."""
     current = _get_current_version()
-    print("Nori framework:update")
-    print(f"  Current version: {current}")
+    print('Nori framework:update')
+    print(f'  Current version: {current}')
 
     try:
         if target_version:
@@ -484,32 +509,34 @@ def framework_update(target_version: str | None = None, skip_backup: bool = Fals
             release = _github_api('releases/latest')
     except HTTPError as e:
         if e.code == 404:
-            print(f"\n  Error: {'Version v' + target_version + ' not found' if target_version else 'No releases found'}.")
-            print(f"  Check https://github.com/{_GITHUB_REPO}/releases")
+            print(
+                f'\n  Error: {"Version v" + target_version + " not found" if target_version else "No releases found"}.'
+            )
+            print(f'  Check https://github.com/{_GITHUB_REPO}/releases')
             return
         raise
     except URLError as e:
-        print(f"\n  Error: Could not connect to GitHub — {e.reason}")
-        print("  Check your internet connection or set GITHUB_TOKEN for private repos.")
+        print(f'\n  Error: Could not connect to GitHub — {e.reason}')
+        print('  Check your internet connection or set GITHUB_TOKEN for private repos.')
         return
 
     tag = release['tag_name']
     version = tag.lstrip('v')
-    print(f"  Target version:  {version} ({tag})")
+    print(f'  Target version:  {version} ({tag})')
 
     if version == current and not force:
-        print("\n  Already up to date. Use --force to re-install.")
+        print('\n  Already up to date. Use --force to re-install.')
         return
 
     zip_url = f'https://github.com/{_GITHUB_REPO}/archive/refs/tags/{tag}.zip'
-    print(f"\n  Downloading {tag}...")
+    print(f'\n  Downloading {tag}...')
 
     with tempfile.TemporaryDirectory() as tmp:
         zip_path = os.path.join(tmp, 'release.zip')
         try:
             _download_zip(zip_url, zip_path)
         except (URLError, HTTPError) as e:
-            print(f"  Error: Download failed — {e}")
+            print(f'  Error: Download failed — {e}')
             return
 
         with zipfile.ZipFile(zip_path) as zf:
@@ -523,7 +550,7 @@ def framework_update(target_version: str | None = None, skip_backup: bool = Fals
                 for member in zf.namelist():
                     if member.startswith(full_prefix) and not member.endswith('/'):
                         found = True
-                        relative_path = member[len(full_prefix):]
+                        relative_path = member[len(full_prefix) :]
                         dest_path = os.path.join(extract_dir, relative_path)
                         os.makedirs(os.path.dirname(dest_path), exist_ok=True)
                         with zf.open(member) as src, open(dest_path, 'wb') as dst:
@@ -544,8 +571,8 @@ def framework_update(target_version: str | None = None, skip_backup: bool = Fals
                     extracted_files[local_file] = temp_path
 
             if _CORE_DIR not in extracted:
-                print("  Error: Release zip does not contain rootsystem/application/core/")
-                print("  This release may not be compatible with your project structure.")
+                print('  Error: Release zip does not contain rootsystem/application/core/')
+                print('  This release may not be compatible with your project structure.')
                 return
 
         if not skip_backup:
@@ -556,13 +583,13 @@ def framework_update(target_version: str | None = None, skip_backup: bool = Fals
                 if os.path.exists(local_dir):
                     rel_path = os.path.relpath(local_dir, _APP_DIR)
                     backup_dest = os.path.join(backup_root, rel_path)
-                    print(f"  Backing up {local_dir} → {backup_dest}")
+                    print(f'  Backing up {local_dir} → {backup_dest}')
                     os.makedirs(os.path.dirname(backup_dest), exist_ok=True)
                     shutil.copytree(local_dir, backup_dest)
             for local_file in extracted_files:
                 if os.path.exists(local_file):
                     backup_dest = os.path.join(backup_root, local_file)
-                    print(f"  Backing up {local_file} → {backup_dest}")
+                    print(f'  Backing up {local_file} → {backup_dest}')
                     parent = os.path.dirname(backup_dest)
                     if parent:
                         os.makedirs(parent, exist_ok=True)
@@ -570,13 +597,13 @@ def framework_update(target_version: str | None = None, skip_backup: bool = Fals
 
         for local_dir, extract_dir in extracted.items():
             label = os.path.relpath(local_dir, _APP_DIR)
-            print(f"  Replacing {label}/ ...")
+            print(f'  Replacing {label}/ ...')
             if os.path.exists(local_dir):
                 shutil.rmtree(local_dir)
             shutil.copytree(extract_dir, local_dir)
 
         for local_file, temp_path in extracted_files.items():
-            print(f"  Replacing {local_file} ...")
+            print(f'  Replacing {local_file} ...')
             shutil.copy2(temp_path, local_file)
 
     # Reload patches from the freshly installed core. The OLD cli.py that is
@@ -587,28 +614,30 @@ def framework_update(target_version: str | None = None, skip_backup: bool = Fals
     sys.modules.pop('core._patches', None)
     try:
         from core import _patches
+
         patches = _patches.apply()
     except Exception as e:
-        print(f"\n  Warning: could not load core._patches — {e}")
+        print(f'\n  Warning: could not load core._patches — {e}')
         patches = []
 
     if patches:
-        print("\n  Applying patches...")
+        print('\n  Applying patches...')
         for p in patches:
-            print(f"    ✓ {p}")
+            print(f'    ✓ {p}')
 
-    print(f"\n  Updated: {current} → {version}")
-    print("  If framework models changed, generate a migration against your engine:")
-    print("    python3 nori.py migrate:make <name> --app framework")
-    print("    python3 nori.py migrate:upgrade --app framework")
+    print(f'\n  Updated: {current} → {version}')
+    print('  If framework models changed, generate a migration against your engine:')
+    print('    python3 nori.py migrate:make <name> --app framework')
+    print('    python3 nori.py migrate:upgrade --app framework')
 
 
 # ---------------------------------------------------------------------------
 # Audit
 # ---------------------------------------------------------------------------
 
+
 def audit_purge(days: int, export: bool = False, dry_run: bool = False) -> None:
-    print(f"Purging audit log entries older than {days} days...")
+    print(f'Purging audit log entries older than {days} days...')
     script = textwrap.dedent(f"""\
         import asyncio, sys, os, csv
         sys.path.insert(0, '.')
@@ -711,12 +740,13 @@ def routes_list() -> None:
 
 
 def framework_version() -> None:
-    print(f"Nori v{_get_current_version()}")
+    print(f'Nori v{_get_current_version()}')
 
 
 # ---------------------------------------------------------------------------
 # User command plugins
 # ---------------------------------------------------------------------------
+
 
 def _load_user_commands(subparsers) -> dict:
     """Discover and load user commands from the commands/ directory.
@@ -774,57 +804,60 @@ def _load_user_commands(subparsers) -> dict:
 # CLI entry point
 # ---------------------------------------------------------------------------
 
+
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Nori CLI")
-    subparsers = parser.add_subparsers(dest="command", help="Available commands")
+    parser = argparse.ArgumentParser(description='Nori CLI')
+    subparsers = parser.add_subparsers(dest='command', help='Available commands')
 
-    serve_parser = subparsers.add_parser("serve", help="Start the dev server with hot reload")
-    serve_parser.add_argument("--host", default="0.0.0.0", help="Bind address (default: 0.0.0.0)")
-    serve_parser.add_argument("--port", type=int, default=8000, help="Port (default: 8000)")
+    serve_parser = subparsers.add_parser('serve', help='Start the dev server with hot reload')
+    serve_parser.add_argument('--host', default='0.0.0.0', help='Bind address (default: 0.0.0.0)')
+    serve_parser.add_argument('--port', type=int, default=8000, help='Port (default: 8000)')
 
-    subparsers.add_parser("shell", help="Open an async REPL with Tortoise + registered models loaded")
+    subparsers.add_parser('shell', help='Open an async REPL with Tortoise + registered models loaded')
 
-    parser_controller = subparsers.add_parser("make:controller", help="Create a new controller")
-    parser_controller.add_argument("name", type=str, help="Entity name (e.g. Product)")
+    parser_controller = subparsers.add_parser('make:controller', help='Create a new controller')
+    parser_controller.add_argument('name', type=str, help='Entity name (e.g. Product)')
 
-    parser_model = subparsers.add_parser("make:model", help="Create a new Tortoise ORM model")
-    parser_model.add_argument("name", type=str, help="Entity name (e.g. Product)")
+    parser_model = subparsers.add_parser('make:model', help='Create a new Tortoise ORM model')
+    parser_model.add_argument('name', type=str, help='Entity name (e.g. Product)')
 
-    parser_seeder = subparsers.add_parser("make:seeder", help="Create a new database seeder")
-    parser_seeder.add_argument("name", type=str, help="Entity name (e.g. User)")
+    parser_seeder = subparsers.add_parser('make:seeder', help='Create a new database seeder')
+    parser_seeder.add_argument('name', type=str, help='Entity name (e.g. User)')
 
-    subparsers.add_parser("migrate:init", help="Initialize Aerich migration system")
+    subparsers.add_parser('migrate:init', help='Initialize Aerich migration system')
 
-    p_migrate = subparsers.add_parser("migrate:make", help="Create a new migration")
-    p_migrate.add_argument("name", type=str, help="Migration name (e.g. add_users_table)")
-    p_migrate.add_argument("--app", default="models", help="App label: models (default) or framework")
+    p_migrate = subparsers.add_parser('migrate:make', help='Create a new migration')
+    p_migrate.add_argument('name', type=str, help='Migration name (e.g. add_users_table)')
+    p_migrate.add_argument('--app', default='models', help='App label: models (default) or framework')
 
-    p_upgrade = subparsers.add_parser("migrate:upgrade", help="Run pending migrations")
-    p_upgrade.add_argument("--app", default=None, help="App label: models, framework, or omit for both")
+    p_upgrade = subparsers.add_parser('migrate:upgrade', help='Run pending migrations')
+    p_upgrade.add_argument('--app', default=None, help='App label: models, framework, or omit for both')
 
-    p_down = subparsers.add_parser("migrate:downgrade", help="Rollback migrations")
-    p_down.add_argument("--steps", type=int, default=1, help="Number of migrations to roll back")
-    p_down.add_argument("--delete", action="store_true", help="Delete migration files on downgrade")
-    p_down.add_argument("--app", default="models", help="App label: models (default) or framework")
+    p_down = subparsers.add_parser('migrate:downgrade', help='Rollback migrations')
+    p_down.add_argument('--steps', type=int, default=1, help='Number of migrations to roll back')
+    p_down.add_argument('--delete', action='store_true', help='Delete migration files on downgrade')
+    p_down.add_argument('--app', default='models', help='App label: models (default) or framework')
 
-    subparsers.add_parser("migrate:fix", help="Fix migration files to current Aerich format")
-    subparsers.add_parser("migrate:fresh", help="Drop DB + delete migrations + re-init (dev only)")
+    subparsers.add_parser('migrate:fix', help='Fix migration files to current Aerich format')
+    subparsers.add_parser('migrate:fresh', help='Drop DB + delete migrations + re-init (dev only)')
 
-    subparsers.add_parser("db:seed", help="Run database seeders")
+    subparsers.add_parser('db:seed', help='Run database seeders')
 
-    parser_work = subparsers.add_parser("queue:work", help="Run the queue worker")
-    parser_work.add_argument("--name", default="default", help="Queue name")
+    parser_work = subparsers.add_parser('queue:work', help='Run the queue worker')
+    parser_work.add_argument('--name', default='default', help='Queue name')
 
-    parser_update = subparsers.add_parser("framework:update", help="Update the Nori core from GitHub")
-    parser_update.add_argument("--version", default=None, help="Target version (e.g. 1.3.0). Defaults to latest.")
-    parser_update.add_argument("--no-backup", action="store_true", help="Skip backing up the current core/")
-    parser_update.add_argument("--force", action="store_true", help="Re-install even if already on the target version")
+    parser_update = subparsers.add_parser('framework:update', help='Update the Nori core from GitHub')
+    parser_update.add_argument('--version', default=None, help='Target version (e.g. 1.3.0). Defaults to latest.')
+    parser_update.add_argument('--no-backup', action='store_true', help='Skip backing up the current core/')
+    parser_update.add_argument('--force', action='store_true', help='Re-install even if already on the target version')
 
-    subparsers.add_parser("framework:version", help="Show the current framework version")
-    subparsers.add_parser("routes:list", help="List all registered routes")
+    subparsers.add_parser('framework:version', help='Show the current framework version')
+    subparsers.add_parser('routes:list', help='List all registered routes')
 
     audit_purge_parser = subparsers.add_parser('audit:purge', help='Purge old audit log entries')
-    audit_purge_parser.add_argument('--days', type=int, default=90, help='Delete entries older than N days (default: 90)')
+    audit_purge_parser.add_argument(
+        '--days', type=int, default=90, help='Delete entries older than N days (default: 90)'
+    )
     audit_purge_parser.add_argument('--export', action='store_true', help='Export to CSV before deleting')
     audit_purge_parser.add_argument('--dry-run', action='store_true', help='Show count without deleting')
 
@@ -833,35 +866,35 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    if args.command == "serve":
+    if args.command == 'serve':
         serve(host=args.host, port=args.port)
-    elif args.command == "shell":
+    elif args.command == 'shell':
         shell()
-    elif args.command == "make:controller":
+    elif args.command == 'make:controller':
         make_controller(args.name)
-    elif args.command == "make:model":
+    elif args.command == 'make:model':
         make_model(args.name)
-    elif args.command == "make:seeder":
+    elif args.command == 'make:seeder':
         make_seeder(args.name)
-    elif args.command == "migrate:init":
+    elif args.command == 'migrate:init':
         migrate_init()
-    elif args.command == "migrate:make":
+    elif args.command == 'migrate:make':
         migrate_make(args.name, app=args.app)
-    elif args.command == "migrate:upgrade":
+    elif args.command == 'migrate:upgrade':
         migrate_upgrade(app=args.app)
-    elif args.command == "migrate:downgrade":
+    elif args.command == 'migrate:downgrade':
         migrate_downgrade(steps=args.steps, delete=args.delete, app=args.app)
-    elif args.command == "migrate:fix":
+    elif args.command == 'migrate:fix':
         migrate_fix()
-    elif args.command == "migrate:fresh":
+    elif args.command == 'migrate:fresh':
         migrate_fresh()
-    elif args.command == "db:seed":
+    elif args.command == 'db:seed':
         db_seed()
-    elif args.command == "queue:work":
+    elif args.command == 'queue:work':
         queue_work(args.name)
-    elif args.command == "framework:update":
+    elif args.command == 'framework:update':
         framework_update(target_version=args.version, skip_backup=args.no_backup, force=args.force)
-    elif args.command == "framework:version":
+    elif args.command == 'framework:version':
         framework_version()
     elif args.command == 'routes:list':
         routes_list()

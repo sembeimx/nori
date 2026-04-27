@@ -1,4 +1,5 @@
 """Tests for the post-update patch system (core._patches)."""
+
 from __future__ import annotations
 
 import pytest
@@ -16,15 +17,15 @@ from contextlib import asynccontextmanager
 from starlette.applications import Starlette
 '''
 
-ASGI_WITHOUT_DOCSTRING = '''\
+ASGI_WITHOUT_DOCSTRING = """\
 from __future__ import annotations
 
 from starlette.applications import Starlette
-'''
+"""
 
-ASGI_BARE = '''\
+ASGI_BARE = """\
 from starlette.applications import Starlette
-'''
+"""
 
 ASGI_ALREADY_PATCHED = '''\
 from __future__ import annotations
@@ -37,23 +38,23 @@ load_bootstrap()
 from starlette.applications import Starlette
 '''
 
-REQUIREMENTS_V15 = '''\
+REQUIREMENTS_V15 = """\
 starlette>=0.28
 uvicorn[standard]>=0.29
 tortoise-orm>=0.25
 # redis[hiredis]
-'''
+"""
 
-REQUIREMENTS_ALREADY_PATCHED = '''\
+REQUIREMENTS_ALREADY_PATCHED = """\
 -r requirements.nori.txt
 
 starlette>=0.28
-'''
+"""
 
-REQUIREMENTS_WITH_LEADING_COMMENT = '''\
+REQUIREMENTS_WITH_LEADING_COMMENT = """\
 # Site deps — updated 2026-04-01
 starlette>=0.28
-'''
+"""
 
 
 @pytest.fixture
@@ -69,6 +70,7 @@ def patch_env(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 # bootstrap-hook patcher
 # ---------------------------------------------------------------------------
+
 
 def test_bootstrap_patch_injects_after_docstring_and_future(patch_env):
     patch_env['asgi'].write_text(ASGI_WITH_FUTURE_AND_DOCSTRING)
@@ -130,6 +132,7 @@ def test_bootstrap_patch_syntax_error_file(patch_env, capsys):
 
 def test_bootstrap_patched_file_is_valid_python(patch_env):
     import ast
+
     patch_env['asgi'].write_text(ASGI_WITH_FUTURE_AND_DOCSTRING)
 
     _patches._patch_bootstrap_hook_in_asgi()
@@ -140,6 +143,7 @@ def test_bootstrap_patched_file_is_valid_python(patch_env):
 # ---------------------------------------------------------------------------
 # requirements.nori.txt patcher
 # ---------------------------------------------------------------------------
+
 
 def test_requirements_patch_injects_dash_r_at_top(patch_env):
     patch_env['requirements'].write_text(REQUIREMENTS_V15)
@@ -180,6 +184,7 @@ def test_requirements_patch_missing_file(patch_env):
 # ---------------------------------------------------------------------------
 # apply() — runs all patchers
 # ---------------------------------------------------------------------------
+
 
 def test_apply_runs_both_patchers(patch_env):
     patch_env['asgi'].write_text(ASGI_WITH_FUTURE_AND_DOCSTRING)
@@ -226,10 +231,14 @@ def test_apply_continues_after_individual_patcher_failure(patch_env, monkeypatch
 
     # Swap the first entry in _PATCHERS so it raises; the second still fires.
     original = list(_patches._PATCHERS)
-    monkeypatch.setattr(_patches, '_PATCHERS', [
-        (broken_patcher, 'fake patch'),
-        original[1],
-    ])
+    monkeypatch.setattr(
+        _patches,
+        '_PATCHERS',
+        [
+            (broken_patcher, 'fake patch'),
+            original[1],
+        ],
+    )
 
     applied = _patches.apply()
 

@@ -1,15 +1,18 @@
 """Tests for NoriCollection."""
+
 from core.collection import NoriCollection, collect
 
 
 class Obj:
     """Simple object for testing attribute access."""
+
     def __init__(self, **kwargs):
         for k, v in kwargs.items():
             setattr(self, k, v)
 
 
 # --- collect() ---
+
 
 def test_collect_from_list():
     c = collect([1, 2, 3])
@@ -30,6 +33,7 @@ def test_collect_empty():
 
 # --- first / last ---
 
+
 def test_first():
     assert collect([10, 20, 30]).first() == 10
 
@@ -48,6 +52,7 @@ def test_last_empty():
 
 # --- is_empty ---
 
+
 def test_is_empty_true():
     assert collect([]).is_empty() is True
 
@@ -57,6 +62,7 @@ def test_is_empty_false():
 
 
 # --- pluck ---
+
 
 def test_pluck_objects():
     items = [Obj(name='a'), Obj(name='b')]
@@ -69,6 +75,7 @@ def test_pluck_dicts():
 
 
 # --- where ---
+
 
 def test_where_equals():
     items = [Obj(status=1), Obj(status=2), Obj(status=1)]
@@ -96,6 +103,7 @@ def test_where_truthy():
 
 # --- sort_by ---
 
+
 def test_sort_by():
     items = [Obj(name='c'), Obj(name='a'), Obj(name='b')]
     result = collect(items).sort_by('name')
@@ -110,6 +118,7 @@ def test_sort_by_reverse():
 
 # --- group_by ---
 
+
 def test_group_by():
     items = [Obj(type='a', v=1), Obj(type='b', v=2), Obj(type='a', v=3)]
     groups = collect(items).group_by('type')
@@ -118,6 +127,7 @@ def test_group_by():
 
 
 # --- unique ---
+
 
 def test_unique_primitives():
     result = collect([1, 2, 2, 3, 3]).unique()
@@ -133,6 +143,7 @@ def test_unique_by_key():
 
 # --- chunk ---
 
+
 def test_chunk():
     result = collect([1, 2, 3, 4, 5]).chunk(2)
     assert len(result) == 3
@@ -142,6 +153,7 @@ def test_chunk():
 
 
 # --- map / each ---
+
 
 def test_map():
     result = collect([1, 2, 3]).map(lambda x: x * 10)
@@ -157,6 +169,7 @@ def test_each():
 
 
 # --- sum / avg / min / max ---
+
 
 def test_sum():
     items = [Obj(price=10), Obj(price=20), Obj(price=30)]
@@ -188,6 +201,7 @@ def test_max():
 
 # --- to_list / to_dict ---
 
+
 def test_to_list_dicts():
     items = [{'a': 1}, {'a': 2}]
     assert collect(items).to_list() == [{'a': 1}, {'a': 2}]
@@ -209,6 +223,7 @@ def test_to_dict():
 
 
 # --- sort_by with None values ---
+
 
 def test_sort_by_with_none_values():
     """None values should be sorted to the end."""

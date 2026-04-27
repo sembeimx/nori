@@ -20,6 +20,7 @@ def login_required(func: Callable[..., Any]) -> Callable[..., Any]:
     Decorator: redirects to /login if no session.
     For JSON requests, returns 401.
     """
+
     @wraps(func)
     async def wrapper(self: Any, request: Request, *args: Any, **kwargs: Any) -> Response:
         user_id = request.session.get('user_id')
@@ -29,6 +30,7 @@ def login_required(func: Callable[..., Any]) -> Callable[..., Any]:
                 return JSONResponse({'error': 'Unauthorized'}, status_code=401)
             return RedirectResponse(config.get('LOGIN_URL', '/login'), status_code=302)
         return await func(self, request, *args, **kwargs)
+
     return wrapper
 
 
@@ -39,6 +41,7 @@ def require_role(role: str) -> Callable[..., Any]:
         @require_role('editor')
         async def edit(self, request): ...
     """
+
     def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
         @wraps(func)
         async def wrapper(self: Any, request: Request, *args: Any, **kwargs: Any) -> Response:
@@ -57,7 +60,9 @@ def require_role(role: str) -> Callable[..., Any]:
                 return RedirectResponse(config.get('FORBIDDEN_URL', '/forbidden'), status_code=302)
 
             return await func(self, request, *args, **kwargs)
+
         return wrapper
+
     return decorator
 
 
@@ -68,6 +73,7 @@ def require_any_role(*roles: str) -> Callable[..., Any]:
         @require_any_role('admin', 'moderator')
         async def moderate(self, request): ...
     """
+
     def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
         @wraps(func)
         async def wrapper(self: Any, request: Request, *args: Any, **kwargs: Any) -> Response:
@@ -86,7 +92,9 @@ def require_any_role(*roles: str) -> Callable[..., Any]:
                 return RedirectResponse(config.get('FORBIDDEN_URL', '/forbidden'), status_code=302)
 
             return await func(self, request, *args, **kwargs)
+
         return wrapper
+
     return decorator
 
 
@@ -101,12 +109,13 @@ async def load_permissions(session: dict, user_id: int) -> list[str]:
     permissions list and a warning is logged.
     """
     from core.logger import get_logger
+
     _perm_log = get_logger('auth')
 
     Role = get_model('Role')
     role_ids = session.get('role_ids', [])
     if not role_ids:
-        _perm_log.warning("load_permissions called but role_ids is empty for user %s", user_id)
+        _perm_log.warning('load_permissions called but role_ids is empty for user %s', user_id)
         session['permissions'] = []
         return []
 
@@ -134,6 +143,7 @@ def require_permission(perm: str) -> Callable[..., Any]:
         @require_permission('articles.edit')
         async def edit(self, request): ...
     """
+
     def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
         @wraps(func)
         async def wrapper(self: Any, request: Request, *args: Any, **kwargs: Any) -> Response:
@@ -163,7 +173,9 @@ def require_permission(perm: str) -> Callable[..., Any]:
                 return RedirectResponse(config.get('FORBIDDEN_URL', '/forbidden'), status_code=302)
 
             return await func(self, request, *args, **kwargs)
+
         return wrapper
+
     return decorator
 
 
@@ -176,6 +188,7 @@ def token_required(func: Callable[..., Any]) -> Callable[..., Any]:
         @token_required
         async def api_data(self, request): ...
     """
+
     @wraps(func)
     async def wrapper(self: Any, request: Request, *args: Any, **kwargs: Any) -> Response:
         auth_header = request.headers.get('authorization', '').strip()
@@ -191,4 +204,5 @@ def token_required(func: Callable[..., Any]) -> Callable[..., Any]:
 
         request.state.token_payload = payload
         return await func(self, request, *args, **kwargs)
+
     return wrapper

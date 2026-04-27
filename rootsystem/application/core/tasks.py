@@ -13,6 +13,7 @@ Usage::
     response = JSONResponse({'ok': True})
     return run_in_background(response, send_email, to='user@example.com')
 """
+
 from __future__ import annotations
 
 from typing import Any, Callable
@@ -36,7 +37,7 @@ def background(func: Callable[..., Any], *args: Any, **kwargs: Any) -> Backgroun
             if hasattr(result, '__await__'):
                 await result
         except Exception as exc:
-            _log.error("Background task %s failed: %s", func.__name__, exc, exc_info=True)
+            _log.error('Background task %s failed: %s', func.__name__, exc, exc_info=True)
 
     return BackgroundTask(_wrapper)
 
@@ -48,13 +49,15 @@ def background_tasks(*tasks: tuple) -> BackgroundTasks:
     """
     bg = BackgroundTasks()
     for func, a, kw in tasks:
+
         async def _make_wrapper(_f=func, _a=a, _k=kw) -> None:
             try:
                 result = _f(*_a, **_k)
                 if hasattr(result, '__await__'):
                     await result
             except Exception as exc:
-                _log.error("Background task %s failed: %s", _f.__name__, exc, exc_info=True)
+                _log.error('Background task %s failed: %s', _f.__name__, exc, exc_info=True)
+
         bg.add_task(_make_wrapper)
     return bg
 

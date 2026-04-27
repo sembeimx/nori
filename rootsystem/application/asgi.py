@@ -36,38 +36,41 @@ _log = get_logger('asgi')
 
 # Lifecycle
 
+
 @asynccontextmanager
 async def lifespan(app):
     # Validate settings on startup
     warnings = settings.validate_settings()
     for w in warnings:
-        _log.warning("Settings: %s", w)
+        _log.warning('Settings: %s', w)
 
     # Warn about memory backends in production
     if not settings.DEBUG:
         if getattr(settings, 'CACHE_BACKEND', 'memory') == 'memory':
             _log.warning(
                 "CACHE_BACKEND is 'memory' in production. Cache is not shared across "
-                "workers and will be lost on restart. Set CACHE_BACKEND=redis."
+                'workers and will be lost on restart. Set CACHE_BACKEND=redis.'
             )
         if getattr(settings, 'THROTTLE_BACKEND', 'memory') == 'memory':
             _log.warning(
                 "THROTTLE_BACKEND is 'memory' in production. Rate limits are not shared "
-                "across workers. Set THROTTLE_BACKEND=redis."
+                'across workers. Set THROTTLE_BACKEND=redis.'
             )
 
     if settings.DB_ENABLED:
         await Tortoise.init(config=settings.TORTOISE_ORM)
         if settings.DEBUG:
             await Tortoise.generate_schemas()
-        _log.info("Nori started [debug=%s, db=%s]", settings.DEBUG, settings.DB_ENGINE)
+        _log.info('Nori started [debug=%s, db=%s]', settings.DEBUG, settings.DB_ENGINE)
     else:
-        _log.info("Nori started [debug=%s, db=disabled]", settings.DEBUG)
+        _log.info('Nori started [debug=%s, db=disabled]', settings.DEBUG)
     yield
     if settings.DB_ENABLED:
         await Tortoise.close_connections()
 
+
 # Error handler
+
 
 async def not_found(request: Request, exc: Exception) -> Response:
     accept = request.headers.get('accept', '')
@@ -75,9 +78,11 @@ async def not_found(request: Request, exc: Exception) -> Response:
         return JSONResponse({'error': 'Not Found'}, status_code=404)
     return templates.TemplateResponse(request, '404.html', status_code=404)
 
+
 async def server_error(request: Request, exc: Exception) -> Response:
     _log.error('Internal server error on %s: %s', request.url.path, exc, exc_info=True)
     return templates.TemplateResponse(request, '500.html', status_code=500)
+
 
 exception_handlers = {} if settings.DEBUG else {404: not_found, 500: server_error}
 
@@ -91,13 +96,16 @@ middleware = [
 ]
 
 if settings.CORS_ORIGINS:
-    middleware.insert(1, Middleware(
-        CORSMiddleware,
-        allow_origins=settings.CORS_ORIGINS,
-        allow_methods=settings.CORS_ALLOW_METHODS,
-        allow_headers=settings.CORS_ALLOW_HEADERS,
-        allow_credentials=settings.CORS_ALLOW_CREDENTIALS,
-    ))
+    middleware.insert(
+        1,
+        Middleware(
+            CORSMiddleware,
+            allow_origins=settings.CORS_ORIGINS,
+            allow_methods=settings.CORS_ALLOW_METHODS,
+            allow_headers=settings.CORS_ALLOW_HEADERS,
+            allow_credentials=settings.CORS_ALLOW_CREDENTIALS,
+        ),
+    )
 
 # Application
 

@@ -1,4 +1,5 @@
 """Tests for core.testing utilities."""
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock
@@ -17,8 +18,10 @@ from core.testing import (
 # ModelFactory
 # ---------------------------------------------------------------------------
 
+
 class DummyModel:
     """Fake model that mimics Tortoise create()."""
+
     _store: list = []
 
     def __init__(self, **kwargs):
@@ -117,6 +120,7 @@ async def test_factory_no_model_raises():
 # assert_redirects
 # ---------------------------------------------------------------------------
 
+
 def test_assert_redirects_success():
     resp = MagicMock()
     resp.status_code = 302
@@ -150,6 +154,7 @@ def test_assert_redirects_custom_status():
 # ---------------------------------------------------------------------------
 # assert_json_error
 # ---------------------------------------------------------------------------
+
 
 def test_assert_json_error_success():
     resp = MagicMock()
@@ -193,9 +198,11 @@ def test_assert_json_error_no_message_check():
 # authenticate helpers
 # ---------------------------------------------------------------------------
 
+
 def test_authenticate_sets_session_cookie():
     """authenticate() creates a signed session cookie with user data."""
     from httpx import AsyncClient
+
     client = AsyncClient()
     authenticate(client, user_id='42', role='admin', secret_key='test-secret')
     cookie = client.cookies.get('session')
@@ -205,6 +212,7 @@ def test_authenticate_sets_session_cookie():
     from base64 import b64decode
 
     import itsdangerous
+
     signer = itsdangerous.TimestampSigner('test-secret')
     unsigned = signer.unsign(cookie.encode())
     data = json.loads(b64decode(unsigned))
@@ -214,15 +222,17 @@ def test_authenticate_sets_session_cookie():
 
 def test_authenticate_with_permissions():
     from httpx import AsyncClient
+
     client = AsyncClient()
-    authenticate(client, user_id='1', role='editor',
-                 permissions=['articles.edit', 'articles.delete'],
-                 secret_key='test-secret')
+    authenticate(
+        client, user_id='1', role='editor', permissions=['articles.edit', 'articles.delete'], secret_key='test-secret'
+    )
     cookie = client.cookies.get('session')
     import json
     from base64 import b64decode
 
     import itsdangerous
+
     signer = itsdangerous.TimestampSigner('test-secret')
     data = json.loads(b64decode(signer.unsign(cookie.encode())))
     assert data['permissions'] == ['articles.edit', 'articles.delete']
@@ -230,6 +240,7 @@ def test_authenticate_with_permissions():
 
 def test_clear_authentication():
     from httpx import AsyncClient
+
     client = AsyncClient()
     authenticate(client, user_id='1', secret_key='test-secret')
     assert client.cookies.get('session') is not None
@@ -262,6 +273,7 @@ def test_authenticate_api_no_args():
 # ---------------------------------------------------------------------------
 # Integration: authenticate() with real decorators
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_authenticate_works_with_login_required():

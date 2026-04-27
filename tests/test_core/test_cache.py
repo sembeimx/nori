@@ -1,4 +1,5 @@
 """Tests for core.cache."""
+
 import time
 
 import pytest
@@ -23,6 +24,7 @@ def _reset():
 
 
 # --- MemoryCacheBackend unit tests ---
+
 
 @pytest.mark.asyncio
 async def test_memory_cache_empty():
@@ -77,6 +79,7 @@ async def test_memory_cache_flush():
 
 # --- LRU eviction ---
 
+
 @pytest.mark.asyncio
 async def test_lru_evicts_oldest_when_full():
     backend = MemoryCacheBackend(max_keys=3)
@@ -108,7 +111,7 @@ async def test_lru_set_existing_refreshes_key():
     await backend.set('b', 2, ttl=60)
     await backend.set('c', 3, ttl=60)
     await backend.set('a', 10, ttl=60)  # Update 'a' — now 'b' is LRU
-    await backend.set('d', 4, ttl=60)   # Evicts 'b'
+    await backend.set('d', 4, ttl=60)  # Evicts 'b'
     assert await backend.get('a') == 10
     assert await backend.get('b') is None
 
@@ -134,6 +137,7 @@ async def test_lru_default_max_keys():
 
 # --- Convenience functions ---
 
+
 @pytest.mark.asyncio
 async def test_cache_set_and_get():
     await cache_set('test', 'value', ttl=60)
@@ -156,12 +160,14 @@ async def test_cache_flush():
 
 # --- Singleton ---
 
+
 def test_get_backend_defaults_to_memory():
     backend = get_backend()
     assert isinstance(backend, MemoryCacheBackend)
 
 
 # --- @cache_response decorator ---
+
 
 @pytest.mark.asyncio
 async def test_cache_response_caches_get():

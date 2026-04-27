@@ -18,6 +18,7 @@ Usage::
         async def list(self, request):
             return JSONResponse(...)
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -34,9 +35,15 @@ from core.logger import get_logger
 _log = get_logger('cache')
 
 __all__ = [
-    'CacheBackend', 'MemoryCacheBackend', 'RedisCacheBackend',
-    'get_backend', 'reset_backend',
-    'cache_get', 'cache_set', 'cache_delete', 'cache_flush',
+    'CacheBackend',
+    'MemoryCacheBackend',
+    'RedisCacheBackend',
+    'get_backend',
+    'reset_backend',
+    'cache_get',
+    'cache_set',
+    'cache_delete',
+    'cache_flush',
     'cache_response',
 ]
 
@@ -45,8 +52,8 @@ __all__ = [
 # Abstract backend
 # ---------------------------------------------------------------------------
 
-class CacheBackend(ABC):
 
+class CacheBackend(ABC):
     @abstractmethod
     async def get(self, key: str) -> Any | None: ...
 
@@ -63,6 +70,7 @@ class CacheBackend(ABC):
 # ---------------------------------------------------------------------------
 # Memory backend
 # ---------------------------------------------------------------------------
+
 
 class MemoryCacheBackend(CacheBackend):
     """In-memory LRU cache with TTL (single process).
@@ -115,16 +123,18 @@ class MemoryCacheBackend(CacheBackend):
 # Redis backend
 # ---------------------------------------------------------------------------
 
+
 class RedisCacheBackend(CacheBackend):
     """Redis-backed cache using string keys with expiry."""
 
     def __init__(self, redis_url: str) -> None:
         import redis.asyncio as aioredis
+
         self._redis = aioredis.from_url(redis_url, socket_connect_timeout=5)
         self._prefix = 'cache:'
 
     async def get(self, key: str) -> Any | None:
-        raw = await self._redis.get(f"{self._prefix}{key}")
+        raw = await self._redis.get(f'{self._prefix}{key}')
         if raw is None:
             return None
         try:
@@ -133,18 +143,21 @@ class RedisCacheBackend(CacheBackend):
             return raw.decode('utf-8') if isinstance(raw, bytes) else raw
 
     async def set(self, key: str, value: Any, ttl: int = 0) -> None:
-        rkey = f"{self._prefix}{key}"
+        rkey = f'{self._prefix}{key}'
+
         def _json_default(obj: object) -> str:
             from datetime import date, datetime
             from decimal import Decimal
             from uuid import UUID
+
             if isinstance(obj, (datetime, date)):
                 return obj.isoformat()
             if isinstance(obj, Decimal):
                 return str(obj)
             if isinstance(obj, UUID):
                 return str(obj)
-            raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
+            raise TypeError(f'Object of type {type(obj).__name__} is not JSON serializable')
+
         serialized = json.dumps(value, default=_json_default)
         if ttl > 0:
             await self._redis.setex(rkey, ttl, serialized)
@@ -152,13 +165,15 @@ class RedisCacheBackend(CacheBackend):
             await self._redis.set(rkey, serialized)
 
     async def delete(self, key: str) -> None:
-        await self._redis.delete(f"{self._prefix}{key}")
+        await self._redis.delete(f'{self._prefix}{key}')
 
     async def flush(self) -> None:
         cursor = 0
         while True:
             cursor, keys = await self._redis.scan(
-                cursor, match=f"{self._prefix}*", count=100,
+                cursor,
+                match=f'{self._prefix}*',
+                count=100,
             )
             if keys:
                 await self._redis.delete(*keys)
@@ -188,7 +203,7 @@ def get_backend() -> CacheBackend:
         try:
             _backend = RedisCacheBackend(redis_url)
         except Exception:
-            _log.warning("Redis cache unavailable, falling back to memory")
+            _log.warning('Redis cache unavailable, falling back to memory')
             _backend = MemoryCacheBackend()
     else:
         max_keys = int(config.get('CACHE_MAX_KEYS', 10_000))
@@ -205,6 +220,7 @@ def reset_backend() -> None:
 # ---------------------------------------------------------------------------
 # Convenience functions
 # ---------------------------------------------------------------------------
+
 
 async def cache_get(key: str) -> Any | None:
     return await get_backend().get(key)
@@ -226,6 +242,7 @@ async def cache_flush() -> None:
 # Response caching decorator
 # ---------------------------------------------------------------------------
 
+
 def cache_response(ttl: int = 60, key_prefix: str = 'view') -> Callable:
     """Cache GET response bodies. Non-GET requests pass through."""
 
@@ -235,10 +252,11 @@ def cache_response(ttl: int = 60, key_prefix: str = 'view') -> Callable:
             if request.method != 'GET':
                 return await func(self, request, *args, **kwargs)
 
-            cache_key = f"{key_prefix}:{request.url.path}:{request.url.query}"
+            cache_key = f'{key_prefix}:{request.url.path}:{request.url.query}'
             cached = await cache_get(cache_key)
             if cached is not None:
                 from starlette.responses import Response
+
                 return Response(
                     content=cached['body'],
                     status_code=cached['status_code'],
@@ -250,12 +268,18 @@ def cache_response(ttl: int = 60, key_prefix: str = 'view') -> Callable:
             # Only cache successful responses (2xx)
             if 200 <= response.status_code < 300:
                 body = response.body
-                await cache_set(cache_key, {
-                    'body': body.decode('utf-8') if isinstance(body, bytes) else body,
-                    'status_code': response.status_code,
-                    'media_type': response.media_type,
-                }, ttl)
+                await cache_set(
+                    cache_key,
+                    {
+                        'body': body.decode('utf-8') if isinstance(body, bytes) else body,
+                        'status_code': response.status_code,
+                        'media_type': response.media_type,
+                    },
+                    ttl,
+                )
 
             return response
+
         return wrapper
+
     return decorator

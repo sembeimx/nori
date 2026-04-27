@@ -1,4 +1,5 @@
 """Tests for services.oauth_github — GitHub OAuth2 driver."""
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -9,10 +10,12 @@ from core.auth.oauth import _PKCE_SESSION_KEY, _STATE_SESSION_KEY
 
 # -- Fixtures ----------------------------------------------------------------
 
+
 @pytest.fixture(autouse=True)
 def _github_settings(monkeypatch):
     """Set required GitHub OAuth settings."""
     import settings
+
     monkeypatch.setattr(settings, 'GITHUB_CLIENT_ID', 'gh-test-id')
     monkeypatch.setattr(settings, 'GITHUB_CLIENT_SECRET', 'gh-test-secret')
 
@@ -22,6 +25,7 @@ def _make_session() -> dict:
 
 
 # -- get_auth_url ------------------------------------------------------------
+
 
 def test_get_auth_url_contains_required_params():
     from services.oauth_github import get_auth_url
@@ -73,6 +77,7 @@ def test_get_auth_url_stores_state():
 
 # -- handle_callback ---------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_handle_callback_invalid_state():
     from services.oauth_github import handle_callback
@@ -114,7 +119,10 @@ async def test_handle_callback_exchanges_code():
 
     with patch('services.oauth_github.httpx.AsyncClient', return_value=mock_client):
         profile = await handle_callback(
-            session, code='gh-code', redirect_uri='https://example.com/cb', state=state,
+            session,
+            code='gh-code',
+            redirect_uri='https://example.com/cb',
+            state=state,
         )
 
     # Verify token request used Accept: application/json
@@ -129,6 +137,7 @@ async def test_handle_callback_exchanges_code():
 
 
 # -- get_user_profile --------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_get_user_profile_uses_public_email():
