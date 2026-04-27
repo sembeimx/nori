@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from starlette.routing import Route, WebSocketRoute
-from modules.page import PageController
 from modules.echo import EchoHandler
 from modules.health import HealthController
+from modules.page import PageController
+from starlette.routing import Route, WebSocketRoute
 
 # Singletons
 page = PageController()

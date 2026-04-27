@@ -1,10 +1,10 @@
 """Tests for core.auth.jwt."""
-import sys
 import os
-import time
+import sys
+
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../rootsystem/application')))
 
-from core.auth.jwt import create_token, verify_token, _base64url_encode, _base64url_decode
+from core.auth.jwt import _base64url_decode, _base64url_encode, create_token, verify_token
 
 
 def test_create_and_verify_roundtrip():

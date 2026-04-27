@@ -1,7 +1,7 @@
 """Tests for /health endpoint."""
+from unittest.mock import AsyncMock, patch
+
 import pytest
-import pytest_asyncio
-from unittest.mock import patch, AsyncMock
 
 
 @pytest.mark.asyncio

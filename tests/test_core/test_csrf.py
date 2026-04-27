@@ -1,9 +1,9 @@
 """Tests for CSRF middleware and helpers."""
-import pytest
 from urllib.parse import urlencode
-from core.auth.csrf import CsrfMiddleware, csrf_field, csrf_token, _CSRF_SESSION_KEY
-from core.auth.security import Security
 
+import pytest
+from core.auth.csrf import _CSRF_SESSION_KEY, CsrfMiddleware, csrf_field, csrf_token
+from core.auth.security import Security
 
 # ---------------------------------------------------------------------------
 # Helpers to simulate ASGI calls

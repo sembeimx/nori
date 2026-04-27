@@ -1,9 +1,9 @@
 """Tests for core.testing utilities."""
 from __future__ import annotations
 
-import pytest
 from unittest.mock import MagicMock
 
+import pytest
 from core.testing import (
     ModelFactory,
     assert_json_error,
@@ -11,9 +11,7 @@ from core.testing import (
     authenticate,
     authenticate_api,
     clear_authentication,
-    _set_session_cookie,
 )
-
 
 # ---------------------------------------------------------------------------
 # ModelFactory
@@ -205,6 +203,7 @@ def test_authenticate_sets_session_cookie():
     # Verify the cookie can be decoded
     import json
     from base64 import b64decode
+
     import itsdangerous
     signer = itsdangerous.TimestampSigner('test-secret')
     unsigned = signer.unsign(cookie.encode())
@@ -222,6 +221,7 @@ def test_authenticate_with_permissions():
     cookie = client.cookies.get('session')
     import json
     from base64 import b64decode
+
     import itsdangerous
     signer = itsdangerous.TimestampSigner('test-secret')
     data = json.loads(b64decode(signer.unsign(cookie.encode())))
@@ -266,14 +266,14 @@ def test_authenticate_api_no_args():
 @pytest.mark.asyncio
 async def test_authenticate_works_with_login_required():
     """authenticate() creates a real session that @login_required accepts."""
+    from core.auth.decorators import login_required
+    from core.testing import authenticate, create_test_client
     from starlette.applications import Starlette
     from starlette.middleware import Middleware
     from starlette.middleware.sessions import SessionMiddleware
     from starlette.requests import Request
     from starlette.responses import JSONResponse
     from starlette.routing import Route
-    from core.auth.decorators import login_required
-    from core.testing import create_test_client, authenticate
 
     class Ctrl:
         @login_required
@@ -301,14 +301,14 @@ async def test_authenticate_works_with_login_required():
 @pytest.mark.asyncio
 async def test_authenticate_works_with_require_role():
     """authenticate() sets the role correctly for @require_role."""
+    from core.auth.decorators import require_role
+    from core.testing import authenticate, create_test_client
     from starlette.applications import Starlette
     from starlette.middleware import Middleware
     from starlette.middleware.sessions import SessionMiddleware
     from starlette.requests import Request
     from starlette.responses import JSONResponse
     from starlette.routing import Route
-    from core.auth.decorators import require_role
-    from core.testing import create_test_client, authenticate
 
     class Ctrl:
         @require_role('admin')

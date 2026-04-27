@@ -1,9 +1,6 @@
 """Tests for core.logger module."""
 import json
 import logging
-import os
-import pytest
-from unittest.mock import patch
 
 
 def test_get_logger_returns_root():

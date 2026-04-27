@@ -2,11 +2,9 @@
 from __future__ import annotations
 
 import argparse
-import os
-import tempfile
 import sys
-import pytest
 
+import pytest
 from core.cli import _load_user_commands
 
 

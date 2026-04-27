@@ -1,5 +1,5 @@
-import sys
 import os
+import sys
 
 # Force test DB before any application import
 os.environ['DB_ENGINE'] = 'sqlite'
@@ -12,11 +12,10 @@ sys.path.insert(0, _app_dir)
 sys.path.insert(0, _tests_dir)
 
 import pytest_asyncio
-from httpx import AsyncClient, ASGITransport
-from tortoise import Tortoise
-
-from asgi import app
 import settings
+from asgi import app
+from httpx import ASGITransport, AsyncClient
+from tortoise import Tortoise
 
 
 @pytest_asyncio.fixture(scope="session", autouse=True, loop_scope="session")

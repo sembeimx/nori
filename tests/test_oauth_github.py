@@ -1,13 +1,11 @@
 """Tests for services.oauth_github — GitHub OAuth2 driver."""
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, patch, MagicMock
-from urllib.parse import urlparse, parse_qs
+from unittest.mock import AsyncMock, MagicMock, patch
+from urllib.parse import parse_qs, urlparse
 
 import pytest
-
-from core.auth.oauth import _STATE_SESSION_KEY, _PKCE_SESSION_KEY
-
+from core.auth.oauth import _PKCE_SESSION_KEY, _STATE_SESSION_KEY
 
 # -- Fixtures ----------------------------------------------------------------
 
@@ -88,8 +86,8 @@ async def test_handle_callback_invalid_state():
 
 @pytest.mark.asyncio
 async def test_handle_callback_exchanges_code():
-    from services.oauth_github import handle_callback, _TOKEN_URL
     from core.auth.oauth import generate_state
+    from services.oauth_github import _TOKEN_URL, handle_callback
 
     session = _make_session()
     state = generate_state(session)
@@ -163,7 +161,7 @@ async def test_get_user_profile_uses_public_email():
 @pytest.mark.asyncio
 async def test_get_user_profile_fetches_private_email():
     """When /user returns null email, fetch from /user/emails."""
-    from services.oauth_github import get_user_profile, _USER_URL, _EMAILS_URL
+    from services.oauth_github import _EMAILS_URL, _USER_URL, get_user_profile
 
     user_response = MagicMock()
     user_response.json.return_value = {

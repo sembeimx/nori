@@ -8,10 +8,13 @@ Start with: uvicorn asgi:app --reload --host 0.0.0.0 --port 8000
 # Bootstrap hook — MUST run before any framework/third-party import so
 # observability SDKs (Sentry, OTel, Datadog) can patch libraries at load time.
 from core.bootstrap import load_bootstrap
+
 load_bootstrap()
 
 from contextlib import asynccontextmanager
 
+import settings
+from core.conf import configure
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
 from starlette.middleware.cors import CORSMiddleware
@@ -21,17 +24,13 @@ from starlette.responses import JSONResponse, Response
 from starlette.staticfiles import StaticFiles
 from tortoise import Tortoise
 
-import settings
-from core.conf import configure
 configure(settings)
-import models  # noqa: E402 — registers models in the core registry
-
-from routes import routes
 from core.auth.csrf import CsrfMiddleware
 from core.http.request_id import RequestIdMiddleware
 from core.http.security_headers import SecurityHeadersMiddleware
 from core.jinja import templates
 from core.logger import get_logger
+from routes import routes
 
 _log = get_logger('asgi')
 

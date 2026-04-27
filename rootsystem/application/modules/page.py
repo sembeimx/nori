@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import sys
-from starlette.requests import Request
+
 from core.jinja import templates
 from core.version import __version__ as nori_version
-from settings import DB_ENGINE, DEBUG, THROTTLE_BACKEND, CACHE_BACKEND
+from settings import CACHE_BACKEND, DB_ENGINE, DEBUG, THROTTLE_BACKEND
+from starlette.requests import Request
 
 
 class PageController:

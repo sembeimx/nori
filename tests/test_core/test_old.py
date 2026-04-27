@@ -4,8 +4,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 import pytest
-
-from core.http.old import flash_old, _old_value
+from core.http.old import _old_value, flash_old
 
 
 class _Session(dict):

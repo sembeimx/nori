@@ -1,10 +1,10 @@
 """Tests for services/storage_s3.py — S3 storage driver."""
 from __future__ import annotations
 
-import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
-from services.storage_s3 import _store_s3, _sign_aws4, register
+import pytest
+from services.storage_s3 import _sign_aws4, _store_s3, register
 
 
 @pytest.fixture(autouse=True)

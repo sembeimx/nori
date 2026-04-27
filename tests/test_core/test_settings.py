@@ -1,6 +1,4 @@
 """Tests for settings — SQLite config branch."""
-import os
-from os.path import isabs
 
 
 def test_sqlite_config(monkeypatch):
@@ -10,6 +8,7 @@ def test_sqlite_config(monkeypatch):
 
     # Re-import to pick up new env
     import importlib
+
     import settings
     importlib.reload(settings)
 
@@ -25,6 +24,7 @@ def test_sqlite_absolute_path(monkeypatch):
     monkeypatch.setenv('DB_NAME', '/tmp/my.sqlite3')
 
     import importlib
+
     import settings
     importlib.reload(settings)
 
@@ -38,6 +38,7 @@ def test_mysql_config(monkeypatch):
     monkeypatch.setenv('DB_HOST', 'dbhost')
 
     import importlib
+
     import settings
     importlib.reload(settings)
 
@@ -52,6 +53,7 @@ def test_postgres_config(monkeypatch):
     monkeypatch.setenv('DB_ENGINE', 'postgres')
 
     import importlib
+
     import settings
     importlib.reload(settings)
 

@@ -1,12 +1,10 @@
 """Tests for @inject() dependency injection decorator."""
-import pytest
-from starlette.testclient import TestClient
+from core.http.inject import inject
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Route
-from core.http.inject import inject
-
+from starlette.testclient import TestClient
 
 # ---------------------------------------------------------------------------
 # Controller stubs

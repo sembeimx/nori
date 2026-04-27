@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import time
 
-from core.cache import cache_get, cache_set, cache_delete
+from core.cache import cache_delete, cache_get, cache_set
 from core.logger import get_logger
 
 _log = get_logger('auth')

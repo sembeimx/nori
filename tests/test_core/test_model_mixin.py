@@ -11,7 +11,6 @@ Covers:
 import pytest
 from test_models import SampleArticle, SampleUser
 
-
 # ---------------------------------------------------------------------------
 # Basic to_dict (backwards compatibility)
 # ---------------------------------------------------------------------------

@@ -1,9 +1,8 @@
 """Tests for core.tasks."""
 import pytest
+from core.tasks import background, run_in_background
 from starlette.background import BackgroundTask
 from starlette.responses import JSONResponse
-
-from core.tasks import background, run_in_background
 
 
 def test_background_returns_background_task():

@@ -1,12 +1,12 @@
 import time
-import pytest
 
+import pytest
 from core.auth.login_guard import (
-    check_login_allowed,
-    record_failed_login,
-    clear_failed_logins,
-    _MAX_ATTEMPTS,
     _LOCKOUT_SCHEDULE,
+    _MAX_ATTEMPTS,
+    check_login_allowed,
+    clear_failed_logins,
+    record_failed_login,
 )
 from core.cache import reset_backend
 
@@ -70,8 +70,6 @@ async def test_escalating_lockout():
     real_time = time.time
     offset = _LOCKOUT_SCHEDULE[0] + 1
 
-    import core.auth.login_guard as guard_mod
-    import core.cache as cache_mod
 
     original_time = time.time
     monkeypatch_time = lambda: original_time() + offset

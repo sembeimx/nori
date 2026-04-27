@@ -214,7 +214,7 @@ def test_sort_by_with_none_values():
     """None values should be sorted to the end."""
     items = [Obj(name=None), Obj(name='a'), Obj(name='c'), Obj(name=None), Obj(name='b')]
     result = collect(items).sort_by('name')
-    names = [getattr(i, 'name') for i in result]
+    names = [i.name for i in result]
     # Non-None values first in order, then Nones at the end
     assert names == ['a', 'b', 'c', None, None]
 

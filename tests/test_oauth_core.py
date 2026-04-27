@@ -5,14 +5,13 @@ import base64
 import hashlib
 
 from core.auth.oauth import (
-    generate_state,
-    validate_state,
-    generate_pkce_verifier,
-    get_pkce_verifier,
-    _STATE_SESSION_KEY,
     _PKCE_SESSION_KEY,
+    _STATE_SESSION_KEY,
+    generate_pkce_verifier,
+    generate_state,
+    get_pkce_verifier,
+    validate_state,
 )
-
 
 # -- generate_state / validate_state ----------------------------------------
 

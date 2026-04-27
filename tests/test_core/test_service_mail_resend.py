@@ -1,9 +1,9 @@
 """Tests for services/mail_resend.py — Resend mail driver."""
 from __future__ import annotations
 
-import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 from services.mail_resend import _send_via_resend, register
 
 

@@ -3,9 +3,10 @@ from __future__ import annotations
 
 import base64
 import json
-import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+import services.storage_gcs as gcs_mod
 from services.storage_gcs import (
     _b64url,
     _build_jwt,
@@ -14,8 +15,6 @@ from services.storage_gcs import (
     _store_gcs,
     register,
 )
-import services.storage_gcs as gcs_mod
-
 
 # ---------------------------------------------------------------------------
 # Fixtures

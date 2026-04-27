@@ -1,20 +1,20 @@
 """Nori CLI — all framework commands live here so they update with core."""
 from __future__ import annotations
 
-import sys
-import os
-import subprocess
 import argparse
 import importlib
 import json
+import os
 import pathlib
 import shutil
+import subprocess
+import sys
 import tempfile
 import textwrap
 import zipfile
 from datetime import datetime
-from urllib.request import urlopen, Request
-from urllib.error import URLError, HTTPError
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
 _APP_DIR = os.path.join('rootsystem', 'application')
 
@@ -174,7 +174,7 @@ async def run() -> None:
     with open(filepath, 'w') as f:
         f.write(content)
     print(f"Seeder created at: {filepath}")
-    print(f"Don't forget to register it in seeders/database_seeder.py")
+    print("Don't forget to register it in seeders/database_seeder.py")
 
 
 # ---------------------------------------------------------------------------
@@ -474,7 +474,7 @@ def _download_zip(url: str, dest: str) -> None:
 def framework_update(target_version: str | None = None, skip_backup: bool = False, force: bool = False) -> None:
     """Update the framework core from a GitHub release."""
     current = _get_current_version()
-    print(f"Nori framework:update")
+    print("Nori framework:update")
     print(f"  Current version: {current}")
 
     try:
@@ -498,7 +498,7 @@ def framework_update(target_version: str | None = None, skip_backup: bool = Fals
     print(f"  Target version:  {version} ({tag})")
 
     if version == current and not force:
-        print(f"\n  Already up to date. Use --force to re-install.")
+        print("\n  Already up to date. Use --force to re-install.")
         return
 
     zip_url = f'https://github.com/{_GITHUB_REPO}/archive/refs/tags/{tag}.zip'
@@ -598,9 +598,9 @@ def framework_update(target_version: str | None = None, skip_backup: bool = Fals
             print(f"    ✓ {p}")
 
     print(f"\n  Updated: {current} → {version}")
-    print(f"  If framework models changed, generate a migration against your engine:")
-    print(f"    python3 nori.py migrate:make <name> --app framework")
-    print(f"    python3 nori.py migrate:upgrade --app framework")
+    print("  If framework models changed, generate a migration against your engine:")
+    print("    python3 nori.py migrate:make <name> --app framework")
+    print("    python3 nori.py migrate:upgrade --app framework")
 
 
 # ---------------------------------------------------------------------------

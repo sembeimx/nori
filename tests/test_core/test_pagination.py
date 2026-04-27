@@ -1,8 +1,5 @@
 """Tests for core.pagination module."""
-import math
 import pytest
-from unittest.mock import AsyncMock, MagicMock
-
 from core.pagination import paginate
 
 

@@ -5,7 +5,6 @@ import sys
 from unittest.mock import patch
 
 import pytest
-
 from core import bootstrap as bootstrap_mod
 from core.bootstrap import load_bootstrap
 

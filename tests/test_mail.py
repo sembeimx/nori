@@ -7,23 +7,24 @@ Covers:
 - Template rendering before dispatch
 - Validation (missing body)
 """
-import sys
 import os
+import sys
+
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../rootsystem/application')))
 
-import pytest
 from unittest.mock import AsyncMock, patch
 
 import core.mail as mail_module
+import pytest
 from core.mail import (
+    _DRIVERS,
     _build_message,
     _normalize_recipients,
     _send_via_log,
     _send_via_smtp,
-    send_mail,
-    register_mail_driver,
     get_mail_drivers,
-    _DRIVERS,
+    register_mail_driver,
+    send_mail,
 )
 
 

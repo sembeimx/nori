@@ -1,9 +1,8 @@
 """Tests for core.audit — audit logging utility."""
 import asyncio
+
 import pytest
-
 from core.audit import audit, get_client_ip
-
 
 # -- Fakes -------------------------------------------------------------------
 
@@ -158,7 +157,6 @@ async def test_audit_casts_string_user_id():
 async def test_audit_handles_db_failure(monkeypatch):
     """Exception in _write background task is logged and doesn't crash."""
     from models.framework.audit_log import AuditLog
-    import core.audit
 
     async def _fail(*args, **kwargs):
         raise Exception("DB is down")

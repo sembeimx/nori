@@ -1,9 +1,7 @@
 """Tests for ACL — require_permission decorator and load_permissions."""
 import pytest
-
+from core.auth.decorators import load_permissions, require_permission
 from starlette.responses import JSONResponse
-from core.auth.decorators import require_permission, load_permissions
-
 
 # -- Fakes -------------------------------------------------------------------
 

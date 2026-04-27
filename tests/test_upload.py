@@ -13,19 +13,18 @@ Covers:
 """
 import os
 import tempfile
-
-import pytest
 from unittest.mock import AsyncMock, patch
 
 import core.http.upload as upload_module
+import pytest
 from core.http.upload import (
-    save_upload,
+    _DRIVERS,
     UploadError,
-    register_storage_driver,
-    get_storage_drivers,
     _store_local,
     _validate_magic_bytes,
-    _DRIVERS,
+    get_storage_drivers,
+    register_storage_driver,
+    save_upload,
 )
 
 

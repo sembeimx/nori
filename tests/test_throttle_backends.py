@@ -2,7 +2,6 @@
 import time
 
 import pytest
-
 from core.http.throttle_backends import MemoryBackend, get_backend, reset_backend
 
 

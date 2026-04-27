@@ -1,9 +1,9 @@
 """Test models for mixin integration tests."""
-from tortoise.models import Model
-from tortoise import fields
 from core.mixins.model import NoriModelMixin
 from core.mixins.soft_deletes import NoriSoftDeletes
 from core.mixins.tree import NoriTreeMixin
+from tortoise import fields
+from tortoise.models import Model
 
 
 class SampleArticle(NoriModelMixin, Model):

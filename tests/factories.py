@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from test_models import SampleArticle, SamplePost, SampleCategory
+from test_models import SampleArticle, SampleCategory, SamplePost
 
 __all__ = ['make_article', 'make_post', 'make_category', 'reset_counters']
 

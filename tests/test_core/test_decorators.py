@@ -1,14 +1,12 @@
 """Tests for auth decorators: login_required, require_role, require_any_role."""
-import pytest
-from starlette.testclient import TestClient
+from core.auth.decorators import login_required, require_any_role, require_role
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Route
-from core.auth.decorators import login_required, require_role, require_any_role
-
+from starlette.testclient import TestClient
 
 # ---------------------------------------------------------------------------
 # Controller stubs
@@ -116,6 +114,7 @@ def test_login_required_uses_login_url_setting(monkeypatch):
     validates the fix for all four.
     """
     from types import SimpleNamespace
+
     from core.conf import config
 
     monkeypatch.setattr(config, '_settings', SimpleNamespace(LOGIN_URL='/admin/login'))
@@ -134,6 +133,7 @@ def test_require_role_forbidden_uses_forbidden_url_setting(monkeypatch):
     require_role, require_any_role, require_permission.
     """
     from types import SimpleNamespace
+
     from starlette.routing import Route as R
 
     monkeypatch.setattr(

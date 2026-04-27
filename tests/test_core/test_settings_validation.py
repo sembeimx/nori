@@ -1,7 +1,8 @@
 """Tests for settings.validate_settings()."""
 import os
-import pytest
 from unittest.mock import patch
+
+import pytest
 
 
 def test_validate_settings_passes_in_debug():

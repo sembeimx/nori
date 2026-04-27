@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from starlette.templating import Jinja2Templates
 
-from core.conf import config
 from core.auth.csrf import csrf_field
+from core.conf import config
 from core.http.flash import get_flashed_messages
 from core.http.old import old
 

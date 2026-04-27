@@ -1,6 +1,5 @@
 """Tests for core.http.security_headers."""
 import pytest
-
 from core.http.security_headers import SecurityHeadersMiddleware
 
 

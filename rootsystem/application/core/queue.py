@@ -4,11 +4,14 @@ import asyncio
 import json
 import time
 from datetime import timedelta
+from typing import Callable
+
 from tortoise.timezone import now
-from typing import Callable, Any
+
 from core.conf import config
 from core.logger import get_logger
 from core.registry import get_model
+
 _log = get_logger('queue')
 _DRIVERS = {}
 

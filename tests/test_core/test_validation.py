@@ -1,8 +1,8 @@
 """Tests for core.http.validation."""
-import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
-from core.http.validation import validate, validate_async
+from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+from core.http.validation import validate, validate_async
 
 # --- required ---
 
@@ -209,15 +209,15 @@ def test_email_accepts_plus_tag():
 
 def test_file_max_rejects_negative_size():
     """Negative size in file_max rule raises ValueError."""
-    from core.http.validation import _parse_size
     import pytest as pt
+    from core.http.validation import _parse_size
     with pt.raises(ValueError, match='positive'):
         _parse_size('-5mb')
 
 
 def test_file_max_rejects_zero_size():
-    from core.http.validation import _parse_size
     import pytest as pt
+    from core.http.validation import _parse_size
     with pt.raises(ValueError, match='positive'):
         _parse_size('0')
 

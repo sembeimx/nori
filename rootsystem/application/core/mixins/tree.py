@@ -1,9 +1,12 @@
 from __future__ import annotations
 
-from typing import Any, Sequence
-from typing_extensions import Self
-from tortoise.models import Model
+from collections.abc import Sequence
+from typing import Any
+
 from tortoise import Tortoise
+from tortoise.models import Model
+from typing_extensions import Self
+
 from core.collection import NoriCollection, collect
 
 

@@ -2,7 +2,6 @@
 import pytest
 from core.http.request_id import RequestIdMiddleware
 
-
 # --- Unit tests ---
 
 @pytest.mark.asyncio

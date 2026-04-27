@@ -135,7 +135,7 @@ class RedisCacheBackend(CacheBackend):
     async def set(self, key: str, value: Any, ttl: int = 0) -> None:
         rkey = f"{self._prefix}{key}"
         def _json_default(obj: object) -> str:
-            from datetime import datetime, date
+            from datetime import date, datetime
             from decimal import Decimal
             from uuid import UUID
             if isinstance(obj, (datetime, date)):

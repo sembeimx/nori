@@ -8,26 +8,27 @@ Covers:
 - remove_document() dispatch
 - Error handling (unknown driver, no driver configured)
 """
-import sys
 import os
+import sys
+
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../rootsystem/application')))
 
 import importlib
-import pytest
 from unittest.mock import AsyncMock, patch
+
+import pytest
 
 # Import the module object (not the function) so we can patch settings on it.
 _search_mod = importlib.import_module('core.search')
 
 from core.search import (
-    search,
-    index_document,
-    remove_document,
-    register_search_driver,
-    get_search_drivers,
     _DRIVERS,
+    get_search_drivers,
+    index_document,
+    register_search_driver,
+    remove_document,
+    search,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers

@@ -2,9 +2,7 @@
 from __future__ import annotations
 
 import pytest
-
 from core import _patches
-
 
 ASGI_WITH_FUTURE_AND_DOCSTRING = '''\
 from __future__ import annotations

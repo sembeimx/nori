@@ -3,12 +3,11 @@ from __future__ import annotations
 
 import json
 import time
-import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
+import pytest
 from core.queue import _redis_handler, push
 from core.queue_worker import _work_redis, execute_payload
-
 
 # ---------------------------------------------------------------------------
 # Fixtures

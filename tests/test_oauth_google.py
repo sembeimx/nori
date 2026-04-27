@@ -1,13 +1,11 @@
 """Tests for services.oauth_google — Google OAuth2/OpenID Connect driver."""
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, patch, MagicMock
-from urllib.parse import urlparse, parse_qs
+from unittest.mock import AsyncMock, MagicMock, patch
+from urllib.parse import parse_qs, urlparse
 
 import pytest
-
-from core.auth.oauth import _STATE_SESSION_KEY, _PKCE_SESSION_KEY
-
+from core.auth.oauth import _PKCE_SESSION_KEY, _STATE_SESSION_KEY
 
 # -- Fixtures ----------------------------------------------------------------
 
@@ -81,8 +79,8 @@ async def test_handle_callback_invalid_state():
 
 @pytest.mark.asyncio
 async def test_handle_callback_exchanges_code():
-    from services.oauth_google import handle_callback, _TOKEN_URL, _USERINFO_URL
-    from core.auth.oauth import generate_state, generate_pkce_verifier
+    from core.auth.oauth import generate_pkce_verifier, generate_state
+    from services.oauth_google import _TOKEN_URL, handle_callback
 
     session = _make_session()
     state = generate_state(session)

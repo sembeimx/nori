@@ -23,11 +23,10 @@ Quick start in your ``conftest.py``::
 """
 from __future__ import annotations
 
-import time
 from contextlib import asynccontextmanager
 from typing import Any
 
-from httpx import AsyncClient, ASGITransport
+from httpx import ASGITransport, AsyncClient
 from tortoise import Tortoise
 
 __all__ = [

@@ -4,8 +4,9 @@ These tests cover the filter string conversion logic that is specific
 to the Meilisearch driver. The driver's HTTP calls are not tested here
 (they require a running Meilisearch instance or full HTTP mocking).
 """
-import sys
 import os
+import sys
+
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../rootsystem/application')))
 
 from services.search_meilisearch import _build_filter_string

@@ -1,9 +1,8 @@
 """Tests for @token_required decorator."""
 import pytest
-
-from starlette.responses import JSONResponse
-from core.auth.jwt import create_token
 from core.auth.decorators import token_required
+from core.auth.jwt import create_token
+from starlette.responses import JSONResponse
 
 
 class FakeState:
@@ -118,7 +117,7 @@ async def test_blacklisted_token_rejected():
     reset_backend() # Ensure clean memory cache
     ctrl = FakeController()
     token = create_token({'user_id': 99}, expires_in=3600)
-    
+
     # 1. Access before revocation
     req1 = FakeRequest(auth_header=f'Bearer {token}')
     resp1 = await ctrl.protected(req1)

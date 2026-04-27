@@ -1,7 +1,6 @@
 """Tests for core.auth.security."""
 from core.auth.security import Security
 
-
 # --- hash_password / verify_password ---
 
 def test_hash_and_verify():

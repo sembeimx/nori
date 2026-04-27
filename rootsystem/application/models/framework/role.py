@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-from tortoise.models import Model
-from tortoise import fields
-
 from core.mixins.model import NoriModelMixin
+from tortoise import fields
+from tortoise.models import Model
 
 
 class Role(NoriModelMixin, Model):

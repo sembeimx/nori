@@ -2,8 +2,7 @@
 from __future__ import annotations
 
 import pytest
-
-from core.registry import register_model, get_model, get_registered_models, _models
+from core.registry import _models, get_model, get_registered_models, register_model
 
 
 @pytest.fixture(autouse=True)
