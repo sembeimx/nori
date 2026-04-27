@@ -31,9 +31,9 @@ Multi-driver email dispatcher.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from typing import Callable
 
 import aiosmtplib
 

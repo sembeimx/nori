@@ -5,8 +5,8 @@ from __future__ import annotations
 import asyncio
 import json
 import time
+from collections.abc import Callable
 from datetime import timedelta
-from typing import Callable
 
 from tortoise.timezone import now
 

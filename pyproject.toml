@@ -1,6 +1,6 @@
 [tool.ruff]
 line-length = 120
-target-version = "py39"
+target-version = "py310"
 extend-exclude = [
     "rootsystem/.framework_backups",
     "rootsystem/application/migrations",
@@ -83,7 +83,7 @@ quote-style = "single"
 indent-style = "space"
 
 [tool.mypy]
-python_version = "3.9"
+python_version = "3.10"
 files = ["rootsystem/application"]
 exclude = [
     "rootsystem/application/migrations",

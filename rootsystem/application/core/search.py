@@ -51,7 +51,8 @@ See ``services/search_meilisearch.py`` for a complete example.
 
 from __future__ import annotations
 
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from core.conf import config
 from core.logger import get_logger

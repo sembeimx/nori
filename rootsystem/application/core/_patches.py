@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import ast
 import os
-from typing import Callable
+from collections.abc import Callable
 
 _APP_DIR = os.path.join('rootsystem', 'application')
 _ASGI_FILE = os.path.join(_APP_DIR, 'asgi.py')

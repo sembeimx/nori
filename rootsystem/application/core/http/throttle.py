@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from functools import wraps
-from typing import Any, Callable
+from typing import Any
 
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, Response
