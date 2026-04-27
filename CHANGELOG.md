@@ -4,6 +4,32 @@ All notable changes to Nori are documented here. Format follows [Keep a Changelo
 
 ---
 
+## [1.13.0] — 2026-04-26
+
+### Added
+
+- **Default Content-Security-Policy in report-only mode.** `SecurityHeadersMiddleware` now ships a sensible CSP (`default-src 'self'`, strict `script-src 'self'`, `style-src 'self' 'unsafe-inline'` for Jinja templates, `frame-ancestors 'none'`, etc.) as `Content-Security-Policy-Report-Only` by default. Browsers evaluate the policy and log violations to the console (or to a configurable `csp_report_uri`) **without blocking content**, so existing pages render unchanged while operators discover what would break under enforcement. New constructor parameters: `csp` (default `'default'`; pass `None`/`False` to opt out, or any string for a custom policy), `csp_report_only` (default `True`), `csp_report_uri` (default `None`). Migration to enforcement is one flag away (`csp_report_only=False`). 5 new tests in `tests/test_core/test_security_headers.py` cover the new defaults, opt-out paths, and report-uri behavior. Documentation updated at `docs/security.md` with a 3-stage migration path (observe → tighten → enforce).
+
+- **SBOM generation in CI** via `cyclonedx-bom`. New `.github/workflows/sbom.yml` builds a clean virtualenv from `requirements.nori.txt` only (no dev tooling, no cyclonedx-bom itself), generates a CycloneDX 1.6 SBOM in JSON format with `--output-reproducible` for deterministic output, uploads it as a workflow artifact (90-day retention) on every push, and **automatically attaches it to GitHub releases on publish**. Contains 35 components for v1.13.0 — every direct + transitive dependency with resolved versions. Required for SOC2 / supply-chain compliance enterprise audits.
+
+- **Doctests in CI for public APIs** (`core/collection.py`). Tests/CI now executes the `>>>` examples in docstrings so they cannot rot — if a docstring shows `users.pluck('name') → ['ana']` and the implementation drifts, CI fails. New `Doctests` step in `.github/workflows/tests.yml` (separate from the main test run, narrow on-purpose: one module today; expand the allowlist as more public APIs gain doctests). 10 new doctest cases for `first`, `last`, `is_empty`, `pluck`, `where`, `chunk`, `sum`, `avg`, `min`, `max`.
+
+### Fixed
+
+- **Bug surfaced by the new doctests**: `NoriCollection.{sum,avg,min,max}` used `getattr(item, key, default)` which silently returned the default for plain dicts (since `getattr` doesn't access dict keys). Meanwhile `pluck` and `where` had explicit dict handling — leading to silent inconsistency where `coll.pluck('price')` worked on a list of dicts but `coll.sum('price')` returned `0`. Introduced a private `_get_field()` helper that dispatches to `dict.get()` for dicts and `getattr()` otherwise; all four reducers now route through it. Behavior on Tortoise model instances (the original target type) is unchanged.
+
+### Compatibility (potentially breaking)
+
+- **CSP report-only header is now sent by default.** Existing apps will see new browser console warnings about CSP violations on first load (e.g., inline `<script>` tags or third-party CDN scripts not matching `script-src 'self'`). **No content is blocked** — the policy is in report-only mode. To restore the previous behavior (no CSP header at all), pass `csp=None` to `SecurityHeadersMiddleware` in `asgi.py`. To customize the policy, pass `csp='your-policy-string'`. Long-term recommendation: review the violations, tighten the policy if needed, then flip to enforcement (`csp_report_only=False`).
+- The `NoriCollection` reducer fix is **a bug fix, not a breaking change** — code that relied on `sum()` returning `0` for dicts was already silently broken.
+
+### Notes
+
+- Future doctest-coverage expansion: as we touch other public modules in `core/`, add `>>>` examples to their docstrings and append the file path to the `Doctests` workflow step. Any module is eligible — the only constraint is no import-time side effects (the doctest runner imports the module fresh).
+- The SBOM is reproducible: re-running `cyclonedx_py environment ...` against the same `requirements.nori.txt` lockstep yields a byte-identical JSON file (modulo the `serialNumber` UUID, which is stable per-build with `--output-reproducible`). This makes diff-based change-detection straightforward in supply-chain tooling.
+
+---
+
 ## [1.12.1] — 2026-04-26
 
 ### Security
