@@ -746,6 +746,83 @@ def framework_version() -> None:
     print(f'Nori v{_get_current_version()}')
 
 
+def check_deps() -> None:
+    """Probe DB, cache, and throttle backends. Exit 1 if any are unreachable.
+
+    Use as a pre-deploy or CI check after v1.11.0's fail-fast Redis behavior:
+    instead of finding out at app boot that REDIS_URL is wrong, run this
+    against your settings to verify dependency reachability up front.
+    """
+    script = textwrap.dedent("""\
+        import asyncio, sys, os
+        sys.path.insert(0, '.')
+        import settings
+        from core.conf import configure
+        configure(settings)
+
+        from core.cache import get_backend as get_cache_backend
+        from core.http.throttle_backends import get_backend as get_throttle_backend
+
+        async def _probe():
+            results = []  # [(label, backend_kind, ok, error_msg)]
+
+            # Database
+            if getattr(settings, 'DB_ENABLED', False):
+                from tortoise import Tortoise
+                engine = getattr(settings, 'DB_ENGINE', 'unknown')
+                try:
+                    await Tortoise.init(config=settings.TORTOISE_ORM)
+                    try:
+                        conn = Tortoise.get_connection('default')
+                        await conn.execute_query('SELECT 1')
+                        results.append(('Database', engine, True, None))
+                    finally:
+                        await Tortoise.close_connections()
+                except Exception as exc:
+                    results.append(('Database', engine, False, str(exc)))
+            else:
+                results.append(('Database', 'disabled', True, None))
+
+            # Cache
+            cache_kind = getattr(settings, 'CACHE_BACKEND', 'memory')
+            try:
+                await get_cache_backend().verify()
+                results.append(('Cache', cache_kind, True, None))
+            except Exception as exc:
+                results.append(('Cache', cache_kind, False, str(exc)))
+
+            # Throttle
+            throttle_kind = getattr(settings, 'THROTTLE_BACKEND', 'memory')
+            try:
+                await get_throttle_backend().verify()
+                results.append(('Throttle', throttle_kind, True, None))
+            except Exception as exc:
+                results.append(('Throttle', throttle_kind, False, str(exc)))
+
+            return results
+
+        results = asyncio.run(_probe())
+
+        print()
+        for label, kind, ok, err in results:
+            mark = '\\u2713' if ok else '\\u2717'
+            line = f'  {mark} {label} ({kind})'
+            if not ok:
+                line += f': {err}'
+            print(line)
+        print()
+
+        failed = [r for r in results if not r[2]]
+        if failed:
+            print(f'  {len(failed)} dependency check(s) failed.')
+            raise SystemExit(1)
+        print(f'  All {len(results)} dependency check(s) passed.')
+    """)
+    result = subprocess.run([sys.executable, '-c', script], cwd=_APP_DIR, env=_quiet_env())
+    if result.returncode != 0:
+        sys.exit(result.returncode)
+
+
 # ---------------------------------------------------------------------------
 # User command plugins
 # ---------------------------------------------------------------------------
@@ -856,6 +933,7 @@ def main() -> None:
 
     subparsers.add_parser('framework:version', help='Show the current framework version')
     subparsers.add_parser('routes:list', help='List all registered routes')
+    subparsers.add_parser('check:deps', help='Probe DB, cache, and throttle reachability (pre-deploy check)')
 
     audit_purge_parser = subparsers.add_parser('audit:purge', help='Purge old audit log entries')
     audit_purge_parser.add_argument(
@@ -901,6 +979,8 @@ def main() -> None:
         framework_version()
     elif args.command == 'routes:list':
         routes_list()
+    elif args.command == 'check:deps':
+        check_deps()
     elif args.command == 'audit:purge':
         audit_purge(args.days, export=args.export, dry_run=args.dry_run)
     elif args.command in _user_handlers:
