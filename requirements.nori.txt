@@ -1,7 +1,7 @@
 # Nori framework dependencies — DO NOT EDIT.
 # This file is owned by the framework and regenerated on every `framework:update`.
 # Your site's dependencies go in requirements.txt, which already `-r`s this file.
-starlette>=0.28
+starlette>=1.0.0
 uvicorn[standard]>=0.29
 tortoise-orm>=0.25
 aerich>=0.8
