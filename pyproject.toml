@@ -100,6 +100,26 @@ show_error_codes = true
 warn_unused_ignores = true
 pretty = true
 
+# Per-module strict typing for high-stakes surfaces.
+# The framework as a whole runs in gradual mode (default mypy) — strict mode is
+# applied selectively to modules where a type bug has security or correctness
+# consequences: auth (login/CSRF/JWT/OAuth) and validation (the input gate).
+# Adding a new strict module: bump these globs, run `mypy`, fix the new errors
+# the same release. Do NOT make the global default strict — most of `core/` is
+# correctly typed in gradual mode and converting wholesale would generate noise
+# without finding bugs.
+[[tool.mypy.overrides]]
+module = [
+    "core.auth.security",
+    "core.auth.login_guard",
+    "core.http.validation",
+]
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+no_implicit_optional = true
+warn_return_any = true
+
 [tool.interrogate]
 # Docstring coverage gate. Floor is intentionally a few points below current
 # baseline to absorb churn; raise as the project sustains a higher number.
