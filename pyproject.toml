@@ -12,17 +12,24 @@ extend-exclude = [
 
 [tool.ruff.lint]
 select = [
-    "E",   # pycodestyle errors
-    "W",   # pycodestyle warnings
-    "F",   # pyflakes (unused imports, undefined names)
-    "I",   # isort (import sorting)
-    "UP",  # pyupgrade (modernize syntax to target-version)
-    "B",   # flake8-bugbear (likely bugs)
-    "S",   # flake8-bandit (security)
+    "E",     # pycodestyle errors
+    "W",     # pycodestyle warnings
+    "F",     # pyflakes (unused imports, undefined names)
+    "I",     # isort (import sorting)
+    "UP",    # pyupgrade (modernize syntax to target-version)
+    "B",     # flake8-bugbear (likely bugs)
+    "S",     # flake8-bandit (security)
+    "C90",   # mccabe cyclomatic complexity
 ]
 ignore = [
     "E501",  # line too long — handled by formatter
 ]
+
+[tool.ruff.lint.mccabe]
+# Default is 10. A function with complexity > 10 typically benefits from
+# refactoring; per-file-ignores below document the legitimate exceptions
+# (CLI dispatchers, DI decorator factories, validation rule dispatchers).
+max-complexity = 10
 
 [tool.ruff.lint.per-file-ignores]
 # Re-exports from submodules are intentional in package __init__.py files.
@@ -40,12 +47,6 @@ ignore = [
 # use random for non-crypto purposes (S311). E402 covers sys.path/env/importlib
 # patches before the module-under-test import.
 "tests/**/*.py" = ["E402", "S101", "S105", "S106", "S108", "S311"]
-# core/cli.py spawns subprocesses (uvicorn, aerich, python -c scripts) with
-# hardcoded executables and args — never user input. S603 flags every
-# subprocess.run regardless of input source. S310 covers the framework:update
-# downloader (URL constructed from the hardcoded GITHUB_REPO). Per-file-ignore
-# is honest about the policy without disabling these rules globally for user code.
-"rootsystem/application/core/cli.py" = ["S603", "S310"]
 # core/testing.py provides pytest-style assertion helpers (assert_redirects,
 # assert_json_error) for user tests. The asserts are the point of the module.
 "rootsystem/application/core/testing.py" = ["S101"]
@@ -57,6 +58,25 @@ ignore = [
 # Installer trusts URLs constructed from the hardcoded GitHub repo (S310) and
 # invokes git from PATH (S607). Acceptable for a one-shot install script.
 "docs/install.py" = ["S310", "S603", "S607"]
+# core/cli.py spawns subprocesses (uvicorn, aerich, python -c scripts) with
+# hardcoded executables and args — never user input. S603 flags every
+# subprocess.run regardless of input source. S310 covers the framework:update
+# downloader (URL constructed from the hardcoded GITHUB_REPO). C901 covers
+# main() (argparse dispatcher, complexity 19) and framework_update() (full
+# update workflow: download, verify, apply, backup, cleanup — complexity 28).
+"rootsystem/application/core/cli.py" = ["S603", "S310", "C901"]
+# core/http/validation.py: validate() iterates rules-of-rules (complexity 11);
+# _check_rule() is a declarative rule dispatcher with one branch per rule
+# keyword (complexity 51). Ideally a dispatch dict, but the current shape
+# mirrors the user-facing rule grammar (`min:5|email|in:a,b`).
+"rootsystem/application/core/http/validation.py" = ["C901"]
+# core/auth/csrf.py: __call__ is the middleware entry — branches by scope
+# type, HTTP method, exempt-path match, header vs body token, and method.
+"rootsystem/application/core/auth/csrf.py" = ["C901"]
+# core/http/inject.py: 3-layer DI decorator factory (inject → decorator →
+# wrapper). Each layer's complexity comes from supporting many injectable
+# parameter shapes (request, form, json, query, path); flattening duplicates.
+"rootsystem/application/core/http/inject.py" = ["C901"]
 
 [tool.ruff.format]
 quote-style = "single"
@@ -79,6 +99,32 @@ show_error_codes = true
 # baseline honest as upstream stubs improve.
 warn_unused_ignores = true
 pretty = true
+
+[tool.interrogate]
+# Docstring coverage gate. Floor is intentionally a few points below current
+# baseline to absorb churn; raise as the project sustains a higher number.
+# Module docstrings are NOT exempt — the v1.10.7 incident showed module-level
+# docstrings can disappear silently when `from __future__ import annotations`
+# is placed before them, and only checked tooling catches the regression.
+fail-under = 70
+exclude = [
+    "rootsystem/.framework_backups",
+    "rootsystem/application/migrations",
+    "site",
+    ".venv",
+    "venv",
+    "tests",
+]
+ignore-init-module = true       # __init__.py files are typically re-export shims
+ignore-init-method = true       # constructors are described by their class
+ignore-magic = true             # __call__, __eq__, etc. — name documents the contract
+ignore-property-decorators = true
+ignore-nested-functions = true
+# Tortoise's `class Meta:` is a configuration sentinel — no docstring is
+# expected by convention. Same shape as Django's Meta.
+ignore-regex = ["^Meta$"]
+verbose = 1
+omit-covered-files = false
 
 [tool.coverage.run]
 source = ["rootsystem/application"]
