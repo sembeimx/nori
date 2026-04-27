@@ -160,8 +160,6 @@ async def test_redis_worker_retries_failed_job(mock_redis):
 
     with patch('core.queue._get_redis', return_value=mock_redis):
         with patch('core.queue_worker._register_signals'):
-            original_execute = execute_payload
-
             async def _fail_and_stop(payload):
                 qw._should_exit = True
                 raise Exception("Intentional failure")

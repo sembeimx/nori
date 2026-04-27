@@ -25,23 +25,19 @@ def test_validate_settings_returns_empty_for_sqlite_debug():
         assert len(db_warnings) == 0
 
 
-def test_validate_settings_warns_missing_db_user():
-    """Non-sqlite in production without DB_USER should produce a warning."""
+def test_validate_settings_skips_db_check_in_debug():
+    """In DEBUG mode, missing DB credentials produce no warning even on non-sqlite engines.
+
+    The check condition is `DB_ENGINE != 'sqlite' and not DEBUG`, so DEBUG bypasses it.
+    Production behavior is covered by test_validate_settings_raises_in_production.
+    """
     import settings
     with patch.object(settings, 'DEBUG', True), \
          patch.object(settings, 'DB_ENGINE', 'mysql'), \
-         patch.dict(os.environ, {'DB_USER': '', 'DB_PASSWORD': 'x', 'DB_NAME': 'x'}):
-        # Even in debug mode, it checks and returns warnings
-        # But we need to test the logic specifically
-        pass
-
-    # Test the warning detection directly
-    with patch.object(settings, 'DEBUG', True), \
-         patch.object(settings, 'DB_ENGINE', 'mysql'), \
-         patch.dict(os.environ, {'DB_USER': '', 'DB_PASSWORD': 'pass', 'DB_NAME': 'mydb'}, clear=False):
+         patch.dict(os.environ, {'DB_USER': '', 'DB_PASSWORD': '', 'DB_NAME': ''}, clear=False):
         warnings = settings.validate_settings()
-        # In debug mode, non-sqlite DB credentials aren't checked
-        # because the condition is `DB_ENGINE != 'sqlite' and not DEBUG`
+        db_warnings = [w for w in warnings if 'DB_USER' in w or 'DB_PASSWORD' in w or 'DB_NAME' in w]
+        assert len(db_warnings) == 0
 
 
 def test_validate_settings_raises_in_production():

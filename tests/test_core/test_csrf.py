@@ -260,7 +260,6 @@ async def test_multipart_quoted_boundary():
 
 @pytest.mark.asyncio
 async def test_non_http_scope_passes():
-    cap = _Captured()
     called = False
 
     async def ws_app(scope, receive, send):

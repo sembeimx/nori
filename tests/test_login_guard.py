@@ -66,14 +66,6 @@ async def test_escalating_lockout():
     allowed, first_retry = await check_login_allowed('user@example.com')
     assert allowed is False
 
-    # Fast-forward past first lockout
-    real_time = time.time
-    offset = _LOCKOUT_SCHEDULE[0] + 1
-
-
-    original_time = time.time
-    monkeypatch_time = lambda: original_time() + offset
-
     # Can't monkeypatch easily across modules with just function-level,
     # so we simulate: clear and re-trigger
     await clear_failed_logins('user@example.com')
