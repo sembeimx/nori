@@ -59,12 +59,22 @@ async def lifespan(app):
 
     # Fail-fast: verify network-backed backends are reachable. RuntimeError
     # here aborts startup so misconfigured deployments don't silently serve
-    # requests against a broken cache/throttle.
+    # requests against a broken cache/throttle. We log via _log.critical so
+    # JSON log pipelines (LOG_FORMAT=json) get the structured event, not
+    # just a stderr traceback.
     from core.cache import get_backend as _get_cache_backend
     from core.http.throttle_backends import get_backend as _get_throttle_backend
 
-    await _get_cache_backend().verify()
-    await _get_throttle_backend().verify()
+    try:
+        await _get_cache_backend().verify()
+    except Exception:
+        _log.critical('Startup verification of cache backend failed; aborting.', exc_info=True)
+        raise
+    try:
+        await _get_throttle_backend().verify()
+    except Exception:
+        _log.critical('Startup verification of throttle backend failed; aborting.', exc_info=True)
+        raise
 
     if settings.DB_ENABLED:
         await Tortoise.init(config=settings.TORTOISE_ORM)

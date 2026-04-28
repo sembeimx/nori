@@ -460,13 +460,33 @@ def test_combined_date_min_max():
     assert errors == {}
 
 
-# --- unique (sync validate ignores it) ---
+# --- unique (sync validate now refuses async-only rules) ---
 
 
-def test_unique_ignored_in_sync_validate():
-    """The unique rule is silently skipped in sync validate()."""
-    errors = validate({'email': 'test@example.com'}, {'email': 'required|unique:users,email'})
-    assert errors == {}
+def test_unique_raises_in_sync_validate():
+    """validate() refuses async-only rules instead of silently skipping them.
+
+    Pre-v1.16.0 this raised no error and returned an empty dict — the unique
+    rule was silently dropped, so a controller using `validate()` (instead
+    of `await validate_async()`) got a false negative on uniqueness.
+    """
+    with pytest.raises(ValueError, match='async-only.*unique'):
+        validate({'email': 'test@example.com'}, {'email': 'required|unique:users,email'})
+
+
+def test_validate_lists_all_async_violations():
+    """The error message must enumerate every offending field+rule pair."""
+    with pytest.raises(ValueError) as exc_info:
+        validate(
+            {'email': 'a@b.com', 'username': 'bob'},
+            {
+                'email': 'required|unique:users,email',
+                'username': 'required|unique:users,username',
+            },
+        )
+    msg = str(exc_info.value)
+    assert "field 'email' uses 'unique'" in msg
+    assert "field 'username' uses 'unique'" in msg
 
 
 # --- validate_async ---

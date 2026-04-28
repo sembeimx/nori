@@ -4,6 +4,79 @@ All notable changes to Nori are documented here. Format follows [Keep a Changelo
 
 ---
 
+## [1.16.0] — 2026-04-28
+
+### Upgrade notes — read first
+
+This release fixes a **critical security bug** in JWT token revocation under Redis, plus a footgun in form validation. Both required changing public API surfaces, hence the minor version bump.
+
+**1. `verify_token()` is now `async`.** Every caller must add `await`:
+
+```python
+# Before
+payload = verify_token(token)
+
+# After
+payload = await verify_token(token)
+```
+
+Affected: any code calling `core.auth.jwt.verify_token` directly. The framework's own `@jwt_required` decorator and `revoke_token()` were updated internally — projects using only the decorator do not need to change anything.
+
+If your code currently calls `verify_token()` outside an async context (CLI scripts, sync utilities), wrap it in `asyncio.run(...)`.
+
+**2. `validate()` now raises on async-only rules.** If you have a sync `validate()` call with the `unique` rule, it will now raise `ValueError` instead of silently dropping the rule. Switch those call sites to `await validate_async(...)`:
+
+```python
+# Before — unique was silently skipped, accepting duplicates
+errors = validate(form, {'email': 'required|unique:users,email'})
+
+# After — unique is enforced via the database
+errors = await validate_async(form, {'email': 'required|unique:users,email'})
+```
+
+This is intentional: pre-v1.16.0 the rule was silently dropped, leaving uniqueness checks unenforced.
+
+### Security
+
+- **JWT token revocation was completely broken under Redis.** `core.auth.jwt._is_blacklisted` reached into `backend._store` directly — an attribute that exists only on `MemoryCacheBackend`. With Redis (or any non-memory backend), `hasattr(backend, '_store')` returned False, the read returned None, and the function reported "not blacklisted" for every token. The write side (`revoke_token`) used the proper async cache interface, so revocations were silently stored and silently ignored. **Any production deployment using `CACHE_BACKEND=redis` and JWT revocation was unable to revoke tokens.**
+
+  Fix: `verify_token()` and `_is_blacklisted()` are now async and route through `core.cache.cache_get`. The TTL bookkeeping inside `_is_blacklisted` was removed — backends already enforce TTL on `.get()`, so the prior `_, expires_at = entry` destructuring and `time.time() > expires_at` check were redundant.
+
+  Regression test: `tests/test_jwt.py::test_revoke_token_blocks_verify_under_redis_backend` wires `RedisCacheBackend` with `fakeredis` and asserts that revoke→verify blocks. Sanity-asserts `not hasattr(backend, '_store')` to guarantee the test exercises the previously-broken path. Skipped locally when fakeredis is not installed; runs in CI.
+
+### Fixed
+
+- **`validate()` no longer silently drops `unique` rules.** Pre-v1.16.0, calling `validate(data, {'email': 'unique:users,email'})` returned an empty error dict — the `unique` keyword was a no-op in the sync path. Controllers that imported `validate` (instead of `validate_async`) skipped uniqueness checks without warning. Now `validate()` raises `ValueError` with the offending field+rule pairs enumerated, directing the caller to `validate_async`. Internal call from `validate_async` itself bypasses the check via a private `_skip_async_check=True` parameter.
+
+- **Startup verification of cache/throttle backends now logs via `_log.critical` before re-raising.** Pre-v1.16.0 a misconfigured `REDIS_URL` produced a bare `RuntimeError` traceback on stderr that bypassed structured (JSON) log pipelines. Now the failure is logged with `exc_info=True` so GCP/Datadog/Splunk capture it as a structured event, then re-raised to abort startup as before. Behavior unchanged: misconfigured deployments still fail fast — they just leave a better forensic trail.
+
+### Not changed (deliberately)
+
+- **`tortoise-orm<1.0` pin via aerich** (raised in the v1.16.0 review). The constraint is real — aerich 0.9.x pins `tortoise-orm<1.0,>=0.21.0`, which transitively forces Nori projects onto Tortoise 0.25.x. The exit path (drop aerich for an in-house migration tool) is a multi-month project with significant scope; meanwhile, aerich 0.9.2 (adopted in v1.15.0) ships every fix Nori users care about, and the comment in `requirements.nori.txt` already documents the constraint with the right re-evaluation trigger ("revisit when aerich drops the `<1.0` pin"). No code change in this release; tracked as ongoing observation, not a TODO.
+
+### Changed
+
+- **`core.auth.jwt.verify_token` signature**: `def verify_token(token) -> dict | None` → `async def verify_token(token) -> dict | None`.
+- **`core.auth.jwt._is_blacklisted` signature**: `def _is_blacklisted(jti) -> bool` → `async def _is_blacklisted(jti) -> bool`. Internal — mentioned for completeness.
+- **`core.auth.decorators.jwt_required`**: internally awaits `verify_token` (no change to the decorator's public contract).
+- **`core.http.validation.validate`** gains a private keyword-only argument `_skip_async_check=False`. Public callers should not set it; `validate_async` passes `True` to bypass the new gate so it can run the sync portion of the logic without false-positive raises.
+
+### Test coverage
+
+- 14 tests in `tests/test_jwt.py` migrated to async (added `@pytest.mark.asyncio` and `await`).
+- 1 new regression test for the Redis-backed revocation path (uses fakeredis; skipped without it).
+- 2 new tests in `tests/test_core/test_validation.py` for the new sync-validate gate; the previous `test_unique_ignored_in_sync_validate` (which asserted the buggy behavior was intentional) has been replaced with `test_unique_raises_in_sync_validate` and `test_validate_lists_all_async_violations`.
+
+### Compatibility
+
+This is a **breaking** release for any project that:
+- Imports `verify_token` from `core.auth.jwt` and calls it without `await` (rare; the framework's own decorator handles this internally).
+- Calls `validate()` with a `unique:` rule expecting it to be evaluated (was silently dropped pre-v1.16.0; now raises).
+
+Projects using `@jwt_required` and `await validate_async(...)` are unaffected by the API changes. **All deployments using `CACHE_BACKEND=redis` are affected by the security fix and must upgrade.**
+
+---
+
 ## [1.15.4] — 2026-04-28
 
 ### Upgrade notes — read first

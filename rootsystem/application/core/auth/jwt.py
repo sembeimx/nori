@@ -6,7 +6,11 @@ Manual implementation consistent with the framework's stdlib-first philosophy.
     from core.auth.jwt import create_token, verify_token
 
     token = create_token({'user_id': 42}, expires_in=3600)
-    payload = verify_token(token)  # dict or None
+    payload = await verify_token(token)  # dict or None
+
+``verify_token`` is async because the revocation check goes through the
+configured cache backend (memory or Redis). All Nori controllers and
+middleware are async, so callers naturally have an await context.
 """
 
 from __future__ import annotations
@@ -99,12 +103,12 @@ def create_token(payload: dict, *, expires_in: int | None = None) -> str:
     return f'{header_payload}.{signature}'
 
 
-def verify_token(token: str) -> dict[str, Any] | None:
+async def verify_token(token: str) -> dict[str, Any] | None:
     """
     Verify and decode a JWT token.
 
     Returns:
-        Payload dict if valid, None if invalid/expired.
+        Payload dict if valid, None if invalid/expired/revoked.
     """
     secret = _get_secret()
 
@@ -141,7 +145,7 @@ def verify_token(token: str) -> dict[str, Any] | None:
 
     # Check blacklist (if jti is present)
     jti = payload.get('jti')
-    if jti and _is_blacklisted(jti):
+    if jti and await _is_blacklisted(jti):
         _log.debug('JWT rejected: jti %s is blacklisted', jti)
         return None
 
@@ -151,20 +155,19 @@ def verify_token(token: str) -> dict[str, Any] | None:
 _BLACKLIST_PREFIX = 'jwt_blacklist:'
 
 
-def _is_blacklisted(jti: str) -> bool:
-    """Check if a jti is in the blacklist (synchronous cache read)."""
-    from core.cache import get_backend
+async def _is_blacklisted(jti: str) -> bool:
+    """Check the configured cache backend for a revocation entry.
 
-    backend = get_backend()
-    # Synchronous check: MemoryCacheBackend stores in a dict we can read directly
-    key = f'{_BLACKLIST_PREFIX}{jti}'
-    entry = backend._store.get(key) if hasattr(backend, '_store') else None
-    if entry is None:
-        return False
-    _, expires_at = entry
-    if expires_at and time.time() > expires_at:
-        return False
-    return True
+    Goes through the framework's cache abstraction so it works with
+    any backend (memory in dev, Redis in prod). The previous sync
+    implementation peeked at ``backend._store`` directly, which only
+    existed on ``MemoryCacheBackend`` — Redis deployments silently
+    skipped the check and accepted revoked tokens.
+    """
+    from core.cache import cache_get
+
+    value = await cache_get(f'{_BLACKLIST_PREFIX}{jti}')
+    return value is not None
 
 
 async def revoke_token(token_or_payload: str | dict) -> None:
@@ -192,7 +195,7 @@ async def revoke_token(token_or_payload: str | dict) -> None:
     from core.cache import cache_set
 
     if isinstance(token_or_payload, str):
-        payload = verify_token(token_or_payload)
+        payload = await verify_token(token_or_payload)
         if payload is None:
             return  # Already invalid/expired, nothing to revoke
     else:

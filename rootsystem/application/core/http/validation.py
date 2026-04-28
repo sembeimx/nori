@@ -143,10 +143,26 @@ def _parse_size(size_str: str) -> int:
     return result
 
 
+_ASYNC_ONLY_RULES = frozenset({'unique'})
+
+
+def _detect_async_only_rules(rules: dict[str, str | list[str]]) -> list[tuple[str, str]]:
+    violations: list[tuple[str, str]] = []
+    for field, field_rules in rules.items():
+        rules_list = field_rules.split('|') if isinstance(field_rules, str) else field_rules
+        for rule in rules_list:
+            keyword = rule.split(':', 1)[0].strip()
+            if keyword in _ASYNC_ONLY_RULES:
+                violations.append((field, keyword))
+    return violations
+
+
 def validate(
     data: dict[str, object],
     rules: dict[str, str | list[str]],
     messages: dict[str, str] | None = None,
+    *,
+    _skip_async_check: bool = False,
 ) -> dict[str, list[str]]:
     """
     Validates a data dict against declarative rules.
@@ -158,7 +174,22 @@ def validate(
 
     Returns:
         dict of field_name -> list of errors. Empty = valid.
+
+    Raises:
+        ValueError: If ``rules`` contains an async-only rule (e.g. ``unique``).
+            Async-only rules require database access; call ``validate_async``
+            instead. Pre-v1.16.0 these rules were silently skipped — see the
+            v1.16.0 CHANGELOG for context.
     """
+    if not _skip_async_check:
+        async_violations = _detect_async_only_rules(rules)
+        if async_violations:
+            details = ', '.join(f"field '{f}' uses '{r}'" for f, r in async_violations)
+            raise ValueError(
+                f'validate() cannot evaluate async-only rules: {details}. '
+                f'Use `await validate_async(data, rules)` instead.'
+            )
+
     errors: dict[str, list[str]] = {}
 
     for field, field_rules in rules.items():
@@ -362,7 +393,7 @@ async def validate_async(
     Returns:
         dict of field_name -> list of errors. Empty = valid.
     """
-    errors = validate(data, rules, messages)
+    errors = validate(data, rules, messages, _skip_async_check=True)
 
     for field, field_rules in rules.items():
         if field in errors:

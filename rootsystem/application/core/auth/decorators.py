@@ -201,7 +201,7 @@ def token_required(func: Callable[..., Any]) -> Callable[..., Any]:
         token = auth_header[7:].strip()
         if not token or len(token) > 4096:
             return JSONResponse({'error': 'Unauthorized'}, status_code=401)
-        payload = _verify_token(token)
+        payload = await _verify_token(token)
         if payload is None:
             return JSONResponse({'error': 'Unauthorized'}, status_code=401)
 
