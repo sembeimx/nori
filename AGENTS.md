@@ -122,5 +122,22 @@ These are Nori-specific traps discovered the hard way. Read before changing the 
 ### Configurable URLs / settings have defaults via `config.get(key, default)`
 - New user-overridable settings (like `LOGIN_URL`, `FORBIDDEN_URL`, `PERMISSIONS_TTL`) use `config.get('SETTING', default_value)` rather than `config.SETTING`. This keeps existing projects working when they haven't set the new key, while letting projects override via `settings.py`. Always provide a default that matches the previous hardcoded behavior — backward compatibility is non-negotiable.
 
+### Docs↔code coherence: the class of bug ruff/mypy cannot catch
+
+- **The bug class**: a comment, docstring, or docs page describes behavior X (order, lifecycle, ownership, ordering of effects), the code does Y, and both compile cleanly. ruff, mypy, and high coverage all pass — only manual review surfaces it. The v1.15.4 incident is the canonical example: `asgi.py` had `middleware.insert(1, CORSMiddleware)` while the file's own comment AND `docs/architecture.md` AND `docs/middleware.md` all documented the order that would require `insert(2, ...)`. CORS preflight responses silently shipped without security headers in every project that enabled CORS.
+- **High-leverage targets** — touching any of these requires reviewing docs and code together in the same change:
+  - `rootsystem/application/asgi.py` (middleware order, lifespan)
+  - `rootsystem/application/settings.py` (defaults that affect lifecycle/ownership)
+  - `rootsystem/application/core/cli.py` (CLI commands and flags described in `docs/cli.md`)
+  - `rootsystem/application/core/auth/csrf.py`, `core/http/validation.py` (rule precedence described in docs)
+  - `_FRAMEWORK_DIRS` / `_FRAMEWORK_FILES` (file ownership described in `docs/architecture.md`)
+- **The checklist** before shipping a change to any file above:
+  1. Grep `docs/**/*.md` for code snippets that mirror the file you changed (`rg 'middleware.insert\(' docs/`, `rg '\<path-affected\>' docs/`).
+  2. Read the surrounding prose, not just the snippet — the snippet may be right but the description above it stale, or vice versa.
+  3. If a comment in the file describes order/lifecycle, verify the code below the comment still does that.
+  4. When in doubt, run an exploration agent with the explicit prompt "find docs-vs-code mismatches related to <area>". Cheap, fast, finds the same bug a custom CI check would — without the maintenance cost.
+- **Do NOT add a custom regex CI check after the first incident.** One data point doesn't justify a per-pattern linter that will go stale, fire false positives, and eventually be muted. Wait for repetition before automating; the manual review + agent-assisted audit handles single occurrences cheaper.
+- **The fix is bidirectional**: when you find a mismatch, the docs are not always wrong. v1.15.4's docs declared the correct intent — the code was the bug. Always determine which side is canonical before "fixing" the divergence.
+
 ---
 *For deep-dives into specific modules (WebSockets, Mail, Search, etc.), refer to the [docs/](docs/) directory.*
