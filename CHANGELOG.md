@@ -4,6 +4,44 @@ All notable changes to Nori are documented here. Format follows [Keep a Changelo
 
 ---
 
+## [1.15.3] — 2026-04-28
+
+### Added
+
+- **`framework:check-config` CLI command** — read-only diff of the project's `pyproject.toml` against the upstream Nori release's. `framework:update` refreshes framework code but never touches `pyproject.toml` (it would clobber user customizations), so projects silently fall behind on framework-side tooling improvements (new ruff rules, new `[[tool.mypy.overrides]]` strict modules, bumped coverage thresholds). The new command surfaces that drift without modifying anything.
+
+  The output is categorized into three sections:
+    - **Added upstream**: keys/tables present in the release but missing locally — usually additions worth adopting.
+    - **Changed upstream**: keys present in both with different values; each entry shows yours vs upstream (e.g. `tool.coverage.report.fail_under` `82` → `86`).
+    - **Local-only**: keys present locally but not upstream — your customizations, informational.
+
+  ```bash
+  python3 nori.py framework:check-config              # latest
+  python3 nori.py framework:check-config --version 1.15.2
+  ```
+
+  Implementation lives in `core/cli.py`: `_fetch_text()` retrieves the upstream `pyproject.toml` directly from `raw.githubusercontent.com/<repo>/<tag>/pyproject.toml` (lighter than the full release zip used by `framework:update`); `_diff_toml()` walks two parsed `tomlkit` documents in lockstep, returning categorized diffs keyed by dot-joined paths (e.g. `tool.coverage.report.fail_under`). Lists compare with `==` — any difference is reported as "changed" without element-wise diff (good enough for v1).
+
+  Resolves [#17](https://github.com/sembeimx/nori/issues/17).
+
+### Documentation
+
+- **`docs/cli.md`**: new `### framework:check-config` section with output anatomy and example invocations. Added to the command table.
+- **`docs/code_quality.md`**: new "Detecting drift against the latest release" subsection under "Customizing for your project", linking to the CLI reference.
+
+### Test coverage
+
+- 16 new tests in `tests/test_core/test_cli.py`:
+    - 6 unit tests for `_diff_toml` covering: matching docs, added upstream, changed value, local-only, nested table walking, list-difference treated as changed
+    - 8 end-to-end tests for `framework_check_config` covering: no-drift message, all three categories appear in output with the expected paths, 404 with `--version`, `URLError` on the API call, `URLError` on the raw fetch, missing local `pyproject.toml`, endpoint format `releases/tags/v{X}` with `--version`, endpoint `releases/latest` without
+    - 2 dispatcher tests asserting `main()` wires `framework:check-config` correctly with and without `--version`
+
+### Compatibility
+
+- Pure addition. New CLI subcommand; no existing commands or output formats changed. No new runtime dependencies (`tomlkit>=0.13` already in `requirements.nori.txt` since the aerich integration). Read-only — never modifies `pyproject.toml`.
+
+---
+
 ## [1.15.2] — 2026-04-27
 
 ### Added

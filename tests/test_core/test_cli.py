@@ -829,6 +829,20 @@ def test_main_dispatches_framework_update_with_flags(monkeypatch):
     fn.assert_called_once_with(target_version='1.20.0', skip_backup=True, force=True)
 
 
+def test_main_dispatches_framework_check_config_with_version(monkeypatch):
+    monkeypatch.setattr('sys.argv', ['nori.py', 'framework:check-config', '--version', '1.15.0'])
+    with patch('core.cli.framework_check_config') as fn:
+        cli.main()
+    fn.assert_called_once_with(target_version='1.15.0')
+
+
+def test_main_dispatches_framework_check_config_without_version(monkeypatch):
+    monkeypatch.setattr('sys.argv', ['nori.py', 'framework:check-config'])
+    with patch('core.cli.framework_check_config') as fn:
+        cli.main()
+    fn.assert_called_once_with(target_version=None)
+
+
 def test_main_dispatches_framework_version(monkeypatch):
     monkeypatch.setattr('sys.argv', ['nori.py', 'framework:version'])
     with patch('core.cli.framework_version') as fn:
@@ -1188,3 +1202,207 @@ def test_framework_update_migrate_fix_reminder_shown_when_migrations_exist(updat
     out = capsys.readouterr().out
     assert 'migrate:fix' in out
     assert 'aerich <0.9.2' in out
+
+
+# ---------------------------------------------------------------------------
+# framework:check-config — read-only diff of pyproject.toml against a release
+# ---------------------------------------------------------------------------
+
+
+def test_diff_toml_returns_empty_when_documents_match():
+    import tomlkit
+
+    text = '[tool.ruff]\nline-length = 120\n[tool.coverage.report]\nfail_under = 86\n'
+    a = tomlkit.parse(text)
+    b = tomlkit.parse(text)
+
+    added, changed, local_only = cli._diff_toml(a, b)
+    assert added == {}
+    assert changed == {}
+    assert local_only == {}
+
+
+def test_diff_toml_detects_added_upstream():
+    import tomlkit
+
+    local = tomlkit.parse('[tool.coverage.report]\nfail_under = 82\n')
+    upstream = tomlkit.parse('[tool.coverage.report]\nfail_under = 82\nshow_missing = true\n')
+
+    added, changed, local_only = cli._diff_toml(local, upstream)
+    assert 'tool.coverage.report.show_missing' in added
+    assert added['tool.coverage.report.show_missing'] is True
+    assert changed == {}
+    assert local_only == {}
+
+
+def test_diff_toml_detects_changed_value():
+    import tomlkit
+
+    local = tomlkit.parse('[tool.coverage.report]\nfail_under = 82\n')
+    upstream = tomlkit.parse('[tool.coverage.report]\nfail_under = 86\n')
+
+    added, changed, local_only = cli._diff_toml(local, upstream)
+    assert 'tool.coverage.report.fail_under' in changed
+    local_v, upstream_v = changed['tool.coverage.report.fail_under']
+    assert local_v == 82
+    assert upstream_v == 86
+    assert added == {}
+    assert local_only == {}
+
+
+def test_diff_toml_detects_local_only_keys():
+    import tomlkit
+
+    local = tomlkit.parse('[tool.coverage.report]\nfail_under = 86\n[tool.my_plugin]\nfoo = "bar"\n')
+    upstream = tomlkit.parse('[tool.coverage.report]\nfail_under = 86\n')
+
+    added, changed, local_only = cli._diff_toml(local, upstream)
+    assert 'tool.my_plugin' in local_only
+    assert added == {}
+    assert changed == {}
+
+
+def test_diff_toml_walks_nested_tables():
+    """A change deep in a nested table is reported with the full dotted path."""
+    import tomlkit
+
+    local = tomlkit.parse('[tool.ruff.lint]\nselect = ["E", "W"]\n')
+    upstream = tomlkit.parse('[tool.ruff.lint]\nselect = ["E", "W", "F"]\n')
+
+    added, changed, local_only = cli._diff_toml(local, upstream)
+    assert 'tool.ruff.lint.select' in changed
+
+
+def test_diff_toml_treats_list_value_difference_as_changed():
+    """Lists compare with == — any difference (size or order) shows up as changed, not added."""
+    import tomlkit
+
+    local = tomlkit.parse('[a]\nitems = [1, 2]\n')
+    upstream = tomlkit.parse('[a]\nitems = [1, 2, 3]\n')
+
+    added, changed, local_only = cli._diff_toml(local, upstream)
+    assert 'a.items' in changed
+    assert added == {}
+
+
+@pytest.fixture
+def check_config_env(tmp_path, monkeypatch):
+    """Set up a tmp project with a baseline local pyproject.toml."""
+    (tmp_path / 'pyproject.toml').write_text('[tool.coverage.report]\nfail_under = 82\n')
+    core_dir = tmp_path / 'rootsystem' / 'application' / 'core'
+    core_dir.mkdir(parents=True)
+    (core_dir / 'version.py').write_text("__version__ = '1.15.0'\n")
+    monkeypatch.chdir(tmp_path)
+    return tmp_path
+
+
+def test_framework_check_config_no_drift_prints_no_drift_message(check_config_env, monkeypatch, capsys):
+    monkeypatch.setattr(cli, '_github_api', lambda endpoint: {'tag_name': 'v1.15.0'})
+    monkeypatch.setattr(cli, '_fetch_text', lambda url: '[tool.coverage.report]\nfail_under = 82\n')
+
+    cli.framework_check_config(target_version='1.15.0')
+
+    out = capsys.readouterr().out
+    assert 'No drift detected' in out
+
+
+def test_framework_check_config_reports_all_three_categories(check_config_env, monkeypatch, capsys):
+    """Local has fail_under=82 + tool.local_only; upstream has fail_under=86 + tool.added."""
+    upstream_text = '[tool.coverage.report]\nfail_under = 86\n[tool.added]\nnewkey = "x"\n'
+    (check_config_env / 'pyproject.toml').write_text(
+        '[tool.coverage.report]\nfail_under = 82\n[tool.local_only]\nmine = true\n'
+    )
+    monkeypatch.setattr(cli, '_github_api', lambda endpoint: {'tag_name': 'v1.15.1'})
+    monkeypatch.setattr(cli, '_fetch_text', lambda url: upstream_text)
+
+    cli.framework_check_config(target_version='1.15.1')
+
+    out = capsys.readouterr().out
+    assert 'Added upstream' in out
+    assert 'tool.added' in out
+    assert 'Changed upstream' in out
+    assert 'tool.coverage.report.fail_under' in out
+    assert 'Local-only' in out
+    assert 'tool.local_only' in out
+
+
+def test_framework_check_config_404_with_target_version(check_config_env, monkeypatch, capsys):
+    def fake_api(endpoint):
+        raise HTTPError('http://example', 404, 'Not Found', {}, io.BytesIO(b''))
+
+    monkeypatch.setattr(cli, '_github_api', fake_api)
+
+    cli.framework_check_config(target_version='9.9.9')
+
+    out = capsys.readouterr().out
+    assert 'Version v9.9.9 not found' in out
+
+
+def test_framework_check_config_url_error_on_api(check_config_env, monkeypatch, capsys):
+    def fake_api(endpoint):
+        raise URLError('No internet')
+
+    monkeypatch.setattr(cli, '_github_api', fake_api)
+
+    cli.framework_check_config()
+
+    out = capsys.readouterr().out
+    assert 'Could not connect to GitHub' in out
+
+
+def test_framework_check_config_url_error_on_fetch(check_config_env, monkeypatch, capsys):
+    monkeypatch.setattr(cli, '_github_api', lambda endpoint: {'tag_name': 'v1.15.0'})
+
+    def fake_fetch(url):
+        raise URLError('connection reset')
+
+    monkeypatch.setattr(cli, '_fetch_text', fake_fetch)
+
+    cli.framework_check_config(target_version='1.15.0')
+
+    out = capsys.readouterr().out
+    assert 'Could not fetch upstream pyproject.toml' in out
+
+
+def test_framework_check_config_missing_local_pyproject(tmp_path, monkeypatch, capsys):
+    core_dir = tmp_path / 'rootsystem' / 'application' / 'core'
+    core_dir.mkdir(parents=True)
+    (core_dir / 'version.py').write_text("__version__ = '1.0.0'\n")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli, '_github_api', lambda endpoint: {'tag_name': 'v1.0.0'})
+    monkeypatch.setattr(cli, '_fetch_text', lambda url: '[a]\nb = 1\n')
+
+    cli.framework_check_config(target_version='1.0.0')
+
+    out = capsys.readouterr().out
+    assert 'No pyproject.toml' in out
+
+
+def test_framework_check_config_calls_releases_tags_when_target_version(check_config_env, monkeypatch):
+    captured: dict = {}
+
+    def fake_api(endpoint):
+        captured['endpoint'] = endpoint
+        return {'tag_name': 'v1.15.0'}
+
+    monkeypatch.setattr(cli, '_github_api', fake_api)
+    monkeypatch.setattr(cli, '_fetch_text', lambda url: '[tool.coverage.report]\nfail_under = 82\n')
+
+    cli.framework_check_config(target_version='1.15.0')
+
+    assert captured['endpoint'] == 'releases/tags/v1.15.0'
+
+
+def test_framework_check_config_calls_releases_latest_without_target_version(check_config_env, monkeypatch):
+    captured: dict = {}
+
+    def fake_api(endpoint):
+        captured['endpoint'] = endpoint
+        return {'tag_name': 'v1.15.0'}
+
+    monkeypatch.setattr(cli, '_github_api', fake_api)
+    monkeypatch.setattr(cli, '_fetch_text', lambda url: '[tool.coverage.report]\nfail_under = 82\n')
+
+    cli.framework_check_config()
+
+    assert captured['endpoint'] == 'releases/latest'

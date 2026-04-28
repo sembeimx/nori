@@ -496,6 +496,47 @@ def _download_zip(url: str, dest: str) -> None:
         shutil.copyfileobj(resp, f)
 
 
+def _fetch_text(url: str) -> str:
+    """Fetch a single text file (e.g. raw.githubusercontent.com/.../pyproject.toml)."""
+    req = Request(url, headers={'User-Agent': 'Nori-Framework-Updater'})
+    token = os.environ.get('GITHUB_TOKEN', '')
+    if token:
+        req.add_header('Authorization', f'Bearer {token}')
+    with urlopen(req) as resp:
+        return resp.read().decode('utf-8')
+
+
+def _diff_toml(local: dict, upstream: dict) -> tuple[dict, dict, dict]:
+    """Walk two parsed TOML documents in lockstep, returning categorized differences.
+
+    Returns (added_upstream, changed_upstream, local_only) where keys are dot-joined
+    paths (e.g. ``tool.coverage.report.fail_under``). Nested tables are walked
+    recursively; lists and scalars compare with ``==``.
+    """
+    added: dict = {}
+    changed: dict = {}
+    local_only: dict = {}
+
+    def walk(local_node: dict, upstream_node: dict, path: tuple[str, ...] = ()) -> None:
+        local_keys = set(local_node.keys())
+        upstream_keys = set(upstream_node.keys())
+
+        for key in sorted(upstream_keys - local_keys):
+            added['.'.join(path + (key,))] = upstream_node[key]
+        for key in sorted(local_keys - upstream_keys):
+            local_only['.'.join(path + (key,))] = local_node[key]
+        for key in sorted(local_keys & upstream_keys):
+            local_v = local_node[key]
+            upstream_v = upstream_node[key]
+            if isinstance(local_v, dict) and isinstance(upstream_v, dict):
+                walk(local_v, upstream_v, path + (key,))
+            elif local_v != upstream_v:
+                changed['.'.join(path + (key,))] = (local_v, upstream_v)
+
+    walk(local, upstream)
+    return added, changed, local_only
+
+
 def _has_existing_migrations() -> bool:
     """True if the project has user-generated migrations under ``migrations/<app>/``."""
     migrations_root = os.path.join(_APP_DIR, 'migrations')
@@ -660,6 +701,94 @@ def framework_update(target_version: str | None = None, skip_backup: bool = Fals
         print('\n  If upgrading from a Nori version with aerich <0.9.2, fill MODELS_STATE in')
         print('  existing migration files (one-time, idempotent):')
         print('    python3 nori.py migrate:fix')
+
+
+def framework_check_config(target_version: str | None = None) -> None:
+    """Diff the project's pyproject.toml against the upstream Nori release.
+
+    Read-only. Categorizes differences into:
+      - Added upstream: keys/tables present in the release but missing locally
+        (likely additions the user should consider adopting — new mypy strict
+        modules, bumped coverage thresholds, etc.)
+      - Changed upstream: keys present in both with different values
+      - Local-only: keys present locally but not upstream (likely user
+        customizations — informational, not a flag)
+    """
+    current = _get_current_version()
+    print('Nori framework:check-config')
+    print(f'  Current version: {current}')
+
+    try:
+        if target_version:
+            release = _github_api(f'releases/tags/v{target_version}')
+        else:
+            release = _github_api('releases/latest')
+    except HTTPError as e:
+        if e.code == 404:
+            print(
+                f'\n  Error: {"Version v" + target_version + " not found" if target_version else "No releases found"}.'
+            )
+            print(f'  Check https://github.com/{_GITHUB_REPO}/releases')
+            return
+        raise
+    except URLError as e:
+        print(f'\n  Error: Could not connect to GitHub — {e.reason}')
+        return
+
+    if not isinstance(release, dict):
+        print('\n  Error: Unexpected GitHub API response shape (not an object).')
+        return
+
+    tag = release['tag_name']
+    target = tag.lstrip('v')
+    print(f'  Comparing against: {target} ({tag})')
+
+    raw_url = f'https://raw.githubusercontent.com/{_GITHUB_REPO}/{tag}/pyproject.toml'
+    try:
+        upstream_text = _fetch_text(raw_url)
+    except (URLError, HTTPError) as e:
+        print(f'\n  Error: Could not fetch upstream pyproject.toml — {e}')
+        return
+
+    local_path = 'pyproject.toml'
+    if not os.path.exists(local_path):
+        print(f'\n  Error: No pyproject.toml at {local_path}')
+        return
+    with open(local_path) as f:
+        local_text = f.read()
+
+    import tomlkit
+
+    upstream_doc = tomlkit.parse(upstream_text)
+    local_doc = tomlkit.parse(local_text)
+
+    added, changed, local_only = _diff_toml(local_doc, upstream_doc)
+
+    if not added and not changed and not local_only:
+        print(f'\n  No drift detected. Your pyproject.toml matches Nori {target}.')
+        return
+
+    if added:
+        print('\n  Added upstream (not in your pyproject.toml):')
+        for path, value in added.items():
+            print(f'    + {path}')
+            if not isinstance(value, (dict, list)):
+                print(f'        = {value!r}')
+
+    if changed:
+        print('\n  Changed upstream:')
+        for path, (local_v, upstream_v) in changed.items():
+            print(f'    ~ {path}')
+            print(f'        you:      {local_v!r}')
+            print(f'        upstream: {upstream_v!r}')
+
+    if local_only:
+        print('\n  Local-only (your customizations — informational):')
+        for path in local_only:
+            print(f'    - {path}')
+
+    print('\n  This is read-only. Review the diff and port what makes sense.')
+    print(f'  Upstream source: {raw_url}')
 
 
 # ---------------------------------------------------------------------------
@@ -959,6 +1088,14 @@ def main() -> None:
     parser_update.add_argument('--no-backup', action='store_true', help='Skip backing up the current core/')
     parser_update.add_argument('--force', action='store_true', help='Re-install even if already on the target version')
 
+    parser_check_config = subparsers.add_parser(
+        'framework:check-config',
+        help="Compare project's pyproject.toml against the current Nori release (read-only)",
+    )
+    parser_check_config.add_argument(
+        '--version', default=None, help='Compare against a specific Nori version (default: latest)'
+    )
+
     subparsers.add_parser('framework:version', help='Show the current framework version')
     subparsers.add_parser('routes:list', help='List all registered routes')
     subparsers.add_parser('check:deps', help='Probe DB, cache, and throttle reachability (pre-deploy check)')
@@ -1003,6 +1140,8 @@ def main() -> None:
         queue_work(args.name)
     elif args.command == 'framework:update':
         framework_update(target_version=args.version, skip_backup=args.no_backup, force=args.force)
+    elif args.command == 'framework:check-config':
+        framework_check_config(target_version=args.version)
     elif args.command == 'framework:version':
         framework_version()
     elif args.command == 'routes:list':
