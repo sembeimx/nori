@@ -117,6 +117,17 @@ import bad_practice  # noqa: F401 — re-exported for backward compatibility, se
 
 The `pyproject.toml` is yours after install — `framework:update` does not replace it. Tighten or relax the configuration as your project matures.
 
+### Detecting drift against the latest release
+
+Because `pyproject.toml` is user-owned, projects can fall behind on framework-side tooling improvements (new ruff rules, new mypy strict modules, bumped coverage thresholds). To see what changed upstream without modifying anything locally:
+
+```bash
+python3 nori.py framework:check-config
+python3 nori.py framework:check-config --version 1.15.2
+```
+
+The output is a categorized diff (added upstream / changed / local-only) with full paths like `tool.coverage.report.fail_under`. Read-only — you decide what to port. See the [CLI reference](cli.md#framework-check-config) for the full command shape.
+
 ### Adding stricter rules
 
 ```toml

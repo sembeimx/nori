@@ -28,6 +28,7 @@ python3 nori.py <command> [arguments]
 | `db:seed` | Run all registered database seeders |
 | `queue:work` | Run the persistent job queue worker |
 | `framework:update` | Update the Nori core from GitHub |
+| `framework:check-config` | Compare project's `pyproject.toml` against the current Nori release (read-only) |
 | `framework:version` | Show the current framework version |
 | `routes:list` | List all registered routes |
 | `audit:purge` | Purge old audit log entries |
@@ -279,6 +280,30 @@ python3 nori.py framework:update --no-backup
 7. Reminds you to regenerate framework migrations with `migrate:make ... --app framework` if framework models changed.
 
 For private repositories, set `GITHUB_TOKEN` in your environment.
+
+### `framework:check-config`
+
+Compares your project's `pyproject.toml` against the current Nori release's. **Read-only** — does not modify anything. The comparison answers: "what changed in the framework's tooling config since I installed, and what did I customize on top?"
+
+`framework:update` refreshes the framework's *code* but does not refresh `pyproject.toml` (it would clobber your customizations). Over many releases the framework may have introduced new ruff rules, new mypy strict modules, or bumped the coverage threshold — and your project never sees those changes silently. `framework:check-config` surfaces the drift.
+
+```bash
+python3 nori.py framework:check-config
+python3 nori.py framework:check-config --version 1.15.2
+```
+
+**Options**:
+- `--version <v>`: Compare against a specific Nori version. Defaults to the latest release.
+
+**Output** is categorized into three sections:
+
+- **Added upstream** — keys/tables present in the release's `pyproject.toml` but missing from yours. These are likely additions worth porting (e.g. a new `[[tool.mypy.overrides]]` block adding strict typing to a new module).
+- **Changed upstream** — keys present in both with different values. Each entry shows your value and upstream's. Example: `tool.coverage.report.fail_under` bumped from `82` to `86`.
+- **Local-only** — keys present in your `pyproject.toml` but not upstream. These are your customizations — informational, not a flag. The command prints them so you can review the full diff in one pass.
+
+If everything matches, the command prints `No drift detected.` and exits.
+
+The command does **not** modify `pyproject.toml`. You decide what to port. The output ends with a link to the upstream source for direct comparison.
 
 ### `framework:version`
 
