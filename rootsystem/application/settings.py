@@ -71,13 +71,15 @@ JWT_EXPIRATION = int(os.environ.get('JWT_EXPIRATION', '3600'))
 # Rate Limiting
 THROTTLE_BACKEND = os.environ.get('THROTTLE_BACKEND', 'memory')  # memory | redis
 
+# Caching
+CACHE_BACKEND = os.environ.get('CACHE_BACKEND', 'memory')  # memory | redis
+
+# Redis connection — used by CACHE_BACKEND=redis and THROTTLE_BACKEND=redis
+REDIS_URL = os.environ.get('REDIS_URL', 'redis://localhost:6379')
+
 # Trusted proxies — only trust X-Forwarded-For from these IPs
 # Comma-separated list (e.g. '127.0.0.1,10.0.0.1')
 TRUSTED_PROXIES = [ip.strip() for ip in os.environ.get('TRUSTED_PROXIES', '').split(',') if ip.strip()]
-REDIS_URL = os.environ.get('REDIS_URL', 'redis://localhost:6379')
-
-# Caching
-CACHE_BACKEND = os.environ.get('CACHE_BACKEND', 'memory')  # memory | redis
 
 # Search (external drivers registered in services/)
 SEARCH_DRIVER = os.environ.get('SEARCH_DRIVER', '')  # meilisearch | (custom drivers)

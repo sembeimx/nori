@@ -95,26 +95,38 @@ async def server_error(request: Request, exc: Exception) -> Response:
 
 exception_handlers = {} if settings.DEBUG else {404: not_found, 500: server_error}
 
-# Middleware stack (order: RequestId -> SecurityHeaders -> CORS -> Session -> CSRF)
+# Middleware stack — order matters. Starlette wraps middleware in list order,
+# so the first entry is the outermost (runs first on request, last on response).
+# Order: RequestId -> SecurityHeaders -> CORS (if enabled) -> Session -> CSRF.
+# SecurityHeaders MUST wrap CORS so preflight responses receive security headers.
 
-middleware = [
-    Middleware(RequestIdMiddleware),
-    Middleware(SecurityHeadersMiddleware),
-    Middleware(SessionMiddleware, secret_key=settings.SECRET_KEY, https_only=not settings.DEBUG),
-    Middleware(CsrfMiddleware),
-]
 
-if settings.CORS_ORIGINS:
-    middleware.insert(
-        1,
+def _build_middleware(settings_module) -> list[Middleware]:
+    stack = [
+        Middleware(RequestIdMiddleware),
+        Middleware(SecurityHeadersMiddleware),
         Middleware(
-            CORSMiddleware,
-            allow_origins=settings.CORS_ORIGINS,
-            allow_methods=settings.CORS_ALLOW_METHODS,
-            allow_headers=settings.CORS_ALLOW_HEADERS,
-            allow_credentials=settings.CORS_ALLOW_CREDENTIALS,
+            SessionMiddleware,
+            secret_key=settings_module.SECRET_KEY,
+            https_only=not settings_module.DEBUG,
         ),
-    )
+        Middleware(CsrfMiddleware),
+    ]
+    if settings_module.CORS_ORIGINS:
+        stack.insert(
+            2,
+            Middleware(
+                CORSMiddleware,
+                allow_origins=settings_module.CORS_ORIGINS,
+                allow_methods=settings_module.CORS_ALLOW_METHODS,
+                allow_headers=settings_module.CORS_ALLOW_HEADERS,
+                allow_credentials=settings_module.CORS_ALLOW_CREDENTIALS,
+            ),
+        )
+    return stack
+
+
+middleware = _build_middleware(settings)
 
 # Application
 

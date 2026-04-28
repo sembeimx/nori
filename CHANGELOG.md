@@ -4,6 +4,54 @@ All notable changes to Nori are documented here. Format follows [Keep a Changelo
 
 ---
 
+## [1.15.4] — 2026-04-28
+
+### Upgrade notes — read first
+
+This release fixes a middleware-ordering bug in the **scaffolding** `asgi.py`. Because `asgi.py` is user-owned (created by `nori:init`, not replaced by `framework:update`), **existing projects must apply the fix manually**. Fresh projects created from v1.15.4 onward inherit the corrected file.
+
+To patch an existing project, open `rootsystem/application/asgi.py` and locate the CORS conditional. Change:
+
+```python
+middleware.insert(1, Middleware(CORSMiddleware, ...))
+```
+
+to:
+
+```python
+middleware.insert(2, Middleware(CORSMiddleware, ...))
+```
+
+Or replace the whole middleware block with the v1.15.4 form (a `_build_middleware(settings)` helper) — see the upstream `rootsystem/application/asgi.py` in this release for the canonical shape.
+
+If `CORS_ORIGINS` is empty in your `.env`, you are not affected — the bug only triggers when CORS is enabled.
+
+### Fixed
+
+- **`rootsystem/application/asgi.py`: CORS middleware was being inserted at index 1, ahead of `SecurityHeadersMiddleware`.** With CORS enabled the actual stack was `RequestId → CORS → SecurityHeaders → Session → CSRF`, so preflight `OPTIONS` responses skipped the security headers (`X-Content-Type-Options`, `X-Frame-Options`, HSTS, etc.). The intent — documented in `docs/architecture.md` and the file's own comment — was always `RequestId → SecurityHeaders → CORS → Session → CSRF`, ensuring `SecurityHeadersMiddleware` wraps every response including preflights. Fix changes `insert(1, ...)` to `insert(2, ...)`.
+
+- **`rootsystem/application/settings.py`: `REDIS_URL` was placed in the middle of the "Trusted proxies" block.** Moved next to `CACHE_BACKEND` and `THROTTLE_BACKEND`, the two settings that consume it. Cosmetic; no runtime effect.
+
+### Changed
+
+- **`asgi.py`: middleware construction extracted to a pure helper** `_build_middleware(settings_module) -> list[Middleware]`. Mechanical refactor that makes the order assertable in a unit test (see below). The top-level `middleware = _build_middleware(settings)` line preserves the previous behavior bit-for-bit when CORS is disabled, and produces the corrected order when enabled.
+
+### Test coverage
+
+- 2 new tests in `tests/test_asgi.py`:
+    - `test_middleware_order_without_cors` asserts the four-entry stack (`RequestId, SecurityHeaders, Session, CSRF`).
+    - `test_middleware_order_with_cors_keeps_security_headers_outside_cors` asserts the five-entry stack with CORS at index 2 and an explicit `SecurityHeaders < CORS` invariant. Regression coverage for the bug above — the previous `insert(1, ...)` form would fail this test.
+
+### Compatibility
+
+- Behavior change scoped to projects that **enable CORS**. With `CORS_ORIGINS` non-empty, preflight `OPTIONS` responses now include the security headers they were silently skipping. No public API changes, no new settings, no runtime dependency changes. The `_build_middleware` helper is internal to scaffolding (leading underscore) — projects that customize their `asgi.py` are not required to adopt it.
+
+### Related
+
+- Surfaced during a manual scaffolding review (asgi.py, settings.py, services/*.py). All ruff/mypy/coverage gates were clean — this was a docs-vs-code coherence bug that no static tool could catch.
+
+---
+
 ## [1.15.3] — 2026-04-28
 
 ### Added
