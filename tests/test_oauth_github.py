@@ -209,6 +209,42 @@ async def test_get_user_profile_fetches_private_email():
 
 
 @pytest.mark.asyncio
+async def test_get_user_profile_no_primary_verified_email_leaves_email_blank():
+    """When neither /user nor /user/emails yield a primary+verified address,
+    `email` stays empty rather than picking an unverified or non-primary one."""
+    from services.oauth_github import get_user_profile
+
+    user_response = MagicMock()
+    user_response.json.return_value = {
+        'id': 7,
+        'login': 'noemail',
+        'name': 'No Email',
+        'email': None,
+        'avatar_url': '',
+    }
+    user_response.raise_for_status = MagicMock()
+
+    emails_response = MagicMock()
+    emails_response.json.return_value = [
+        {'email': 'unverified-primary@x.com', 'primary': True, 'verified': False},
+        {'email': 'verified-secondary@x.com', 'primary': False, 'verified': True},
+    ]
+    emails_response.raise_for_status = MagicMock()
+
+    mock_client = AsyncMock()
+    mock_client.get.side_effect = [user_response, emails_response]
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=False)
+
+    with patch('services.oauth_github.httpx.AsyncClient', return_value=mock_client):
+        profile = await get_user_profile('token')
+
+    assert profile['email'] == ''
+    assert profile['id'] == '7'
+    assert profile['login'] == 'noemail'
+
+
+@pytest.mark.asyncio
 async def test_get_user_profile_normalized_dict():
     from services.oauth_github import get_user_profile
 

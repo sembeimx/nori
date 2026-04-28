@@ -186,6 +186,26 @@ def test_build_jwt_header_claims_are_valid(rsa_keypair):
     assert claims['exp'] - claims['iat'] == 3600
 
 
+def test_build_jwt_rejects_non_rsa_private_key():
+    """Ed25519 (or any non-RSA) keys raise — the JWT signing code is RSA-only."""
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import ed25519
+
+    ed_key = ed25519.Ed25519PrivateKey.generate()
+    pem = ed_key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.NoEncryption(),
+    ).decode()
+
+    with pytest.raises(RuntimeError, match='must be RSA'):
+        _build_jwt(
+            client_email='sa@x.iam',
+            private_key_pem=pem,
+            token_uri='https://oauth2.googleapis.com/token',
+        )
+
+
 def test_build_jwt_signature_verifies(rsa_keypair):
     """Generated signature is verifiable with the corresponding public key."""
     from cryptography.hazmat.primitives import hashes
@@ -267,6 +287,59 @@ async def test_get_access_token_refreshes_when_expired(fake_credentials, monkeyp
         tok = await _get_access_token()
 
     assert tok == 'new-token'
+
+
+@pytest.mark.asyncio
+async def test_get_access_token_double_checked_lock_avoids_duplicate_fetch(fake_credentials, monkeypatch):
+    """When two coroutines race, the second one finds the cache populated
+    after acquiring the lock and skips the network call. Covers the second
+    `if _token_cache['token']...` check inside `_token_lock`."""
+    import asyncio
+
+    import settings
+
+    monkeypatch.setattr(settings, 'GCS_CREDENTIALS_JSON', json.dumps(fake_credentials), raising=False)
+
+    # Recreate the lock on the running loop — the module-level lock was bound
+    # to a different loop at import time and cross-loop awaits raise.
+    monkeypatch.setattr(gcs_mod, '_token_lock', asyncio.Lock())
+
+    fetch_started = asyncio.Event()
+    proceed_with_fetch = asyncio.Event()
+
+    async def slow_post(*_args, **_kwargs):
+        # Signal that the first call is now inside the lock and about to fetch
+        fetch_started.set()
+        # Wait for the test to release us so the second coroutine can queue on the lock
+        await proceed_with_fetch.wait()
+        response = MagicMock()
+        response.raise_for_status = MagicMock()
+        response.json = MagicMock(return_value={'access_token': 'first-token', 'expires_in': 3600})
+        return response
+
+    mock_client = AsyncMock()
+    mock_client.post = AsyncMock(side_effect=slow_post)
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=False)
+
+    with patch('services.storage_gcs.httpx.AsyncClient', return_value=mock_client):
+        # Coroutine A: starts the fetch, blocks inside slow_post
+        task_a = asyncio.create_task(_get_access_token())
+        # Wait until A has acquired the lock and is mid-fetch
+        await fetch_started.wait()
+        # Coroutine B: queues on the lock (cache still empty at first check)
+        task_b = asyncio.create_task(_get_access_token())
+        # Give B a tick to enter and queue on the lock
+        await asyncio.sleep(0)
+        # Release A — it populates the cache and exits the lock; B then runs the
+        # second check with the cache populated and returns without fetching.
+        proceed_with_fetch.set()
+        tok_a, tok_b = await asyncio.gather(task_a, task_b)
+
+    assert tok_a == 'first-token'
+    assert tok_b == 'first-token'
+    # Only ONE network call — B's second check short-circuited.
+    assert mock_client.post.call_count == 1
 
 
 @pytest.mark.asyncio
