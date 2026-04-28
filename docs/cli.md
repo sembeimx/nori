@@ -31,6 +31,7 @@ python3 nori.py <command> [arguments]
 | `framework:check-config` | Compare project's `pyproject.toml` against the current Nori release (read-only) |
 | `framework:version` | Show the current framework version |
 | `routes:list` | List all registered routes |
+| `check:deps` | Probe DB, cache, and throttle reachability (pre-deploy check) |
 | `audit:purge` | Purge old audit log entries |
 
 ---
@@ -313,6 +314,29 @@ Displays the current version of the Nori core installed in the project.
 python3 nori.py framework:version
 # Nori v1.2.0
 ```
+
+### `check:deps`
+
+Probes the project's runtime dependencies — database, cache backend, and throttle backend — and exits non-zero if any of them are unreachable. Designed as a pre-deploy / CI gate so misconfiguration surfaces before the app boots, not after.
+
+```bash
+python3 nori.py check:deps
+```
+
+What it probes, in order:
+
+- **Database**: opens a connection per `settings.TORTOISE_ORM` and runs `SELECT 1`. If `DB_ENABLED=False`, the database row reports as `disabled` (still a pass).
+- **Cache**: calls `verify()` on the configured `CACHE_BACKEND` (`memory` always passes; `redis` issues a `PING`).
+- **Throttle**: calls `verify()` on the configured `THROTTLE_BACKEND` (same backend kinds as cache).
+
+Each probe runs independently — one failure does not short-circuit the others, so a single run reports all unhealthy dependencies at once.
+
+Exit codes:
+
+- `0` — every probe passed
+- `1` — at least one probe failed
+
+Use it as the last step of your deploy script, or as a CI job that reads production-shaped settings, to catch wrong `DATABASE_URL` / `REDIS_URL` configuration before traffic hits the new release.
 
 ### Audit Log
 

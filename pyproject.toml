@@ -51,9 +51,9 @@ max-complexity = 10
 # assert_json_error) for user tests. The asserts are the point of the module.
 "rootsystem/application/core/testing.py" = ["S101"]
 # Recursive CTE queries in NoriTreeMixin construct identifiers via multi-line
-# f-strings but validate them via isalnum() (see lines ~81 and ~109) before
-# the query runs. Ruff cannot follow validation through multi-line concatenation,
-# and noqa on a single line of a multi-line f-string does not always suppress.
+# f-strings but validate them via isalnum() before the query runs. Ruff cannot
+# follow validation through multi-line concatenation, and noqa on a single line
+# of a multi-line f-string does not always suppress.
 "rootsystem/application/core/mixins/tree.py" = ["S608"]
 # Installer trusts URLs constructed from the hardcoded GitHub repo (S310) and
 # invokes git from PATH (S607). Acceptable for a one-shot install script.
@@ -62,8 +62,9 @@ max-complexity = 10
 # hardcoded executables and args — never user input. S603 flags every
 # subprocess.run regardless of input source. S310 covers the framework:update
 # downloader (URL constructed from the hardcoded GITHUB_REPO). C901 covers
-# main() (argparse dispatcher, complexity 19) and framework_update() (full
-# update workflow: download, verify, apply, backup, cleanup — complexity 28).
+# main() (argparse dispatcher) and framework_update() (full update workflow:
+# download, verify, apply, backup, cleanup) — both legitimately above the
+# project's complexity threshold by design.
 "rootsystem/application/core/cli.py" = ["S603", "S310", "C901"]
 # core/http/validation.py: validate() iterates rules-of-rules (complexity 11);
 # _check_rule() is a declarative rule dispatcher with one branch per rule
