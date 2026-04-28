@@ -53,7 +53,9 @@ middleware = [
 ]
 
 if settings.CORS_ORIGINS:
-    middleware.insert(1, Middleware(CORSMiddleware,
+    # Insert at index 2 so SecurityHeaders wraps CORS — preflight responses
+    # must still receive security headers.
+    middleware.insert(2, Middleware(CORSMiddleware,
         allow_origins=settings.CORS_ORIGINS,
         allow_methods=settings.CORS_ALLOW_METHODS,
         allow_headers=settings.CORS_ALLOW_HEADERS,
