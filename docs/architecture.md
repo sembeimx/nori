@@ -67,6 +67,12 @@ If none of those work, open an issue — that's a signal Nori is missing an exte
 
 The lists above are derived from `_FRAMEWORK_DIRS` and `_FRAMEWORK_FILES` in `core/cli.py` and the `paths` array in `.starter-manifest.json`. If those change, this table changes — they are the source of truth. The `framework:update` pre-flight prints the live values from `_FRAMEWORK_DIRS` / `_FRAMEWORK_FILES`, so the runtime output stays in sync even if this page drifts.
 
+### Don't shadow stdlib at the application root
+
+`nori.py` inserts `rootsystem/application/` at the front of `sys.path` so your code can write `from core import …` without a package prefix. The side effect is that a file at that root with a stdlib name — `json.py`, `os.py`, `re.py`, etc. — will shadow the stdlib module for the entire process and produce confusing import errors elsewhere.
+
+Don't do it. Keep your code in `modules/`, `models/`, `templates/`, or sub-packages of those — the framework convention already steers you away from the application root.
+
 ---
 
 ## Request Lifecycle
