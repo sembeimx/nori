@@ -68,11 +68,28 @@ string as a single key::
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 import httpx
 from core.conf import config
 from core.search import register_search_driver
+
+# Meilisearch attribute names allow letters, digits, underscores, hyphens,
+# and dots for nested fields. Reject anything else to prevent operator
+# injection through dict keys.
+_SAFE_KEY = re.compile(r'^[A-Za-z_][A-Za-z0-9_.\-]*$')
+
+
+def _escape_value(value: Any) -> str:
+    """Escape a value for inclusion inside a double-quoted Meilisearch filter.
+
+    Meilisearch's filter syntax uses ``\\`` as the escape character inside
+    quoted strings. Backslashes must be doubled and double-quotes prefixed,
+    otherwise a value like ``foo" OR bar = "baz`` would close the literal
+    early and inject operators.
+    """
+    return str(value).replace('\\', '\\\\').replace('"', '\\"')
 
 
 def _build_filter_string(filters: dict[str, Any]) -> str | None:
@@ -84,6 +101,10 @@ def _build_filter_string(filters: dict[str, Any]) -> str | None:
 
     Returns:
         A filter string or ``None`` if filters is empty.
+
+    Raises:
+        ValueError: If a key is not a safe Meilisearch attribute name
+                    (letters, digits, underscores, hyphens, dots only).
 
     Examples::
 
@@ -98,7 +119,11 @@ def _build_filter_string(filters: dict[str, Any]) -> str | None:
         return None
     if '_raw' in filters:
         return str(filters['_raw'])
-    parts = [f'{k} = "{v}"' for k, v in filters.items()]
+    parts = []
+    for k, v in filters.items():
+        if not _SAFE_KEY.match(k):
+            raise ValueError(f'Unsafe filter key: {k!r}')
+        parts.append(f'{k} = "{_escape_value(v)}"')
     return ' AND '.join(parts)
 
 

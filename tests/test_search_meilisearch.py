@@ -49,6 +49,46 @@ def test_build_filter_string_raw():
     assert _build_filter_string({'_raw': raw}) == raw
 
 
+def test_build_filter_string_escapes_double_quote_in_value():
+    """A double-quote in a value must be escaped so it cannot close the literal."""
+    assert _build_filter_string({'title': 'say "hi"'}) == 'title = "say \\"hi\\""'
+
+
+def test_build_filter_string_escapes_backslash_in_value():
+    """A backslash in a value must be doubled — it is the escape character."""
+    assert _build_filter_string({'path': 'a\\b'}) == 'path = "a\\\\b"'
+
+
+def test_build_filter_string_neutralizes_injection_attempt():
+    """An attacker-controlled value attempting to break out of the literal is
+    rendered as plain text inside the quoted value, not as filter syntax."""
+    payload = 'Electronics" OR status = "private'
+    result = _build_filter_string({'category': payload})
+    # Both injected double-quotes are escaped, so the entire payload sits
+    # inside one quoted literal that Meilisearch will treat as a single string.
+    assert result == 'category = "Electronics\\" OR status = \\"private"'
+
+
+def test_build_filter_string_allows_nested_attribute_keys():
+    """Meilisearch supports dot notation for nested fields."""
+    assert _build_filter_string({'metadata.author': 'ana'}) == 'metadata.author = "ana"'
+
+
+def test_build_filter_string_rejects_unsafe_key_with_quote():
+    with pytest.raises(ValueError, match='Unsafe filter key'):
+        _build_filter_string({'category" OR x': 'evil'})
+
+
+def test_build_filter_string_rejects_unsafe_key_with_space():
+    with pytest.raises(ValueError, match='Unsafe filter key'):
+        _build_filter_string({'foo bar': 'x'})
+
+
+def test_build_filter_string_accepts_numeric_value():
+    """Non-string values are str-cast then escaped; behavior unchanged."""
+    assert _build_filter_string({'count': 42}) == 'count = "42"'
+
+
 # ---------------------------------------------------------------------------
 # _get_headers
 # ---------------------------------------------------------------------------
