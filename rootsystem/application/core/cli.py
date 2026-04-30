@@ -345,10 +345,16 @@ def migrate_fresh() -> None:
 
     # 3. Wipe database (DB-agnostic via Tortoise)
     print('\n  1. Wiping database tables (DB-agnostic)...')
+    # configure(settings) MUST run before any user-code import path —
+    # Tortoise.init(config=...) loads the model modules registered in
+    # settings.TORTOISE_ORM, and any of those touching core.conf.config or
+    # other lazy framework state would crash with "Nori config not
+    # initialised". Same convention enforced by db_seed and queue_work.
     script_drop = (
         'import asyncio, sys, os\n'
         "sys.path.insert(0, '.')\n"
         'import settings\n'
+        'from core.conf import configure; configure(settings)\n'
         'from tortoise import Tortoise\n'
         'async def _drop():\n'
         '    await Tortoise.init(config=settings.TORTOISE_ORM)\n'

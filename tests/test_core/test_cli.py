@@ -376,6 +376,41 @@ def test_migrate_fresh_aborts_if_user_does_not_confirm(monkeypatch, capsys):
     assert 'Aborted' in out
 
 
+def test_migrate_fresh_drop_subprocess_calls_configure(monkeypatch):
+    """Regression for §7.3 of CLAUDE.md: any subprocess that loads
+    settings + user models must call configure(settings) before touching
+    framework state, otherwise apps with framework-aware imports in their
+    settings or model modules crash with `RuntimeError: Nori config not
+    initialised`. migrate:fresh's drop subprocess is the third such site
+    (db_seed and queue_work already follow the convention)."""
+    monkeypatch.setattr('subprocess.check_output', lambda *a, **kw: b'DEBUG_TRUE')
+    monkeypatch.setattr('builtins.input', lambda _: 'yes')
+    monkeypatch.setattr('core.cli.migrate_init', lambda: None)
+    monkeypatch.setattr('os.path.exists', lambda _: False)
+
+    captured = {}
+
+    def fake_run(cmd, *args, **kwargs):
+        if isinstance(cmd, list) and len(cmd) >= 3 and cmd[1] == '-c':
+            captured['script'] = cmd[2]
+
+        class _Result:
+            returncode = 0
+
+        return _Result()
+
+    monkeypatch.setattr('subprocess.run', fake_run)
+
+    cli.migrate_fresh()
+
+    assert 'script' in captured, 'subprocess.run was never called with the drop script'
+    script = captured['script']
+    assert 'configure(settings)' in script, (
+        'migrate:fresh drop subprocess does not call configure(settings) — '
+        'will crash on user apps that touch framework state at import time'
+    )
+
+
 # ---------------------------------------------------------------------------
 # framework:version
 # ---------------------------------------------------------------------------
