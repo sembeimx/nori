@@ -263,3 +263,25 @@ async def test_execute_payload_allows_listed_module():
     payload = {'func': 'tests.test_core.test_queue:success_task', 'args': ['allowed'], 'kwargs': {}}
     await execute_payload(payload)
     assert 'success:allowed' in _get_executed()
+
+
+# -- Job table bloat regression ----------------------------------------------
+
+
+def test_job_model_does_not_use_soft_deletes():
+    """The Job model MUST NOT inherit NoriSoftDeletes.
+
+    The worker hard-deletes successful jobs to prevent the table from
+    growing unboundedly. If someone wires NoriSoftDeletes into Job
+    (intentionally or by reflex), `await job.delete()` becomes
+    `UPDATE deleted_at=NOW()` and processed rows pile up forever —
+    polling queries get slower with every job ever run.
+    """
+    from core.mixins.soft_deletes import NoriSoftDeletes
+    from models.framework.job import Job
+
+    assert not issubclass(Job, NoriSoftDeletes), (
+        'Job inherits NoriSoftDeletes — the queue worker uses hard delete '
+        'to drop completed jobs. With soft delete the jobs table grows '
+        'indefinitely. See models/framework/job.py for the rationale.'
+    )
