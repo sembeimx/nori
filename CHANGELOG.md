@@ -4,6 +4,61 @@ All notable changes to Nori are documented here. Format follows [Keep a Changelo
 
 ---
 
+## [1.20.0] — 2026-04-30
+
+### Upgrade notes — read first
+
+This release closes Round 6 of the deep audit ("Superuser & Scale"). Two security fixes for the auth layer plus a new pagination helper for deep-scrolling feeds.
+
+**1. The superuser role name is now configurable via `SUPERUSER_ROLE`.** Pre-v1.20.0, the string `'admin'` was hardcoded in `require_role()`, `require_any_role()`, and `require_permission()` as a global bypass. Two problems with that: projects couldn't rename the privileged role to `'owner'` or `'root'`; and any bug in session handling, OIDC claim mapping, or third-party integration that lets an attacker set `role='admin'` grants total access. Default stays `'admin'` for backward compatibility — projects that want to harden the bypass against attacker-controlled values should pick a less guessable name in `settings.py`:
+
+```python
+SUPERUSER_ROLE = 'platform_owner'   # rename
+SUPERUSER_ROLE = ''                  # disable the bypass entirely
+```
+
+When `SUPERUSER_ROLE` is empty, no role bypasses checks — every request is evaluated against its declared role/permission requirement.
+
+**2. `require_permission()` now triggers a fail-safe `load_permissions()` call when the session has no permissions and no TTL marker.** Pre-v1.20.0, if a project's login flow forgot to call `load_permissions()`, the user landed on the dashboard with `permissions=[]` and was locked out of every gated route until manual re-login — the auto-refresh logic only fired when the TTL marker existed. The decorator now distinguishes three cases:
+- TTL marker absent AND `permissions` empty → trigger load (the lockout case).
+- TTL marker absent AND `permissions` populated → respect the manual write (OAuth callbacks, tests).
+- TTL marker present and expired → normal periodic refresh.
+
+`load_permissions()` also now sets the TTL marker in its empty-`role_ids` early return, so a project with the wrong shape doesn't trigger the load on every single request.
+
+**3. New helper: `paginate_cursor()` for keyset pagination.** Additive, no breaking change. `paginate()` (offset-based) is fine for admin tables with a few thousand rows but degrades quickly on deep pages — the database walks and discards every row before the requested OFFSET. `paginate_cursor()` uses `WHERE field < cursor` against an indexed unique field, so cost is O(per_page) regardless of depth.
+
+```python
+from core.pagination import paginate_cursor
+
+result = await paginate_cursor(Article.all(), per_page=20)
+# {'data': NoriCollection([...]), 'per_page': 20, 'next_cursor': '...', 'has_next': True}
+
+next_page = await paginate_cursor(Article.all(), cursor=result['next_cursor'], per_page=20)
+```
+
+Returns no `total` count and no `last_page` — those would defeat the index. Forward-only scrolling. Use `paginate()` when you need jump-to-page UX, `paginate_cursor()` for feeds and infinite scroll.
+
+### Security
+
+- **Hardcoded superuser bypass removed.** `require_role()`, `require_any_role()`, and `require_permission()` now call `_superuser_role()` which reads `SUPERUSER_ROLE` from config. See upgrade note 1.
+- **Permissions lockout closed.** A project that forgot to wire up `load_permissions()` no longer leaves users locked out of every permission-gated route. See upgrade note 2.
+
+### Added
+
+- **`paginate_cursor()`** — keyset pagination with O(per_page) cost regardless of page depth. Cursor tokens are URL-safe base64 of a typed JSON pair, so datetimes and dates round-trip cleanly. Malformed cursors raise `ValueError` (callers can return 400).
+
+### Documentation
+
+- `docs/collections.md` — Pagination section gains a "Cursor (Keyset) Pagination" subsection with the trade-offs vs. `paginate()`.
+
+### Changed
+
+- `_superuser_role()` helper added to `core/auth/decorators.py`. Three call sites in the file replaced their hardcoded `'admin'` with this helper.
+- `load_permissions()` sets the TTL marker even when `role_ids` is empty (previously only on the success path).
+
+---
+
 ## [1.19.0] — 2026-04-30
 
 ### Upgrade notes — read first
