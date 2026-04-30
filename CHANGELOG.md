@@ -4,6 +4,51 @@ All notable changes to Nori are documented here. Format follows [Keep a Changelo
 
 ---
 
+## [1.19.0] — 2026-04-30
+
+### Upgrade notes — read first
+
+This release closes Round 5 of the deep audit. Three findings, three breaking-by-design behavior changes. Read this section before upgrading any project that runs behind a proxy chain, caches binary responses, or serializes Tortoise models without `NoriModelMixin`.
+
+**1. `X-Forwarded-For` is now parsed right-to-left.** Pre-v1.19.0, `get_client_ip()` took `forwarded.split(',')[0]` — the leftmost entry. An attacker can inject any value as the leftmost (`X-Forwarded-For: 1.2.3.4`) and the proxy chain appends to the right without rewriting the spoofed prefix. Result: bypassable IP-based rate limits and corrupted audit trails. The new walk is right-to-left, skipping `TRUSTED_PROXIES` until the first untrusted hop — that's the real client. Single-proxy chains (the most common deployment) keep working unchanged. If you have custom code that calls `get_client_ip()` and expected the leftmost value verbatim, the new return is the correct attacker-resistant identity.
+
+**2. `@cache_response` stores bodies as base64-encoded bytes.** The decorator previously did `body.decode('utf-8')` before storing, which crashed on binary responses (PDFs, images, ZIPs) or — depending on the cache backend — silently corrupted them on read. Cache values now use a `body_b64` field. Old-shape entries (with `body` as a UTF-8 string) still render via a backward-compat read path, so cached entries survive the upgrade until they expire on TTL. No code change required.
+
+**3. `NoriCollection.to_list()` raises `TypeError` for Tortoise models without `NoriModelMixin`.** The previous silent fallback walked `_meta.fields_map` and emitted every field, including `password_hash`, tokens, and any other secret the developer assumed `protected_fields` was hiding. The fail-safe now refuses loudly with a message that points at the mixin. If you have models that intentionally skip the mixin and rely on this serialization path, either:
+
+```python
+# Option A — recommended: inherit the mixin
+from core import NoriModelMixin
+
+class Article(NoriModelMixin, Model):
+    protected_fields = ['internal_notes']
+
+# Option B — explicit: serialize manually before to_list()
+dicts = [{'id': a.id, 'title': a.title} for a in articles]
+collect(dicts).to_list()
+```
+
+### Security
+
+- **IP spoofing in audit log + throttle blocked.** `get_client_ip()` walks the `X-Forwarded-For` chain right-to-left, skipping `TRUSTED_PROXIES`, and returns the first untrusted hop. See upgrade note 1. Regression tests cover the spoofed-leftmost attack (returns the real source, not the injected value), multi-proxy CDN→ALB→app chains, the all-trusted fallback, and whitespace handling.
+- **Sensitive data leakage in `Collection.to_list()` closed.** A Tortoise model without `NoriModelMixin` no longer serializes silently via `_meta.fields_map`. See upgrade note 3.
+
+### Fixed
+
+- **Binary response caching corrupted bodies.** `@cache_response` now stores response bodies as base64 so PDFs, images, ZIPs, and any non-UTF-8 content round-trip byte-for-byte. The Redis backend serializes cache values via JSON, which cannot represent raw bytes — the previous `body.decode('utf-8')` was a guaranteed crash or silent corruption depending on the backend. Backward-compat read accepts the legacy `body` field so cached entries survive an upgrade until TTL expiry. See upgrade note 2.
+
+### Documentation
+
+- `docs/security.md` — Trusted Proxies section now explicitly documents the right-to-left parse rule and why leftmost is unsafe.
+
+### Changed
+
+- `get_client_ip()` parsing semantics: leftmost → right-to-left walk.
+- `@cache_response` cache value shape: `body` (str) → `body_b64` (base64 str). Reads accept both.
+- `NoriCollection.to_list()` raises `TypeError` for `_meta.fields_map`-bearing items without `to_dict()`.
+
+---
+
 ## [1.18.0] — 2026-04-30
 
 ### Upgrade notes — read first
