@@ -135,3 +135,17 @@ The returned dictionary has the following unified and leap-limit shielded struct
 ```
 
 Using Jinja2 templates and `range()` you can dynamically forge an aesthetic bottom Paginator over this dict structure.
+
+---
+
+## When NOT to use `NoriCollection`
+
+`NoriCollection` is designed for in-memory results that have already been bounded — typically a paginated page or a small cohort returned by a deliberate query. Each chained method (`where`, `sort_by`, `map`) returns a new collection, the same convention as Laravel Collections, lodash, and pandas DataFrames. That immutability is intentional and reads cleanly, but it means every step allocates.
+
+For datasets too large to comfortably hold in memory (thousands of rows or more), reach for these instead:
+
+- **`paginate()`** (above) — the turnkey solution for list views and APIs. Caps at 500 per page.
+- **Tortoise QuerySet** directly — push the work to the database rather than hydrating model instances. Prefer `await User.filter(status=True).count()` over `len(collect(await User.filter(status=True)))`, and aggregate fields with `await Order.filter(...).values_list('total', flat=True)` instead of `collect(...).pluck('total')`.
+- **Tortoise [`values_list()`](https://tortoise.github.io/query.html#tortoise.queryset.QuerySet.values_list)** — returns plain tuples instead of model instances, which is dramatically lighter for read-only aggregation.
+
+Rule of thumb: if the question is *"can `NoriCollection` handle 50k records?"* the answer is *"it can, but you almost certainly shouldn't be loading 50k records into a Python process to begin with — push the work to the database."*
