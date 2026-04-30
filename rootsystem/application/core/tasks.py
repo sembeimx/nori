@@ -69,6 +69,39 @@ def run_in_background(
     *args: Any,
     **kwargs: Any,
 ) -> Response:
-    """Attach a background task to an existing response."""
-    response.background = background(func, *args, **kwargs)
+    """Attach a background task to an existing response, accumulating safely.
+
+    Pre-1.25 this assigned ``response.background = background(...)``
+    unconditionally, silently overwriting any task already attached. A
+    controller that returned ``JSONResponse({...},
+    background=send_email_task)`` and then went through a decorator /
+    middleware that called ``run_in_background(response, audit_log)``
+    lost the email task — the response shipped only the audit task,
+    and the user never got their email. The bug is invisible until the
+    first time you compose tasks across layers.
+
+    The fix promotes to Starlette's ``BackgroundTasks`` (plural) the
+    moment a second task arrives:
+
+    * No existing task → set the new one directly (no wrapper allocation).
+    * Existing ``BackgroundTasks`` → append to it.
+    * Existing single ``BackgroundTask`` → wrap both into a fresh
+      ``BackgroundTasks`` and replace.
+
+    Tasks run in the order they were attached, matching how Starlette
+    iterates ``BackgroundTasks.tasks``.
+    """
+    new_task = background(func, *args, **kwargs)
+    existing = response.background
+
+    if existing is None:
+        response.background = new_task
+    elif isinstance(existing, BackgroundTasks):
+        existing.tasks.append(new_task)
+    else:
+        merged = BackgroundTasks()
+        merged.tasks.append(existing)
+        merged.tasks.append(new_task)
+        response.background = merged
+
     return response

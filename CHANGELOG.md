@@ -4,6 +4,36 @@ All notable changes to Nori are documented here. Format follows [Keep a Changelo
 
 ---
 
+## [1.25.0] — 2026-04-30
+
+### Fixed
+
+- **``flash_old`` crashed multipart forms with file inputs (HIGH).** ``core/http/old.py:flash_old`` put every form value into ``request.session``, including ``UploadFile`` objects. The default ``SessionMiddleware`` is cookie-backed and JSON-serialises the session on every response, and ``UploadFile`` is not JSON-serialisable — the response failed with ``TypeError: Object of type UploadFile is not JSON serializable`` the moment ``flash_old`` ran. The bug was silent in dev (you'd test the happy path) and exploded the first time a real user submitted a multipart form with a validation error. The fix duck-types upload-like values (``hasattr(value, 'filename')`` AND callable ``read``) and drops them before the session write. Browsers refuse to pre-populate ``<input type="file">`` for security reasons anyway, so the dropped file is the right semantic — every other field the user typed is preserved in the re-rendered form.
+- **``unique`` rule hardcoded ``id`` as the except column (MED).** ``core/http/validation.py:_check_unique`` baked ``WHERE {column} = $1 AND id != $2`` into the SQL, so the "except this row" half of the rule only worked for models whose primary key was named ``id``. Tortoise lets a model declare its PK on any column (``code = fields.CharField(pk=True)``, ``uuid = fields.UUIDField(pk=True)``, etc.); an edit form for such a model crashed at validation with ``column "id" does not exist``. The rule now accepts an optional 4th parameter ``except_column`` (default ``'id'``, backwards-compatible). The new identifier is checked against the same ``_IDENTIFIER_RE`` used for ``table`` and ``column``, so the SQL injection guard extends to it.
+
+  ```text
+  unique:table,column                              # uniqueness only
+  unique:table,column,except_value                 # except where id = except_value (existing)
+  unique:table,column,except_value,except_column   # except where except_column = except_value (new)
+  ```
+
+- **``run_in_background`` silently overwrote existing tasks (MED).** ``core/tasks.py:run_in_background`` did ``response.background = background(...)`` unconditionally — any task already attached to the response (a controller's ``send_email``, for instance) was lost the moment a decorator or middleware called ``run_in_background`` to add a different task (an ``audit_log``). The user never got the email and there was nothing in the logs to tell you why. The function now promotes to Starlette's ``BackgroundTasks`` (plural) when a second task arrives: no existing task → set directly; existing ``BackgroundTasks`` → append in place; existing single ``BackgroundTask`` → wrap both into a fresh ``BackgroundTasks``. Tasks run in the order they were attached.
+
+### Tests
+
+912 → 921 passing. New regression tests, each verified to fail on pre-1.25 code:
+- ``test_flash_old_drops_uploaded_files_before_session_write`` — ``UploadFile`` does not leak into the session
+- ``test_flash_old_session_payload_is_json_serializable`` — end-to-end ``json.dumps`` round-trip on the stashed payload
+- ``test_validate_async_unique_with_custom_except_column`` — the 4th param replaces the literal ``id`` in the SQL
+- ``test_validate_async_unique_except_column_rejects_sql_injection`` — identifier check extends to the new param
+- ``test_validate_async_unique_default_except_column_is_id`` — backwards-compat 3-param form still uses ``id``
+- ``test_run_in_background_does_not_overwrite_existing_task`` — promotion to ``BackgroundTasks`` happens
+- ``test_run_in_background_runs_both_existing_and_new_task`` — both callables actually execute, in order
+- ``test_run_in_background_appends_to_existing_background_tasks`` — existing ``BackgroundTasks`` extended in place, not wrapped
+- ``test_run_in_background_attaches_directly_when_no_existing_task`` — no regression on the single-task path
+
+---
+
 ## [1.24.0] — 2026-04-30
 
 ### Fixed

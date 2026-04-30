@@ -39,6 +39,20 @@ _DEFAULT_EXCLUDE: tuple[str, ...] = (
 )
 
 
+def _is_uploaded_file(value: Any) -> bool:
+    """Return True if ``value`` looks like a Starlette ``UploadFile``.
+
+    Duck-typing instead of ``isinstance(value, UploadFile)`` so the helper
+    keeps working under test fakes and any future replacement of the
+    Starlette upload object — anything exposing both ``filename`` and a
+    callable ``read`` is treated as a file. The cost of a false positive
+    on a benign duck-type is just a missing field in the re-rendered form,
+    which the user can re-enter; the cost of a false negative is the
+    500 this function exists to prevent.
+    """
+    return hasattr(value, 'filename') and callable(getattr(value, 'read', None))
+
+
 def flash_old(
     request: Request,
     form: Any,
@@ -49,9 +63,23 @@ def flash_old(
     Sensitive fields in `_DEFAULT_EXCLUDE` are dropped automatically. Pass
     an explicit `exclude` (any iterable of field names) to override or
     extend the list — the user's iterable replaces the default.
+
+    File uploads (``UploadFile``-like values) are dropped before the write.
+    The cookie-backed ``SessionMiddleware`` JSON-serialises the session on
+    every response, and ``UploadFile`` is not JSON-serialisable — without
+    this filter, a multipart form that fails any other validation rule
+    crashes the response with a 500 the moment ``flash_old`` runs. Browsers
+    refuse to pre-populate ``<input type="file">`` for security reasons
+    anyway, so dropping the file is the right semantic too: the user has to
+    re-pick the file, but every other field they typed is preserved in
+    the re-rendered form.
     """
     skip = set(_DEFAULT_EXCLUDE if exclude is None else exclude)
-    safe = {k: v for k, v in dict(form).items() if k not in skip}
+    safe = {
+        k: v
+        for k, v in dict(form).items()
+        if k not in skip and not _is_uploaded_file(v)
+    }
     request.session[_SESSION_KEY] = safe
 
 

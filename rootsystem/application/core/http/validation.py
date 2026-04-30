@@ -415,8 +415,9 @@ async def validate_async(
     The ``unique`` rule checks that a value does not already exist in the
     database.  Syntax::
 
-        'unique:table,column'              # basic uniqueness check
-        'unique:table,column,except_value' # exclude a row by primary key
+        'unique:table,column'                              # basic uniqueness check
+        'unique:table,column,except_value'                 # exclude a row by id (default PK)
+        'unique:table,column,except_value,except_column'   # exclude a row by a non-id PK
 
     Args:
         data: dict of field_name -> value (from request.form())
@@ -464,7 +465,22 @@ async def _check_unique(
     value: str,
     messages: dict[str, str] | None,
 ) -> str | None:
-    """Check uniqueness against the database via Tortoise connection."""
+    """Check uniqueness against the database via Tortoise connection.
+
+    Param grammar (comma-separated)::
+
+        unique:table,column                              # uniqueness only
+        unique:table,column,except_value                 # except where id = except_value
+        unique:table,column,except_value,except_column   # except where except_column = except_value
+
+    The 4th positional param defaults to ``'id'`` so existing
+    ``unique:users,email,42`` calls keep working. Tortoise lets a model
+    declare its primary key on any column (``code = fields.CharField(pk=True)``,
+    ``uuid = fields.UUIDField(pk=True)``); pre-1.25 the validator
+    hardcoded ``id`` in the SQL, so an edit form for a model with a
+    custom PK crashed at validation time with ``column "id" does not
+    exist``. The fix is the explicit override.
+    """
     if not param:
         raise ValueError("'unique' rule requires parameters: unique:table,column")
 
@@ -474,22 +490,27 @@ async def _check_unique(
 
     table = parts[0].strip()
     column = parts[1].strip()
-    except_id = parts[2].strip() if len(parts) > 2 else None
+    except_value = parts[2].strip() if len(parts) > 2 else None
+    except_column = parts[3].strip() if len(parts) > 3 else 'id'
 
     if not _IDENTIFIER_RE.match(table):
         raise ValueError(f"Invalid table name: '{table}'")
     if not _IDENTIFIER_RE.match(column):
         raise ValueError(f"Invalid column name: '{column}'")
+    # ``except_column`` is interpolated into raw SQL the same way as
+    # ``table`` and ``column``, so it gets the same identifier check.
+    if not _IDENTIFIER_RE.match(except_column):
+        raise ValueError(f"Invalid except column name: '{except_column}'")
 
     from tortoise import connections
 
     conn = connections.get('default')
 
-    if except_id:
-        sql = f'SELECT COUNT(*) AS cnt FROM {table} WHERE {column} = $1 AND id != $2'  # noqa: S608 — table/column validated against _IDENTIFIER_RE above; values are parameterized
-        _, result = await conn.execute_query(sql, [value, except_id])
+    if except_value:
+        sql = f'SELECT COUNT(*) AS cnt FROM {table} WHERE {column} = $1 AND {except_column} != $2'  # noqa: S608 — identifiers validated above; values are parameterized
+        _, result = await conn.execute_query(sql, [value, except_value])
     else:
-        sql = f'SELECT COUNT(*) AS cnt FROM {table} WHERE {column} = $1'  # noqa: S608 — table/column validated against _IDENTIFIER_RE above; values are parameterized
+        sql = f'SELECT COUNT(*) AS cnt FROM {table} WHERE {column} = $1'  # noqa: S608 — identifiers validated above; values are parameterized
         _, result = await conn.execute_query(sql, [value])
 
     count = result[0]['cnt'] if result else 0

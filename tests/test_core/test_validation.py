@@ -612,6 +612,67 @@ async def test_validate_async_unique_with_except():
 
 
 @pytest.mark.asyncio
+async def test_validate_async_unique_with_custom_except_column():
+    """Tortoise lets a model declare its PK on any column, so the
+    ``except`` half of the unique rule must be parametrisable. Pre-1.25
+    the SQL hardcoded ``id`` and an edit form for a model whose PK was
+    ``code`` / ``uuid`` / ``product_id`` crashed with
+    ``column "id" does not exist``.
+
+    Verified by inspecting the SQL the validator builds — the identifier
+    must land where ``id`` used to be, and the value must reach the
+    second placeholder unchanged.
+    """
+    with patch('tortoise.connections') as mock_conns:
+        conn = _mock_conn([{'cnt': 0}])
+        mock_conns.get.return_value = conn
+        errors = await validate_async(
+            {'name': 'Widget'},
+            {'name': 'required|unique:products,name,P-001,code'},
+        )
+
+    assert errors == {}
+    sql_call = conn.execute_query.call_args
+    sql = sql_call[0][0]
+    # The 4th param replaces the hardcoded ``id`` in the WHERE clause.
+    assert 'code != $2' in sql, sql
+    assert 'id != $2' not in sql, (
+        f'unique rule still emits hardcoded "id != $2" — except_column override broken: {sql}'
+    )
+    assert sql_call[0][1] == ['Widget', 'P-001']
+
+
+@pytest.mark.asyncio
+async def test_validate_async_unique_except_column_rejects_sql_injection():
+    """The ``except_column`` identifier is interpolated into raw SQL the
+    same way as ``table`` and ``column``, so it must be subject to the
+    same ``_IDENTIFIER_RE`` check. A malicious or malformed override
+    must raise BEFORE the query runs."""
+    with pytest.raises(ValueError, match='Invalid except column name'):
+        await validate_async(
+            {'name': 'Widget'},
+            {'name': 'required|unique:products,name,P-001,code; DROP TABLE--'},
+        )
+
+
+@pytest.mark.asyncio
+async def test_validate_async_unique_default_except_column_is_id():
+    """Backwards compat: 3-param form must still default to ``id``.
+    Existing projects rely on ``unique:users,email,42`` resolving to
+    ``WHERE email = $1 AND id != $2`` and that contract is preserved.
+    """
+    with patch('tortoise.connections') as mock_conns:
+        conn = _mock_conn([{'cnt': 0}])
+        mock_conns.get.return_value = conn
+        await validate_async(
+            {'email': 'a@b.com'},
+            {'email': 'required|email|unique:users,email,7'},
+        )
+    sql = conn.execute_query.call_args[0][0]
+    assert 'id != $2' in sql
+
+
+@pytest.mark.asyncio
 async def test_validate_async_unique_skipped_when_sync_fails():
     """If a sync rule fails (e.g., email format), unique is not checked."""
     errors = await validate_async(

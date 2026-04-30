@@ -82,6 +82,66 @@ def test_flash_old_overwrites_previous_flash(request_obj):
 
 
 # ---------------------------------------------------------------------------
+# Multipart / UploadFile — JSON serialization regression (HIGH)
+# ---------------------------------------------------------------------------
+
+
+class _FakeUploadFile:
+    """Mimics Starlette's ``UploadFile`` shape: ``filename`` + ``read``."""
+
+    def __init__(self, filename: str = 'avatar.png') -> None:
+        self.filename = filename
+
+    async def read(self, _size: int = -1) -> bytes:  # pragma: no cover — never called
+        return b''
+
+
+def test_flash_old_drops_uploaded_files_before_session_write(request_obj):
+    """Form has a file input + a text input + validation fails → flash_old
+    must not put the UploadFile into ``request.session``.
+
+    Pre-1.25 the helper kept the UploadFile and the cookie-backed
+    SessionMiddleware then crashed the response with
+    ``TypeError: Object of type UploadFile is not JSON serializable``
+    on the next ``json.dumps(session)``. Every multipart form with a
+    failing validation became a 500 after this function ran.
+    """
+    form = {
+        'title': 'My article',
+        'avatar': _FakeUploadFile('avatar.png'),
+    }
+
+    flash_old(request_obj, form)
+
+    stored = request_obj.session['_old']
+    assert stored == {'title': 'My article'}, (
+        'flash_old leaked an UploadFile into the session — cookie-backed '
+        'SessionMiddleware will crash json.dumps on the next response.'
+    )
+
+
+def test_flash_old_session_payload_is_json_serializable(request_obj):
+    """End-to-end guard: whatever ``flash_old`` writes must round-trip
+    through ``json.dumps`` so the cookie-backed SessionMiddleware can
+    serialise the session on response. This is the actual failure mode
+    the fix addresses, and asserting it directly keeps the regression
+    test honest even if the duck-typing heuristic above ever needs to
+    change.
+    """
+    import json
+
+    form = {
+        'title': 'My article',
+        'avatar': _FakeUploadFile('avatar.png'),
+        'tags': 'python,web',
+    }
+
+    flash_old(request_obj, form)
+
+    json.dumps(request_obj.session['_old'])
+
+
+# ---------------------------------------------------------------------------
 # _old_value (the read path)
 # ---------------------------------------------------------------------------
 
