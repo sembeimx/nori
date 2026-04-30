@@ -241,6 +241,12 @@ class Post(NoriModelMixin, NoriSoftDeletes):  # NoriSoftDeletes replaces Model
 * `await Post.with_trashed().all()` — retrieves all records including deleted.
 * `await Post.only_trashed().all()` — retrieves only soft-deleted records.
 
+**Bulk operations (queryset-level):**
+* `await Post.objects.filter(...).delete()` — soft delete: issues a single `UPDATE ... SET deleted_at = NOW()` for every matching row. Returns the number of rows affected.
+* `await Post.objects.filter(...).force_delete()` — hard delete: issues a real SQL DELETE for every matching row. Use this when you actually want to purge.
+
+> **Important** — always go through `Post.objects` (or `Post.all_objects` / `Post.trashed`) for bulk operations. Tortoise's bare `Post.filter(...)` uses the framework's default Manager and does **not** apply the soft-delete filter or the soft-delete `delete()` override. If you call `await Post.filter(...).delete()` directly, rows are physically removed regardless of the mixin. Stick to `Post.objects.filter(...)` to keep the soft-delete contract intact.
+
 ### NoriTreeMixin (Advanced Recursive Adjacency CTE)
 Converts a table into a self-referential recursive ecosystem. Useful for infinite categories, nested permissions, or corporate hierarchies. Explicitly requires a Foreign Key field named `"parent"`.
 

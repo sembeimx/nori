@@ -18,12 +18,33 @@ from tortoise.queryset import QuerySet
 
 
 class SoftDeleteQuerySet(QuerySet):
-    """QuerySet that auto-excludes records with deleted_at."""
+    """QuerySet that auto-excludes records with deleted_at and routes
+    bulk ``.delete()`` through the soft-delete path."""
 
     def _clone(self) -> SoftDeleteQuerySet:
         qs = super()._clone()
         qs.__class__ = self.__class__
         return qs  # type: ignore[return-value]
+
+    async def delete(self) -> int:  # type: ignore[override]
+        """Soft delete: set ``deleted_at = NOW()`` on every matching row.
+
+        Tortoise's native ``QuerySet.delete()`` issues a raw SQL DELETE
+        without calling ``Model.delete()``, so without this override the
+        mixin's per-instance soft-delete is silently bypassed by any
+        bulk ``await Model.filter(...).delete()`` and rows are
+        physically removed. Use :meth:`force_delete` when a hard delete
+        is what you actually want.
+        """
+        from tortoise.timezone import now
+
+        return await self.update(deleted_at=now())
+
+    def force_delete(self) -> Any:
+        """Hard delete: bypass the soft-delete override and issue a real
+        SQL DELETE for every matching row. Awaitable, returns whatever
+        Tortoise's native ``QuerySet.delete()`` returns."""
+        return super().delete()
 
 
 class SoftDeleteManager(Manager):
@@ -41,9 +62,15 @@ class TrashedManager(Manager):
 
 
 class AllObjectsManager(Manager):
-    """Manager without filters (includes everything)."""
+    """Manager without filters (includes active + deleted).
 
-    pass
+    Returns the soft-delete queryset so bulk ``.delete()`` through this
+    manager is also soft — call ``.force_delete()`` when physical
+    removal is intended.
+    """
+
+    def get_queryset(self) -> SoftDeleteQuerySet:
+        return SoftDeleteQuerySet(self._model)  # type: ignore[return-value]
 
 
 class NoriSoftDeletes(Model):
