@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import time
 
-from core.cache import cache_delete, cache_get, cache_set
+from core.cache import cache_delete, cache_get, cache_incr, cache_set
 from core.logger import get_logger
 
 _log = get_logger('auth')
@@ -34,6 +34,18 @@ _PREFIX = 'login_guard:'
 _MAX_ATTEMPTS = 5
 _LOCKOUT_SCHEDULE = [60, 300, 900, 1800, 3600]  # 1m, 5m, 15m, 30m, 1h
 _TRACKING_TTL = 3600  # Keep attempt data for 1 hour
+
+
+def _attempts_key(identifier: str) -> str:
+    return f'{_PREFIX}{identifier}:attempts'
+
+
+def _lockouts_key(identifier: str) -> str:
+    return f'{_PREFIX}{identifier}:lockouts'
+
+
+def _locked_until_key(identifier: str) -> str:
+    return f'{_PREFIX}{identifier}:locked_until'
 
 
 def _lockout_duration(lockout_count: int) -> int:
@@ -50,14 +62,9 @@ async def check_login_allowed(identifier: str) -> tuple[bool, int]:
     When allowed is True, retry_after is 0.
     When allowed is False, retry_after is the seconds remaining until the lockout expires.
     """
-    data = await cache_get(f'{_PREFIX}{identifier}')
-    if data is None:
-        return True, 0
-
-    locked_until = data.get('locked_until', 0)
+    locked_until = await cache_get(_locked_until_key(identifier)) or 0
     if locked_until and time.time() < locked_until:
         return False, int(locked_until - time.time()) + 1
-
     return True, 0
 
 
@@ -65,27 +72,33 @@ async def record_failed_login(identifier: str) -> None:
     """
     Record a failed login attempt. After ``_MAX_ATTEMPTS`` consecutive failures,
     the account is locked with escalating duration.
-    """
-    key = f'{_PREFIX}{identifier}'
-    data = await cache_get(key) or {'attempts': 0, 'lockouts': 0, 'locked_until': 0}
 
-    # If currently locked, don't count additional attempts
-    if data.get('locked_until', 0) and time.time() < data['locked_until']:
+    State lives in three scalar cache keys (attempts, lockouts, locked_until)
+    so the counter can use atomic INCR — see AGENTS.md §6 "Cache atomicity".
+    A previous single-dict storage shape was vulnerable to a TOCTOU race
+    that let parallel callers all read attempts=0 and clobber each other,
+    bypassing the lockout entirely.
+    """
+    # Fast path: already locked, no work to do.
+    locked_until = await cache_get(_locked_until_key(identifier)) or 0
+    if locked_until and time.time() < locked_until:
         return
 
-    data['attempts'] = data.get('attempts', 0) + 1
+    # Atomic increment — survives 100 concurrent failed logins.
+    attempts = await cache_incr(_attempts_key(identifier), ttl=_TRACKING_TTL)
 
-    if data['attempts'] >= _MAX_ATTEMPTS:
-        lockouts = data.get('lockouts', 0)
-        duration = _lockout_duration(lockouts)
-        data['locked_until'] = time.time() + duration
-        data['lockouts'] = lockouts + 1
-        data['attempts'] = 0
-        _log.warning('Account locked: %s (lockout #%d, %ds)', identifier, data['lockouts'], duration)
-
-    await cache_set(key, data, _TRACKING_TTL)
+    if attempts >= _MAX_ATTEMPTS:
+        lockouts = await cache_incr(_lockouts_key(identifier), ttl=_TRACKING_TTL)
+        duration = _lockout_duration(lockouts - 1)  # cache_incr returns the new value (1-indexed)
+        new_locked_until = time.time() + duration
+        await cache_set(_locked_until_key(identifier), new_locked_until, _TRACKING_TTL)
+        # Reset the attempts counter so the next round starts clean.
+        await cache_delete(_attempts_key(identifier))
+        _log.warning('Account locked: %s (lockout #%d, %ds)', identifier, lockouts, duration)
 
 
 async def clear_failed_logins(identifier: str) -> None:
     """Clear all failed login tracking for the given identifier (call on successful login)."""
-    await cache_delete(f'{_PREFIX}{identifier}')
+    await cache_delete(_attempts_key(identifier))
+    await cache_delete(_lockouts_key(identifier))
+    await cache_delete(_locked_until_key(identifier))

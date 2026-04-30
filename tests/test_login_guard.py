@@ -67,21 +67,15 @@ async def test_escalating_lockout():
     assert allowed is False
 
     # Can't monkeypatch easily across modules with just function-level,
-    # so we simulate: clear and re-trigger
+    # so we simulate: clear, then preset the lockouts counter directly
+    # to put the next round on the second tier of the schedule.
     await clear_failed_logins('user@example.com')
 
-    # Simulate first lockout already happened by setting state directly
     from core.cache import cache_set
 
-    await cache_set(
-        'login_guard:user@example.com',
-        {
-            'attempts': 0,
-            'lockouts': 1,
-            'locked_until': 0,
-        },
-        3600,
-    )
+    # Storage shape is per-key scalars (see login_guard.py — this layout is
+    # what makes cache_incr atomic against concurrent failed logins).
+    await cache_set('login_guard:user@example.com:lockouts', 1, 3600)
 
     # Trigger second lockout
     for _ in range(_MAX_ATTEMPTS):
@@ -147,3 +141,26 @@ async def test_successful_login_after_some_failures():
 
     allowed, _ = await check_login_allowed('user@example.com')
     assert allowed is True
+
+
+@pytest.mark.asyncio
+async def test_brute_force_concurrent_attempts_trigger_lockout():
+    """Regression for the TOCTOU race that allowed concurrent attacks to bypass
+    the 5-attempt lockout.
+
+    Before the fix: 100 concurrent failed logins all read attempts=0 and wrote
+    attempts=1 — counter never crossed _MAX_ATTEMPTS, lockout never fired.
+    After the fix: cache_incr is atomic, so the counter advances reliably
+    even under contention and the account locks.
+    """
+    import asyncio
+
+    # 100 concurrent failed logins for the same identifier
+    await asyncio.gather(*[record_failed_login('victim@example.com') for _ in range(100)])
+
+    allowed, retry_after = await check_login_allowed('victim@example.com')
+    assert allowed is False, (
+        'Concurrent failed logins did not trigger the lockout — '
+        'this means the cache update is racy and brute-force attacks bypass it.'
+    )
+    assert retry_after > 0
