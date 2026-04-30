@@ -294,6 +294,7 @@ The **actual file content** is inspected for known file signatures:
 | `gif` | `GIF87a` or `GIF89a` | GIF versions |
 | `pdf` | `%PDF` | PDF header |
 | `webp` | `RIFF` + `WEBP` at offset 8 | WebP container (full RIFF structure validated) |
+| `svg` | `<?xml` or `<svg` (opt-in only — see below) | XML declaration / root tag |
 
 ### Why Magic Bytes Matter
 
@@ -309,7 +310,38 @@ With magic byte verification, the actual file content is inspected. A PE executa
 
 ### Design Decision
 
-Magic byte verification is implemented in **pure Python** (~15 lines) without external dependencies. This is intentional — `python-magic` requires `libmagic` (a C library, ~10 MB), which violates Nori's "Keep it Native" philosophy. The pure Python approach covers the most common file types (~90% of real-world uploads). Extensions without known signatures (SVG, CSV, etc.) skip this check gracefully.
+Magic byte verification is implemented in **pure Python** (~15 lines) without external dependencies. This is intentional — `python-magic` requires `libmagic` (a C library, ~10 MB), which violates Nori's "Keep it Native" philosophy. The pure Python approach covers the most common file types (~90% of real-world uploads). Extensions without known signatures (CSV, TXT, etc.) skip this check gracefully.
+
+### SVG: opt-in with content scan (v1.34+)
+
+SVG is **excluded from the default `allowed_types`**. An SVG document is XML and can carry executable JavaScript (`<script>`, `on*` event handlers, `<foreignObject>` smuggling HTML); when the document is rendered inline by a browser — `<object>`, `<embed>`, or a direct link served with `Content-Type: image/svg+xml` — the script runs in the host page's origin. That is stored XSS by upload.
+
+Pre-1.34 a developer who called `save_upload(file)` without specifying `allowed_types` silently inherited SVG support, magic-byte verification was skipped for SVG ("unknown signature"), and arbitrary `<svg><script>...</script></svg>` payloads passed all three validation layers. v1.34 closes both halves of the gap:
+
+```python
+# Default — no SVG. A project that doesn't deal with SVG never has to think about it.
+result = await save_upload(file)
+
+# Opt-in — projects that need SVG accept the responsibility:
+result = await save_upload(file, allowed_types=['svg', 'png', ...])
+```
+
+When SVG is opted into, a content scan rejects:
+
+| Vector | Rejected because |
+|---|---|
+| `<script>` | inline JavaScript executes when SVG is rendered |
+| `<foreignObject>` | smuggles HTML (including `<script>`) into the SVG namespace |
+| `<iframe>` / `<embed>` / `<object>` | load arbitrary documents |
+| `on*` event handlers (`onload`, `onclick`, …) | execute JavaScript when the SVG is parsed/painted |
+
+The scan is intentionally **reject, not sanitise** — sanitising arbitrary XML is a known unsolved problem (see the long history of mXSS bypasses against DOMPurify, bleach with SVG whitelist, etc.). Half-cleaned SVG is a worse outcome than a denied upload.
+
+**Operational guidance.** When you need to accept SVG:
+
+1. Run a vetted server-side sanitiser on the bytes BEFORE calling `save_upload` — even with the framework's content scan, defense in depth wins.
+2. Serve uploaded SVGs with `Content-Type: text/plain` or `application/octet-stream`. The browser will not parse the XML as SVG and the scripts cannot fire. Lose inline rendering but kill the XSS surface entirely.
+3. If neither is acceptable, host SVG uploads on a separate origin (`uploads.example.com`) so any XSS that slips through the scan cannot read the main app's cookies.
 
 ---
 

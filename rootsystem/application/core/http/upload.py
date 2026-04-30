@@ -46,6 +46,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 import shutil
 import tempfile
 import uuid
@@ -64,6 +65,33 @@ _MIME_MAP: dict[str, str] = {
     'webp': 'image/webp',
     'svg': 'image/svg+xml',
 }
+
+# Extensions intentionally excluded from the default ``allowed_types``
+# returned by :func:`_default_allowed_types`. SVG is the canonical
+# example: an SVG is XML, can carry ``<script>`` and ``on*`` event
+# handlers, and executes them when a browser renders it inline (as
+# ``<object>``, ``<embed>``, or a direct link served with
+# ``Content-Type: image/svg+xml``). The framework cannot safely accept
+# arbitrary SVG content without parsing the document, so the safe
+# default is "off" — projects that need SVG opt in explicitly via
+# ``allowed_types=['svg', ...]`` and accept the responsibility of
+# either sanitising the content server-side (e.g. ``bleach`` with an
+# SVG whitelist) or serving uploads with ``Content-Type: text/plain``.
+# When opt-in IS used, :func:`_validate_svg_content` provides defence
+# in depth by rejecting the most common script vectors.
+_UNSAFE_BY_DEFAULT: frozenset[str] = frozenset({'svg'})
+
+
+def _default_allowed_types() -> list[str]:
+    """Default extension allowlist when ``save_upload`` is called
+    without an explicit ``allowed_types``.
+
+    Excludes anything in :data:`_UNSAFE_BY_DEFAULT` so a developer who
+    forgets to specify the list cannot silently inherit a stored-XSS
+    surface (the v1.33 / pre-v1.34 default included ``svg``).
+    """
+    return [ext for ext in _MIME_MAP if ext not in _UNSAFE_BY_DEFAULT]
+
 
 # ---------------------------------------------------------------------------
 # Magic byte signatures for content-based file type verification.
@@ -84,7 +112,44 @@ _MAGIC_BYTES: dict[str, tuple[bytes, ...]] = {
     'gif': (b'GIF87a', b'GIF89a'),
     'pdf': (b'%PDF',),
     'webp': (b'RIFF',),  # Full check: bytes 8-12 must be WEBP (see _validate_magic_bytes)
+    # SVG is XML; ``<?xml`` and ``<svg`` cover essentially every
+    # real-world SVG. The prefix check is a sanity guard ONLY — an
+    # attacker can trivially supply ``<?xml`` and still embed
+    # ``<script>`` further down. The substantive defence is
+    # :func:`_validate_svg_content`, which scans the body for script
+    # and event-handler vectors. SVG is opt-in (excluded from
+    # ``_default_allowed_types``), so this entry only fires for
+    # projects that explicitly accepted the format.
+    'svg': (b'<?xml', b'<svg'),
 }
+
+
+# SVG content patterns that turn an SVG into an XSS payload when the
+# document is rendered inline by a browser. The framework rejects an
+# upload containing ANY of these — this is intentionally conservative
+# (no attempt to sanitise the document; a denied upload is safer than
+# a half-cleaned one). Patterns are applied lowercased so the check is
+# case-insensitive.
+_SVG_FORBIDDEN_TAGS: tuple[bytes, ...] = (
+    b'<script',
+    b'<foreignobject',  # smuggles HTML — including <script> — into SVG
+    b'<iframe',
+    b'<embed',
+    b'<object',
+)
+
+# ``<svg ... onload="...">`` style event handlers. The pattern matches
+# any whitespace-bounded ``on<lower>=`` substring; that catches
+# ``onload``, ``onclick``, ``onerror``, ``onmouseover``, and the long
+# tail without enumerating every event name.
+_SVG_EVENT_HANDLER_RE = re.compile(rb'\son[a-z]+\s*=', re.IGNORECASE)
+
+# Cap on how many bytes we scan for SVG content checks. Legitimate SVG
+# icons / diagrams are well under this; extremely large SVGs are an
+# uncommon and suspicious shape. The cap also bounds the worst-case
+# CPU cost of the regex scan so a maliciously-crafted multi-MB SVG
+# cannot become a DoS vector for the validator itself.
+_SVG_SCAN_LIMIT: int = 256 * 1024  # 256 KB
 
 
 class UploadError(Exception):
@@ -132,6 +197,48 @@ def _validate_mime_type(content_type: str | None, ext: str) -> None:
         base_type = content_type.split(';')[0].strip()
         if base_type != expected:
             raise UploadError(f"MIME type '{base_type}' does not match extension '.{ext}' (expected '{expected}')")
+
+
+def _validate_svg_content(content: bytes) -> None:
+    """Reject SVG payloads that would execute scripts when rendered inline.
+
+    The check inspects up to :data:`_SVG_SCAN_LIMIT` bytes (legitimate
+    SVG icons are far smaller; the cap bounds worst-case scan CPU
+    against a maliciously-large input). Two passes:
+
+    * **Forbidden tags** — ``<script>``, ``<foreignObject>``,
+      ``<iframe>``, ``<embed>``, ``<object>``. Any presence aborts.
+      ``<foreignObject>`` is the most insidious — it embeds arbitrary
+      HTML inside the SVG namespace, including ``<script>``, and
+      sanitisers that only strip ``<script>`` miss it.
+    * **Event handlers** — any ``\\son<lower-letters>=`` attribute
+      (``onload``, ``onclick``, ``onerror``, ``onmouseover``, and the
+      long tail of HTML/SVG events). Generic regex catches the entire
+      class without enumerating every event name.
+
+    The framework REJECTS rather than SANITISES because half-cleaned
+    SVG is a worse outcome than a denied upload — content sanitation
+    of arbitrary XML is a known unsolved problem (see the long history
+    of mXSS bypasses against DOMPurify, bleach, etc.). Projects that
+    need to accept arbitrary SVG should run a vetted sanitiser on the
+    bytes BEFORE calling :func:`save_upload`, or accept and serve the
+    document with a defanged ``Content-Type: text/plain`` so the
+    browser does not parse it.
+    """
+    head = content[:_SVG_SCAN_LIMIT]
+    lower = head.lower()
+    for tag in _SVG_FORBIDDEN_TAGS:
+        if tag in lower:
+            raise UploadError(
+                f"SVG contains forbidden tag '{tag.decode()}' — refuses inline "
+                'scripts and HTML embedding to prevent stored XSS. Sanitise '
+                'server-side before upload, or serve with Content-Type: text/plain.'
+            )
+    if _SVG_EVENT_HANDLER_RE.search(head):
+        raise UploadError(
+            'SVG contains an on-* event handler attribute (e.g. onload, onclick) '
+            '— would execute when rendered inline. Sanitise before upload.'
+        )
 
 
 def _validate_magic_bytes(content: bytes, ext: str) -> None:
@@ -337,7 +444,7 @@ async def save_upload(
         ValueError: If the requested storage driver is not registered.
     """
     if allowed_types is None:
-        allowed_types = list(_MIME_MAP.keys())
+        allowed_types = _default_allowed_types()
     if max_size is None:
         max_size = config.get('UPLOAD_MAX_SIZE', 10 * 1024 * 1024)
     if upload_dir is None:
@@ -376,6 +483,18 @@ async def save_upload(
         head = spool.read(_MAGIC_HEAD_SIZE)
         spool.seek(0)
         _validate_magic_bytes(head, ext)
+
+        # SVG content scan. The magic-byte prefix above only proves
+        # the file looks like XML — an attacker can prefix ``<?xml``
+        # and still embed ``<script>`` further down. ``_validate_svg_content``
+        # rejects the script / event-handler vectors that turn an SVG
+        # into stored XSS when rendered inline. Cap the read at
+        # ``_SVG_SCAN_LIMIT`` so a multi-MB SVG cannot become a CPU
+        # DoS for the validator.
+        if ext == 'svg':
+            scan_buf = spool.read(_SVG_SCAN_LIMIT)
+            spool.seek(0)
+            _validate_svg_content(scan_buf)
 
         # Generate unique name and dispatch to driver
         filename = _generate_filename(ext)
