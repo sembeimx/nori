@@ -4,6 +4,14 @@ All notable changes to Nori are documented here. Format follows [Keep a Changelo
 
 ---
 
+## [1.20.3] — 2026-04-30
+
+### Tests
+
+- **`lupa` is now a dev dependency.** The Redis-backed atomicity tests for `cache_incr`, `cache_atomic_update`, and `throttle.check_and_add` exercise the Lua scripts (`_INCR_LUA`, `_CHECK_AND_ADD_LUA`) that closed the v1.18.0 TOCTOU races. fakeredis can run those scripts only when `lupa` (Python bindings to libLua) is installed, so before this release the six tests were guarded by `pytest.skip('Redis incr tests require lupa for fakeredis Lua support')` and the actual Lua execution path went uncovered. Adding `lupa>=2.0` to `requirements-dev.txt` lifts the gate and turns those skips into real tests (suite goes from 856 pass + 6 skip to 862 pass + 0 skip). `lupa` ships pre-built wheels for macOS/Linux, so no compiler or system Lua install is required.
+
+---
+
 ## [1.20.2] — 2026-04-30
 
 ### Added
