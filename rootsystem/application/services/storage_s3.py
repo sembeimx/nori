@@ -36,11 +36,16 @@ def _get_client() -> httpx.AsyncClient:
 
     Pools TCP/TLS connections across uploads — per-call
     ``async with httpx.AsyncClient()`` paid the full handshake on every
-    PUT and risked socket exhaustion under load.
+    PUT and risked socket exhaustion under load. First call registers
+    ``shutdown`` with ``core.lifecycle`` so the pool closes cleanly on
+    graceful ASGI shutdown.
     """
     global _client
     if _client is None:
         _client = httpx.AsyncClient(timeout=30.0)
+        from core.lifecycle import register_shutdown
+
+        register_shutdown('storage_s3', shutdown)
     return _client
 
 

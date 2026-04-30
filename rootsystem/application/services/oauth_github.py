@@ -57,11 +57,17 @@ def _get_client() -> httpx.AsyncClient:
     """Return the module-level httpx client, creating it on first use.
 
     A single persistent client pools TCP/TLS connections to
-    ``github.com`` and ``api.github.com`` across OAuth callbacks.
+    ``github.com`` and ``api.github.com`` across OAuth callbacks. The
+    first call also registers ``shutdown`` with ``core.lifecycle`` so
+    the ASGI lifespan closes the pool cleanly on graceful shutdown
+    instead of leaving half-open sockets for the OS to reap.
     """
     global _client
     if _client is None:
         _client = httpx.AsyncClient(timeout=30.0)
+        from core.lifecycle import register_shutdown
+
+        register_shutdown('oauth_github', shutdown)
     return _client
 
 

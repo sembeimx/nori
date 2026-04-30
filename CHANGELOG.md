@@ -4,6 +4,32 @@ All notable changes to Nori are documented here. Format follows [Keep a Changelo
 
 ---
 
+## [1.27.0] — 2026-04-30
+
+### Fixed
+
+- **``background()`` silently blocked the event loop on synchronous callables (HIGH).** ``core/tasks.py`` wrapped every callable in an ``async def`` and called the user's function directly inside the wrapper. Starlette's ``BackgroundTask`` saw an async wrapper and skipped its own ``run_in_threadpool`` path; if the callable was synchronous (legacy mail SDK, image processing, ``requests.get``, ``time.sleep``), the entire body of work ran on the event loop and froze every other request for its duration. The framework promised "background-safe" and silently failed the promise for any sync callable. The fix adds a single dispatch helper, ``_run(func, args, kwargs)``: coroutine functions are awaited directly; sync callables run in a worker thread via ``asyncio.to_thread``. The legacy "factory" pattern (sync function returning a coroutine) still works — the sync portion runs in the thread, the awaitable is awaited on the loop. Both ``background()`` and ``background_tasks()`` use the new dispatch.
+- **Service-driver httpx pools leaked across restarts and hot-reloads (MED).** Six service drivers (``oauth_github``, ``oauth_google``, ``storage_s3``, ``storage_gcs``, ``mail_resend``, ``search_meilisearch``) hold a module-level ``httpx.AsyncClient`` and each exposes an ``async def shutdown()`` that ``await``-s ``client.aclose()`` — but no code path actually invoked them. The ASGI lifespan tore down DB connections and exited, leaving every active TCP/TLS connection to the OS to reap. In dev that manifested as steady file-descriptor accumulation across ``uvicorn --reload`` cycles; in production it manifested as half-open sockets piling up across rolling restarts. The fix introduces ``core/lifecycle.py``, a registry of named shutdown handlers. Each service driver registers its own ``shutdown`` lazily — inside ``_get_client()``, on first actual use — so a project that never exercises (say) S3 pays no shutdown cost for it. The ASGI lifespan calls ``run_shutdown_handlers()`` after WebSockets close and before the audit flush + Tortoise teardown. Per-handler timeouts (default 5 s) and exception-swallowing keep one stuck or crashing driver from blocking the rest, matching the shape of ``audit.flush_pending`` and ``ws.close_all_connections``.
+
+### Improved
+
+- **``NoriSoftDeletes.delete()`` docstring spells out the Tortoise signal contract.** Soft delete is implemented via ``await self.save(...)``, so Tortoise emits ``post_save``, *not* ``post_delete``. A hook registered with ``@post_delete(YourModel)`` will NOT fire on ``await instance.delete()`` for soft-deletable models — only on ``force_delete()``. This is intentional (firing ``post_delete`` would mislead hooks doing irreversible cleanup like S3 object removal, since the user can call ``restore()`` later), but it diverges from the Django/Eloquent convention enough that the per-method docstring now states the contract explicitly and points to the ``is_trashed`` check on ``post_save`` for hooks that need soft-delete reactivity. No behavior change.
+
+### Tests
+
+926 → 937 passing. New regression tests, each verified to fail on pre-1.27 code:
+- ``test_background_sync_callable_does_not_block_event_loop`` — runs a 200 ms blocking sync function concurrently with an event-loop ticker; the ticker must advance ≥5 times during the block (would advance ~zero on pre-1.27)
+- ``test_background_async_callable_runs_on_event_loop`` — coroutine functions still go through the loop, not ``asyncio.to_thread``
+- ``test_background_handles_sync_factory_returning_coroutine`` — the legacy factory pattern still works (sync portion on thread, coroutine awaited on loop)
+- ``test_background_tasks_plural_offloads_sync_callables`` — same offload contract for the ``background_tasks()`` plural variant
+- ``test_register_shutdown_appends_one_entry`` / ``…_is_idempotent_for_same_handler`` / ``…_allows_distinct_handlers_under_same_name`` — registry semantics (add, idempotency by identity, name field is informational)
+- ``test_run_shutdown_handlers_invokes_each_in_order`` — sequential, deterministic
+- ``test_run_shutdown_handlers_returns_immediately_when_empty`` — fast path for projects that activate no service driver
+- ``test_run_shutdown_handlers_swallows_per_handler_errors`` — a crashing handler does not derail the rest
+- ``test_run_shutdown_handlers_warns_on_per_handler_timeout`` — stuck handler produces a warning, next handler still runs
+
+---
+
 ## [1.26.0] — 2026-04-30
 
 ### Fixed

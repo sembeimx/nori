@@ -105,7 +105,37 @@ class NoriSoftDeletes(Model):
         abstract = True
 
     async def delete(self, using_db: Any = None) -> None:
-        """Soft delete: marks deleted_at with current timestamp."""
+        """Soft delete: marks ``deleted_at`` with the current timestamp.
+
+        .. note::
+           **Tortoise signal contract — read this if you wire model hooks.**
+
+           Soft delete is implemented via ``await self.save(...)``. That
+           means Tortoise emits **``post_save``**, *not* ``post_delete``,
+           when this method runs. A hook registered with
+           ``@post_delete(YourModel)`` will NOT fire on
+           ``await instance.delete()`` for soft-deletable models — it
+           only fires when :meth:`force_delete` runs (which calls
+           ``super().delete()``).
+
+           This is intentional. Soft delete is "the row is not actually
+           deleted, just hidden" — firing ``post_delete`` would be a
+           lie, and would surprise hooks that perform irreversible
+           cleanup (e.g. deleting an S3 object, dropping a related
+           cache entry) only to have the user call
+           :meth:`restore` later and discover the data is gone.
+
+           If you need to react to a soft delete specifically, hook
+           ``post_save`` and check ``instance.is_trashed`` (which
+           returns ``True`` exactly when ``deleted_at`` was just set
+           on this save). For hooks that should run only on permanent
+           removal, hook ``post_delete`` as usual and use
+           :meth:`force_delete` from your application code.
+
+           Tortoise has no built-in "soft-deleted" signal; if your
+           project needs one, emit it from the controller after
+           ``await instance.delete()`` returns.
+        """
         from tortoise.timezone import now
 
         self.deleted_at = now()

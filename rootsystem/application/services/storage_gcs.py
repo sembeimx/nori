@@ -51,11 +51,16 @@ def _get_client() -> httpx.AsyncClient:
 
     A single persistent client lets httpx pool TCP/TLS connections to
     ``storage.googleapis.com`` and ``oauth2.googleapis.com`` across
-    uploads, instead of paying a fresh handshake on every PUT.
+    uploads, instead of paying a fresh handshake on every PUT. First
+    call registers ``shutdown`` with ``core.lifecycle`` so the pool
+    closes cleanly on graceful ASGI shutdown.
     """
     global _client
     if _client is None:
         _client = httpx.AsyncClient(timeout=30.0)
+        from core.lifecycle import register_shutdown
+
+        register_shutdown('storage_gcs', shutdown)
     return _client
 
 

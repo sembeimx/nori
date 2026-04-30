@@ -16,6 +16,8 @@ Usage::
 
 from __future__ import annotations
 
+import asyncio
+import inspect
 from collections.abc import Callable
 from typing import Any
 
@@ -29,14 +31,53 @@ _log = get_logger('tasks')
 __all__ = ['background', 'background_tasks', 'run_in_background']
 
 
+async def _run(func: Callable[..., Any], args: tuple, kwargs: dict) -> None:
+    """Run ``func`` cooperatively — async funcs are awaited, sync funcs run in a worker thread.
+
+    Pre-1.27 the wrapper was unconditionally ``async def`` and called the
+    user's callable directly inside it; if the callable was synchronous
+    (e.g. a legacy mail SDK, an image-processing routine, ``time.sleep``,
+    ``requests.get``), Starlette could not detect the sync nature
+    (because Starlette's ``BackgroundTask`` saw an async wrapper and
+    skipped its own ``run_in_threadpool`` path) and the function ran on
+    the event loop, blocking every other request for the duration. The
+    "background-safe" promise of this helper failed silently for any
+    sync callable.
+
+    The current implementation matches Starlette's own dispatch:
+    coroutine functions are awaited directly; everything else is
+    offloaded to a worker thread via ``asyncio.to_thread``. A sync
+    callable that returns an awaitable (the legacy "factory" pattern)
+    still works — the sync portion runs in the thread, the awaitable is
+    awaited on the loop. Errors from either path are logged at ERROR
+    via the caller's wrapper; this helper itself is intentionally
+    minimal.
+    """
+    if inspect.iscoroutinefunction(func):
+        await func(*args, **kwargs)
+        return
+    # Sync callable — run in the default thread executor so blocking I/O
+    # or CPU-bound work does not freeze the event loop.
+    result = await asyncio.to_thread(func, *args, **kwargs)
+    if inspect.isawaitable(result):
+        # Factory pattern: a sync function whose return value is a
+        # coroutine. The factory ran in the thread; the coroutine itself
+        # must be awaited on the loop where it was created.
+        await result
+
+
 def background(func: Callable[..., Any], *args: Any, **kwargs: Any) -> BackgroundTask:
-    """Create a BackgroundTask that logs errors instead of crashing."""
+    """Create a BackgroundTask that logs errors instead of crashing.
+
+    The returned task offloads synchronous callables to a worker thread
+    via ``asyncio.to_thread`` so a slow sync function does not block the
+    event loop. Coroutine functions are awaited directly. See ``_run``
+    for the dispatch detail.
+    """
 
     async def _wrapper() -> None:
         try:
-            result = func(*args, **kwargs)
-            if hasattr(result, '__await__'):
-                await result
+            await _run(func, args, kwargs)
         except Exception as exc:
             _log.error('Background task %s failed: %s', func.__name__, exc, exc_info=True)
 
@@ -46,16 +87,16 @@ def background(func: Callable[..., Any], *args: Any, **kwargs: Any) -> Backgroun
 def background_tasks(*tasks: tuple) -> BackgroundTasks:
     """Create multiple background tasks.
 
-    Each element is a ``(func, args_tuple, kwargs_dict)`` triple.
+    Each element is a ``(func, args_tuple, kwargs_dict)`` triple. Each
+    task uses the same sync/async dispatch as :func:`background` — sync
+    callables run in a worker thread, coroutine functions on the loop.
     """
     bg = BackgroundTasks()
     for func, a, kw in tasks:
 
         async def _make_wrapper(_f=func, _a=a, _k=kw) -> None:
             try:
-                result = _f(*_a, **_k)
-                if hasattr(result, '__await__'):
-                    await result
+                await _run(_f, _a, _k)
             except Exception as exc:
                 _log.error('Background task %s failed: %s', _f.__name__, exc, exc_info=True)
 

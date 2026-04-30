@@ -30,11 +30,16 @@ def _get_client() -> httpx.AsyncClient:
 
     A single persistent client lets httpx pool TCP/TLS connections; the
     previous per-call ``async with httpx.AsyncClient()`` paid the full
-    handshake cost on every send.
+    handshake cost on every send. First call registers ``shutdown`` with
+    ``core.lifecycle`` so the pool closes cleanly on graceful ASGI
+    shutdown.
     """
     global _client
     if _client is None:
         _client = httpx.AsyncClient(timeout=30.0)
+        from core.lifecycle import register_shutdown
+
+        register_shutdown('mail_resend', shutdown)
     return _client
 
 

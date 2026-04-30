@@ -56,11 +56,16 @@ def _get_client() -> httpx.AsyncClient:
 
     A single persistent client pools TCP/TLS connections to
     ``oauth2.googleapis.com`` and ``openidconnect.googleapis.com`` across
-    OAuth callbacks.
+    OAuth callbacks. The first call registers ``shutdown`` with
+    ``core.lifecycle`` so the ASGI lifespan closes the pool on graceful
+    shutdown.
     """
     global _client
     if _client is None:
         _client = httpx.AsyncClient(timeout=30.0)
+        from core.lifecycle import register_shutdown
+
+        register_shutdown('oauth_google', shutdown)
     return _client
 
 

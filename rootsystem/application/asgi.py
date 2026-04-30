@@ -121,6 +121,16 @@ async def lifespan(app):
     from core.ws import close_all_connections as _close_ws
 
     await _close_ws()
+
+    # Close every service-driver httpx pool that registered itself on
+    # first use (S3 / GCS / OAuth / mail / search). Pre-1.27 these were
+    # left to the OS to reap, which manifested as half-open sockets
+    # piling up across rolling restarts and FD accumulation across
+    # ``uvicorn --reload`` cycles in dev.
+    from core.lifecycle import run_shutdown_handlers as _run_shutdowns
+
+    await _run_shutdowns()
+
     if settings.DB_ENABLED:
         # Drain any in-flight ``audit()`` writes BEFORE the DB
         # connection pool is closed. Otherwise a SIGTERM arriving
