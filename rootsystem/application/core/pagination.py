@@ -3,12 +3,33 @@
 from __future__ import annotations
 
 import base64
+import hashlib
+import hmac
 import json
 import math
 from datetime import date, datetime
 from typing import Any
 
 from core.collection import collect
+from core.conf import config
+
+# Length of the truncated HMAC tag attached to each cursor token. 16 bytes
+# (128 bits) is plenty for tamper detection — full SHA-256 would inflate
+# the URL without adding meaningful security for a non-secret token.
+_CURSOR_TAG_BYTES: int = 16
+
+
+def _cursor_secret() -> bytes:
+    """Resolve the signing key used to sign cursor tokens.
+
+    Falls back to ``SECRET_KEY`` so projects don't have to configure a
+    separate setting. The cursor tag isn't a secret — it just needs to
+    be unforgeable by an external client.
+    """
+    secret = config.get('SECRET_KEY', '')
+    if not secret:
+        raise RuntimeError('SECRET_KEY is required to sign pagination cursors')
+    return secret.encode() if isinstance(secret, str) else secret
 
 
 async def paginate(queryset: Any, page: int = 1, per_page: int = 20) -> dict[str, Any]:
@@ -50,7 +71,13 @@ async def paginate(queryset: Any, page: int = 1, per_page: int = 20) -> dict[str
 
 
 def _encode_cursor(value: Any) -> str:
-    """Encode a cursor value as a URL-safe base64 token.
+    """Encode a cursor value as a URL-safe base64 token signed with HMAC.
+
+    The token format is ``<urlsafe_b64(payload)>.<urlsafe_b64(tag)>`` where
+    ``tag`` is the first 16 bytes of ``HMAC-SHA256(SECRET_KEY, payload)``.
+    The signature lets the server reject hand-crafted cursors — without
+    it, a client could substitute arbitrary timestamps to trigger
+    expensive range scans or skip rows it shouldn't see.
 
     Supports datetimes, dates, and JSON-native scalars (int, str, float).
     The token is opaque to callers — they should treat it as a string.
@@ -61,21 +88,36 @@ def _encode_cursor(value: Any) -> str:
         payload = ['date', value.isoformat()]
     else:
         payload = ['raw', value]
-    return base64.urlsafe_b64encode(json.dumps(payload).encode()).rstrip(b'=').decode('ascii')
+    payload_bytes = json.dumps(payload).encode()
+    tag = hmac.new(_cursor_secret(), payload_bytes, hashlib.sha256).digest()[:_CURSOR_TAG_BYTES]
+    payload_b64 = base64.urlsafe_b64encode(payload_bytes).rstrip(b'=').decode('ascii')
+    tag_b64 = base64.urlsafe_b64encode(tag).rstrip(b'=').decode('ascii')
+    return f'{payload_b64}.{tag_b64}'
 
 
 def _decode_cursor(cursor: str) -> Any:
-    """Decode a token produced by :func:`_encode_cursor`.
+    """Decode and verify a token produced by :func:`_encode_cursor`.
 
     Raises:
-        ValueError: If the token is malformed (returned to the caller as
-            a 400-class signal that the cursor is unusable).
+        ValueError: If the token is malformed, the signature is missing,
+            or the signature does not match. Surfaces to the caller as a
+            400-class signal that the cursor is unusable.
     """
     try:
-        padded = cursor + '=' * (-len(cursor) % 4)
-        kind, value = json.loads(base64.urlsafe_b64decode(padded))
+        payload_b64, tag_b64 = cursor.split('.', 1)
+        payload_bytes = base64.urlsafe_b64decode(payload_b64 + '=' * (-len(payload_b64) % 4))
+        provided_tag = base64.urlsafe_b64decode(tag_b64 + '=' * (-len(tag_b64) % 4))
     except (ValueError, TypeError) as exc:
         raise ValueError(f'Malformed pagination cursor: {cursor!r}') from exc
+
+    expected_tag = hmac.new(_cursor_secret(), payload_bytes, hashlib.sha256).digest()[:_CURSOR_TAG_BYTES]
+    if not hmac.compare_digest(provided_tag, expected_tag):
+        raise ValueError('Pagination cursor signature mismatch')
+
+    try:
+        kind, value = json.loads(payload_bytes)
+    except (ValueError, TypeError) as exc:
+        raise ValueError(f'Malformed pagination cursor payload: {cursor!r}') from exc
     if kind == 'datetime':
         return datetime.fromisoformat(value)
     if kind == 'date':

@@ -416,6 +416,11 @@ def db_seed() -> None:
 
 def queue_work(name: str) -> None:
     print(f'Starting queue worker for: {name}...')
+    # ``name`` reaches this function from argparse, so a hostile invocation
+    # (``--name="'; import os; os.system('id'); #"``) would inject code into
+    # the inline script. ``json.dumps`` is the safest way to embed an
+    # untrusted string literal into Python source.
+    name_literal = json.dumps(name)
     script = (
         'import asyncio, sys\n'
         "sys.path.insert(0, '.')\n"
@@ -426,7 +431,7 @@ def queue_work(name: str) -> None:
         'from core.queue_worker import work\n'
         'async def run_worker():\n'
         '    await Tortoise.init(config=settings.TORTOISE_ORM)\n'
-        f"    await work(queue_name='{name}')\n"
+        f'    await work(queue_name={name_literal})\n'
         'asyncio.run(run_worker())\n'
     )
     try:
@@ -438,6 +443,26 @@ def queue_work(name: str) -> None:
 # ---------------------------------------------------------------------------
 # Framework update
 # ---------------------------------------------------------------------------
+
+
+def _safe_extract_path(base_dir: str, relative_path: str) -> str:
+    """Resolve ``relative_path`` against ``base_dir`` and refuse zip-slip.
+
+    A malicious release could ship a member named
+    ``rootsystem/application/core/../../../etc/passwd`` — ``os.path.join``
+    plus ``os.makedirs`` would happily write outside ``base_dir``. We
+    resolve the candidate path and assert it stays inside.
+    """
+    base = pathlib.Path(base_dir).resolve()
+    dest = (base / relative_path).resolve()
+    try:
+        dest.relative_to(base)
+    except ValueError as exc:
+        raise RuntimeError(
+            f'Refusing to extract member outside target directory: {relative_path!r}'
+        ) from exc
+    return str(dest)
+
 
 _GITHUB_REPO = 'sembeimx/nori'
 _GITHUB_API = 'https://api.github.com'
@@ -625,7 +650,7 @@ def framework_update(target_version: str | None = None, skip_backup: bool = Fals
                     if member.startswith(full_prefix) and not member.endswith('/'):
                         found = True
                         relative_path = member[len(full_prefix) :]
-                        dest_path = os.path.join(extract_dir, relative_path)
+                        dest_path = _safe_extract_path(extract_dir, relative_path)
                         os.makedirs(os.path.dirname(dest_path), exist_ok=True)
                         with zf.open(member) as src, open(dest_path, 'wb') as dst:
                             shutil.copyfileobj(src, dst)

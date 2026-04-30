@@ -42,6 +42,19 @@ from core.jinja import templates
 from core.logger import get_logger
 
 
+def _reject_header_injection(value: str, field: str) -> str:
+    """Reject CR/LF in MIME header values.
+
+    Python's ``email.message.Message.__setitem__`` accepts arbitrary strings —
+    including ``\\r\\n`` — so unsanitized user input flowing into ``Subject``,
+    ``To``, or ``From`` can inject extra headers (Bcc, Reply-To) or split the
+    message body. We refuse the value here rather than let MIME serialize it.
+    """
+    if '\r' in value or '\n' in value:
+        raise ValueError(f'Header injection attempt: {field} contains CR/LF')
+    return value
+
+
 def _build_message(
     to: str | list[str],
     subject: str,
@@ -50,9 +63,13 @@ def _build_message(
 ) -> MIMEMultipart:
     """Build a MIME multipart email message."""
     msg = MIMEMultipart('alternative')
-    msg['Subject'] = subject
-    msg['From'] = config.get('MAIL_FROM', '')
-    msg['To'] = to if isinstance(to, str) else ', '.join(to)
+    msg['Subject'] = _reject_header_injection(subject, 'subject')
+    msg['From'] = _reject_header_injection(config.get('MAIL_FROM', ''), 'from')
+    if isinstance(to, str):
+        to_header = _reject_header_injection(to, 'to')
+    else:
+        to_header = ', '.join(_reject_header_injection(addr, 'to') for addr in to)
+    msg['To'] = to_header
 
     if body_text:
         msg.attach(MIMEText(body_text, 'plain', 'utf-8'))

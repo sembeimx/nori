@@ -43,12 +43,19 @@ class FakeUploadFile:
         self.content_type = content_type
         self._content = content
         self.size = len(content)
+        self._pos = 0
 
-    async def read(self):
-        return self._content
+    async def read(self, size=-1):
+        if size is None or size < 0:
+            data = self._content[self._pos:]
+            self._pos = len(self._content)
+            return data
+        data = self._content[self._pos:self._pos + size]
+        self._pos += len(data)
+        return data
 
     async def seek(self, pos):
-        pass
+        self._pos = pos
 
     async def close(self):
         pass
@@ -95,6 +102,32 @@ async def test_save_upload_too_large():
         f = FakeUploadFile(filename='big.jpg', content_type='image/jpeg', content=b'x' * 2000)
         with pytest.raises(UploadError, match='exceeds'):
             await save_upload(f, allowed_types=['jpg'], max_size=1000, upload_dir=tmpdir)
+
+
+@pytest.mark.anyio
+async def test_save_upload_aborts_streaming_before_full_buffer():
+    """Reading aborts as soon as the running total exceeds max_size, not after the full body."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # 5MB of 'x' — the streaming reader must reject before buffering the
+        # whole thing. Track how many bytes we ever held in memory at once.
+        f = FakeUploadFile(filename='big.jpg', content_type='image/jpeg', content=b'x' * (5 * 1024 * 1024))
+        with pytest.raises(UploadError, match='exceeds'):
+            await save_upload(f, allowed_types=['jpg'], max_size=1024, upload_dir=tmpdir)
+        # FakeUploadFile.read returns slices, so a successful early-abort
+        # leaves _pos somewhere just past max_size, not at the end.
+        assert f._pos <= 1024 + 64 * 1024, f'streamed past the limit: pos={f._pos}'
+
+
+@pytest.mark.anyio
+async def test_save_upload_rejects_via_declared_size_fast_path():
+    """If UploadFile.size already exceeds max_size, reject without reading at all."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        f = FakeUploadFile(filename='huge.jpg', content_type='image/jpeg', content=b'\xff\xd8\xff')
+        f.size = 10 * 1024 * 1024 * 1024  # claims 10GB without actually allocating
+        with pytest.raises(UploadError, match='exceeds'):
+            await save_upload(f, allowed_types=['jpg'], max_size=1024, upload_dir=tmpdir)
+        # We refused before any read happened.
+        assert f._pos == 0
 
 
 @pytest.mark.anyio

@@ -42,6 +42,11 @@ _URL_RE = re.compile(
 
 _IDENTIFIER_RE = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_]*$')
 
+# Cap on the input length passed to a `regex:` rule. Bounds ReDoS exposure
+# when a developer declares a vulnerable pattern (e.g. ``(a+)+$``) and a
+# user submits a long matching prefix. Inputs over this size fail the rule.
+_REGEX_MAX_INPUT: int = 4096
+
 _DEFAULT_MESSAGES = {
     'required': '{field} is required',
     'min': '{field} must be at least {n} characters',
@@ -201,8 +206,13 @@ def validate(
         if value_raw is not None:
             value = str(value_raw)
 
-        # nullable: skip all rules if value is empty/missing
-        if 'nullable' in field_rules and not value.strip():
+        # ``nullable`` skips remaining rules when the field is genuinely
+        # absent (missing key or ``None``) or an empty string. It does NOT
+        # treat whitespace-only input as "absent" — ``"   "`` would
+        # otherwise bypass an ``email`` or ``regex`` rule by hiding behind
+        # ``nullable``. If the user wants to accept whitespace, they need
+        # to strip on input or explicitly drop the rule.
+        if 'nullable' in field_rules and (field not in data or value_raw is None or value == ''):
             continue
 
         field_errors: list[str] = []
@@ -335,8 +345,17 @@ def _check_rule(
                 return _msg(field, rule, messages, n=param)
 
     elif rule == 'regex':
-        if value and not re.match(param, value):
-            return _msg(field, rule, messages)
+        if value:
+            # Cap the value length before re.match to bound ReDoS exposure.
+            # The pattern itself is developer-controlled (declared in the
+            # rules dict, never user-supplied), so a malicious pattern is
+            # an in-house footgun rather than a remote attack — but pairing
+            # a vulnerable pattern with a long user input is the classic
+            # ReDoS trigger. Refusing oversized inputs caps the worst case.
+            if len(value) > _REGEX_MAX_INPUT:
+                return _msg(field, rule, messages)
+            if not re.match(param, value):
+                return _msg(field, rule, messages)
 
     elif rule == 'password_strength':
         if value:

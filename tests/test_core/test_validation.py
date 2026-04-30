@@ -355,6 +355,29 @@ def test_nullable_valid_value():
     assert errors == {}
 
 
+def test_nullable_does_not_bypass_email_for_whitespace():
+    """Whitespace-only must NOT bypass email check via nullable.
+
+    Pre-fix, ``"   "`` would trigger ``not value.strip()`` and skip every
+    other rule in the chain — letting an attacker hide a bogus value
+    behind ``nullable``.
+    """
+    errors = validate({'email': '   '}, {'email': 'nullable|email'})
+    assert 'email' in errors
+
+
+def test_nullable_does_not_bypass_min_for_whitespace():
+    """Whitespace-only also gets evaluated against min/max rules."""
+    errors = validate({'bio': '  '}, {'bio': 'nullable|min:10'})
+    assert 'bio' in errors
+
+
+def test_nullable_skips_explicit_none():
+    """Passing None for the field is treated as absent."""
+    errors = validate({'bio': None}, {'bio': 'nullable|min:10'})
+    assert errors == {}
+
+
 # --- array ---
 
 
@@ -438,6 +461,20 @@ def test_regex_partial_no_match():
 
 def test_regex_empty_skipped():
     errors = validate({'code': ''}, {'code': r'regex:^[A-Z]+$'})
+    assert errors == {}
+
+
+def test_regex_input_over_cap_fails_fast():
+    """Inputs over the 4KB ReDoS cap fail the rule without re.match running."""
+    long_input = 'A' * 5000
+    errors = validate({'code': long_input}, {'code': r'regex:^[A-Z]+$'})
+    assert 'code' in errors
+
+
+def test_regex_input_at_cap_still_validates():
+    """Input exactly at the cap is still evaluated normally."""
+    at_cap = 'A' * 4096
+    errors = validate({'code': at_cap}, {'code': r'regex:^[A-Z]+$'})
     assert errors == {}
 
 

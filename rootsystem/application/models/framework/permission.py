@@ -16,6 +16,8 @@ class Permission(NoriModelMixin, Model):
 
     class Meta:
         table = 'permissions'
+        # Stable order — see role.py for the rationale.
+        ordering = ['id']
 
     def __str__(self) -> str:
         return self.name

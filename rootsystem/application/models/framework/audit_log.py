@@ -1,4 +1,16 @@
-"""Framework AuditLog model: who did what, when, on which record (used by core.audit)."""
+"""Framework AuditLog model: who did what, when, on which record (used by core.audit).
+
+Retention:
+    The audit log grows indefinitely — every fire-and-forget ``audit()``
+    call writes a row. In production a high-traffic site can accumulate
+    millions of rows per month, slowing pagination and inflating backups.
+
+    Run ``python3 nori.py audit:purge --days 90`` periodically (cron, k8s
+    CronJob, or a queued task) to delete entries older than the retention
+    window. Pass ``--export <path>`` to archive them as JSONL before
+    deletion. See ``docs/audit.md`` for the recommended schedule per
+    industry / compliance regime.
+"""
 
 from __future__ import annotations
 

@@ -273,3 +273,31 @@ def test_fetch_and_extract_prints_url_and_sha(installer, fake_zip_bytes, tmp_pat
     out = capsys.readouterr().out
     assert 'archive/refs/tags/v1.17.0.zip' in out
     assert expected_sha in out
+
+
+def test_fetch_and_extract_refuses_zip_slip(installer, tmp_path, monkeypatch, capsys):
+    """A release zip with a path-traversing member is rejected — no file
+    written outside the extract directory."""
+    import io
+    import zipfile
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, 'w') as zf:
+        zf.writestr('nori-v1.17.0/', '')
+        zf.writestr('nori-v1.17.0/normal.txt', 'safe')
+        # Two `..` segments — one cancels `nori-v1.17.0`, one escapes `extracted/`.
+        zf.writestr('nori-v1.17.0/../../escaped.txt', 'pwned')
+    zip_bytes = buf.getvalue()
+
+    def fake_download(url, dest):
+        Path(dest).write_bytes(zip_bytes)
+
+    monkeypatch.setattr(installer, 'download', fake_download)
+
+    with pytest.raises(SystemExit) as exc:
+        installer.fetch_and_extract('v1.17.0', tmp_path)
+    assert exc.value.code == 1
+    err = capsys.readouterr().err
+    assert 'outside target directory' in err
+    # Sanity check: the slip target was not written to disk anywhere we'd see.
+    assert not (tmp_path.parent / 'escaped.txt').exists()

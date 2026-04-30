@@ -158,12 +158,36 @@ def fetch_and_extract(tag: str, tmp: Path, expected_checksum: str | None = None)
 
     extract_dir = tmp / 'extracted'
     extract_dir.mkdir()
-    with zipfile.ZipFile(zip_path) as zf:
-        zf.extractall(extract_dir)
+    _safe_extract(zip_path, extract_dir)
     children = [p for p in extract_dir.iterdir() if p.is_dir()]
     if len(children) != 1:
         die('Unexpected release zip structure')
     return children[0]
+
+
+def _safe_extract(zip_path: Path, dest: Path) -> None:
+    """Extract a zip file member-by-member, refusing path traversal.
+
+    A compromised release archive could ship members like
+    ``nori-vX.Y.Z/../../etc/passwd`` — ``zipfile.extractall()`` does
+    not protect against that on Python <3.12 and is opt-in (``filter=``)
+    on 3.12+. We resolve every member's destination path and assert
+    it stays inside ``dest`` before writing.
+    """
+    base = dest.resolve()
+    with zipfile.ZipFile(zip_path) as zf:
+        for member in zf.infolist():
+            target = (base / member.filename).resolve()
+            try:
+                target.relative_to(base)
+            except ValueError:
+                die(f'Refusing to extract member outside target directory: {member.filename!r}')
+            if member.is_dir():
+                target.mkdir(parents=True, exist_ok=True)
+                continue
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with zf.open(member) as src, open(target, 'wb') as out:
+                shutil.copyfileobj(src, out)
 
 
 def load_manifest(release_root: Path, tag: str) -> dict:

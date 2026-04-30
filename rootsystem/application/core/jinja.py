@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from jinja2 import select_autoescape
 from starlette.templating import Jinja2Templates
 
 from core.auth.csrf import csrf_field
@@ -16,6 +17,15 @@ def _get_templates() -> Jinja2Templates:
     global _templates
     if _templates is None:
         _templates = Jinja2Templates(directory=config.TEMPLATE_DIR)
+        # Starlette's Jinja2Templates enables autoescape for .html / .xml
+        # by default, but pinning it explicitly here makes the contract
+        # local to this module — if Starlette ever changes its defaults
+        # we don't silently lose XSS protection.
+        _templates.env.autoescape = select_autoescape(
+            enabled_extensions=('html', 'htm', 'xml'),
+            default_for_string=True,
+            default=True,
+        )
         if config.get('DEBUG', False):
             _templates.env.auto_reload = True
         _templates.env.globals['csrf_field'] = csrf_field

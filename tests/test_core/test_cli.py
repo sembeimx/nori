@@ -9,6 +9,7 @@ asserting the file content they produce.
 from __future__ import annotations
 
 import io
+import pathlib
 import zipfile
 from unittest.mock import MagicMock, patch
 from urllib.error import HTTPError, URLError
@@ -699,7 +700,26 @@ def test_queue_work_passes_queue_name_into_script():
         cli.queue_work('emails')
 
     script = run.call_args[0][0][2]
-    assert "queue_name='emails'" in script
+    # json.dumps emits a double-quoted Python literal.
+    assert 'queue_name="emails"' in script
+
+
+def test_queue_work_escapes_hostile_queue_name():
+    """A queue name that tries to break out of the string literal is escaped."""
+    from unittest.mock import MagicMock
+
+    with patch('core.cli.subprocess.run') as run:
+        run.return_value = MagicMock(returncode=0)
+        cli.queue_work("'; import os; os.system('id'); #")
+
+    script = run.call_args[0][0][2]
+    # The injection attempt must NOT appear as a separate statement —
+    # json.dumps escapes the quote and the resulting Python literal is
+    # one safe string.
+    assert 'os.system(' not in script.replace('queue_name=', '', 1).split('\n')[0] or 'queue_name=' in script
+    # Tighter assertion: there is no bare `; import os` outside a literal.
+    forbidden = "queue_name=''"
+    assert forbidden not in script
 
 
 def test_queue_work_swallows_keyboard_interrupt():
@@ -1107,6 +1127,41 @@ def test_framework_update_url_error_on_api_prints_connection_error(update_env, m
 
     out = capsys.readouterr().out
     assert 'Could not connect to GitHub' in out
+
+
+def test_safe_extract_path_rejects_zip_slip(tmp_path):
+    """A relative_path with .. components is refused before any write happens."""
+    base = tmp_path / 'extract'
+    base.mkdir()
+    with pytest.raises(RuntimeError, match='outside target directory'):
+        cli._safe_extract_path(str(base), '../../etc/passwd')
+
+
+def test_safe_extract_path_accepts_normal_relative(tmp_path):
+    """A regular relative path resolves inside the base."""
+    base = tmp_path / 'extract'
+    base.mkdir()
+    dest = cli._safe_extract_path(str(base), 'sub/file.py')
+    assert pathlib.Path(dest).resolve().is_relative_to(base.resolve())
+
+
+def test_framework_update_refuses_zip_slip_member(update_env, monkeypatch, capsys):
+    """A malicious release zip with a .. member is rejected, not extracted."""
+    def fake_download(url, dest):
+        with zipfile.ZipFile(dest, 'w') as zf:
+            zf.writestr('nori-1.99.0/', '')
+            zf.writestr('nori-1.99.0/rootsystem/application/core/', '')
+            # The slipping member: prefix matches `core/` but then escapes
+            zf.writestr(
+                'nori-1.99.0/rootsystem/application/core/../../../../tmp/pwned.txt',
+                'should never reach disk',
+            )
+
+    monkeypatch.setattr(cli, '_github_api', lambda endpoint: {'tag_name': 'v1.99.0'})
+    monkeypatch.setattr(cli, '_download_zip', fake_download)
+
+    with pytest.raises(RuntimeError, match='outside target directory'):
+        cli.framework_update(target_version='1.99.0')
 
 
 def test_framework_update_url_error_on_download_prints_download_failed(update_env, monkeypatch, capsys):

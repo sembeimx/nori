@@ -1,6 +1,7 @@
 """Tests for core.cache."""
 
 import asyncio
+import json
 import time
 
 import pytest
@@ -248,6 +249,47 @@ async def test_cache_response_does_not_cache_errors():
     resp2 = await ctrl.failing(req)
     assert resp2.status_code == 500
     assert call_count == 2  # not cached — handler called both times
+
+
+@pytest.mark.asyncio
+async def test_cache_response_key_fn_isolates_per_caller():
+    """key_fn lets two callers on the same path get distinct cached responses."""
+    call_count = 0
+
+    class FakeURL:
+        path = '/dashboard'
+        query = ''
+
+    class FakeRequest:
+        method = 'GET'
+        url = FakeURL()
+
+        def __init__(self, user_id):
+            self.user_id = user_id
+
+    class Ctrl:
+        @cache_response(ttl=60, key_fn=lambda r: f'u={r.user_id}')
+        async def dashboard(self, request):
+            nonlocal call_count
+            call_count += 1
+            return JSONResponse({'user': request.user_id, 'n': call_count})
+
+    ctrl = Ctrl()
+
+    # Two distinct callers — neither should serve the other's cached body.
+    r1a = await ctrl.dashboard(FakeRequest(user_id=1))
+    r2a = await ctrl.dashboard(FakeRequest(user_id=2))
+    assert call_count == 2
+
+    # Same caller again — served from cache, no extra call.
+    r1b = await ctrl.dashboard(FakeRequest(user_id=1))
+    r2b = await ctrl.dashboard(FakeRequest(user_id=2))
+    assert call_count == 2
+
+    # Bodies still match per-user (sanity check).
+    assert json.loads(r1a.body) == json.loads(r1b.body)
+    assert json.loads(r2a.body) == json.loads(r2b.body)
+    assert json.loads(r1a.body)['user'] != json.loads(r2a.body)['user']
 
 
 @pytest.mark.asyncio

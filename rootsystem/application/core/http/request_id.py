@@ -18,6 +18,7 @@ log record.
 
 from __future__ import annotations
 
+import re
 import uuid
 from contextvars import ContextVar
 
@@ -27,6 +28,11 @@ __all__ = ['RequestIdMiddleware', 'request_id_var', 'get_request_id']
 # `asyncio.create_task` copies the context at spawn time, so background
 # tasks created inside a request handler inherit this value automatically.
 request_id_var: ContextVar[str | None] = ContextVar('request_id', default=None)
+
+# Accept incoming X-Request-ID values that look like ASCII identifiers up
+# to 64 chars. Refusing CR/LF is the load-bearing part — newlines in a
+# logged request_id let an attacker forge fake log entries downstream.
+_VALID_REQUEST_ID = re.compile(r'^[A-Za-z0-9_\-]{1,64}$')
 
 
 def get_request_id() -> str | None:
@@ -51,7 +57,9 @@ class RequestIdMiddleware:
         if self._trust_incoming:
             for name, value in scope.get('headers', []):
                 if name == self._header_bytes:
-                    request_id = value.decode('latin1')
+                    candidate = value.decode('latin1', errors='replace')
+                    if _VALID_REQUEST_ID.match(candidate):
+                        request_id = candidate
                     break
 
         if not request_id:

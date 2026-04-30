@@ -72,6 +72,30 @@ def test_build_message_mime_structure():
     assert msg.get_content_type() == 'multipart/alternative'
 
 
+def test_build_message_rejects_crlf_in_subject():
+    """CR/LF in subject is rejected to block header injection."""
+    with pytest.raises(ValueError, match='Header injection'):
+        _build_message('user@test.com', 'Hi\r\nBcc: attacker@evil.com', '<p>x</p>')
+
+
+def test_build_message_rejects_lf_only_in_subject():
+    """A bare LF in subject is also rejected."""
+    with pytest.raises(ValueError, match='Header injection'):
+        _build_message('user@test.com', 'Hi\nX-Custom: 1', '<p>x</p>')
+
+
+def test_build_message_rejects_crlf_in_str_recipient():
+    """CR/LF in a single string recipient is rejected."""
+    with pytest.raises(ValueError, match='Header injection'):
+        _build_message('user@test.com\r\nBcc: attacker@evil.com', 'Hi', '<p>x</p>')
+
+
+def test_build_message_rejects_crlf_in_list_recipient():
+    """CR/LF in any list-form recipient is rejected."""
+    with pytest.raises(ValueError, match='Header injection'):
+        _build_message(['ok@test.com', 'bad@test.com\r\nBcc: x@evil.com'], 'Hi', '<p>x</p>')
+
+
 # ---------------------------------------------------------------------------
 # _normalize_recipients
 # ---------------------------------------------------------------------------

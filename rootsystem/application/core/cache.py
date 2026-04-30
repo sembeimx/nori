@@ -447,7 +447,11 @@ async def cache_atomic_update(
 # ---------------------------------------------------------------------------
 
 
-def cache_response(ttl: int = 60, key_prefix: str = 'view') -> Callable:
+def cache_response(
+    ttl: int = 60,
+    key_prefix: str = 'view',
+    key_fn: Callable[[Any], str] | None = None,
+) -> Callable:
     """Cache GET response bodies. Non-GET requests pass through.
 
     Bodies are stored base64-encoded so binary responses (PDFs, images,
@@ -455,6 +459,18 @@ def cache_response(ttl: int = 60, key_prefix: str = 'view') -> Callable:
     cache values via JSON, which cannot represent raw bytes — and the
     pre-v1.19.0 implementation called ``body.decode('utf-8')`` before
     storing, which crashed or silently corrupted binary content.
+
+    Multi-tenant / authenticated routes:
+
+    The default cache key is built from the URL path and query string —
+    appropriate for **anonymous, public** endpoints. If you decorate an
+    authenticated or per-tenant route, two different users hitting the
+    same path will share the cached response, leaking data across
+    sessions. Pass a ``key_fn(request) -> str`` to inject the auth
+    context (user_id, tenant_id, role) into the key::
+
+        @cache_response(ttl=60, key_fn=lambda r: f'u={r.session.get("user_id")}')
+        async def my_dashboard(self, request): ...
     """
 
     def decorator(func: Callable) -> Callable:
@@ -463,7 +479,13 @@ def cache_response(ttl: int = 60, key_prefix: str = 'view') -> Callable:
             if request.method != 'GET':
                 return await func(self, request, *args, **kwargs)
 
-            cache_key = f'{key_prefix}:{request.url.path}:{request.url.query}'
+            # Default key shape is unchanged — stable across upgrades for the
+            # public-endpoint case. ``key_fn`` adds an extra segment so existing
+            # cached entries don't conflict with the new scoped keys.
+            if key_fn is None:
+                cache_key = f'{key_prefix}:{request.url.path}:{request.url.query}'
+            else:
+                cache_key = f'{key_prefix}:{key_fn(request)}:{request.url.path}:{request.url.query}'
             cached = await cache_get(cache_key)
             if cached is not None:
                 from starlette.responses import Response

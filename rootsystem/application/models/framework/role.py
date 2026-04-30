@@ -20,6 +20,10 @@ class Role(NoriModelMixin, Model):
 
     class Meta:
         table = 'roles'
+        # Stable order so paginate_cursor() yields contiguous, non-overlapping
+        # windows. Without an explicit ordering Tortoise relies on the DB's
+        # natural row order, which is unstable across pages.
+        ordering = ['id']
 
     def __str__(self) -> str:
         return self.name

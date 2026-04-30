@@ -232,6 +232,31 @@ def get_storage_drivers() -> set[str]:
 # ---------------------------------------------------------------------------
 
 
+_READ_CHUNK_SIZE: int = 64 * 1024  # 64 KB
+
+
+async def _read_capped(file, max_size: int) -> bytes:
+    """Read an UploadFile in chunks, aborting once we exceed ``max_size``.
+
+    Starlette's ``UploadFile.read()`` with no argument loads the entire
+    body into memory in one shot. For untrusted uploads that's an OOM
+    vector — a 10GB request would allocate 10GB of RAM before the size
+    check could reject it. Reading in 64KB chunks lets us cut off as
+    soon as the running total crosses the limit.
+    """
+    chunks: list[bytes] = []
+    total = 0
+    while True:
+        chunk = await file.read(_READ_CHUNK_SIZE)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > max_size:
+            raise UploadError(f'File size exceeds max ({max_size} bytes)')
+        chunks.append(chunk)
+    return b''.join(chunks)
+
+
 async def save_upload(
     file,
     *,
@@ -284,12 +309,19 @@ async def save_upload(
     # Validate MIME type
     _validate_mime_type(getattr(file, 'content_type', None), ext)
 
-    # Read content and validate size
-    content = await file.read()
+    # Fast path: if the upload reports a size and it already exceeds the
+    # limit, refuse before reading anything.
+    declared_size = getattr(file, 'size', None)
+    if isinstance(declared_size, int) and declared_size > max_size:
+        raise UploadError(f'File size ({declared_size} bytes) exceeds max ({max_size} bytes)')
+
+    # Stream the body in chunks so a 10GB upload doesn't allocate 10GB
+    # of RAM before the size check rejects it. Starlette buffers the
+    # multipart parse to a SpooledTemporaryFile, so reading is cheap;
+    # the win is bounding our own in-memory accumulation.
+    content = await _read_capped(file, max_size)
     if len(content) == 0:
         raise UploadError('File is empty')
-    if len(content) > max_size:
-        raise UploadError(f'File size ({len(content)} bytes) exceeds max ({max_size} bytes)')
 
     # Verify actual file content via magic bytes
     _validate_magic_bytes(content, ext)

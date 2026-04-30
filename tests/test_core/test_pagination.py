@@ -260,3 +260,40 @@ def test_cursor_roundtrip_datetime():
 
 def test_cursor_roundtrip_string():
     assert _decode_cursor(_encode_cursor('abc')) == 'abc'
+
+
+def test_cursor_rejects_tampered_payload():
+    """Re-encoding a different value with the legitimate signature still fails."""
+    import base64
+    import json
+
+    real = _encode_cursor(42)
+    payload_b64, _tag = real.split('.', 1)
+
+    # Forge a new payload but keep the original tag — signature must reject.
+    forged_payload = base64.urlsafe_b64encode(json.dumps(['raw', 9999]).encode()).rstrip(b'=').decode('ascii')
+    forged_token = f'{forged_payload}.{_tag}'
+    with pytest.raises(ValueError, match='signature mismatch'):
+        _decode_cursor(forged_token)
+
+
+def test_cursor_rejects_token_without_signature():
+    """A token without the `.tag` suffix is treated as malformed."""
+    import base64
+    import json
+
+    payload_b64 = base64.urlsafe_b64encode(json.dumps(['raw', 1]).encode()).rstrip(b'=').decode('ascii')
+    with pytest.raises(ValueError, match='Malformed'):
+        _decode_cursor(payload_b64)
+
+
+def test_cursor_rejects_signature_from_different_secret(monkeypatch):
+    """A token signed with a different secret is rejected."""
+    from core import pagination
+
+    real = _encode_cursor(42)
+
+    # Rotate the SECRET_KEY mid-flight.
+    monkeypatch.setattr(pagination, '_cursor_secret', lambda: b'a-different-secret')
+    with pytest.raises(ValueError, match='signature mismatch'):
+        _decode_cursor(real)

@@ -54,6 +54,53 @@ async def test_propagates_incoming_header():
 
 
 @pytest.mark.asyncio
+async def test_rejects_incoming_id_with_crlf():
+    """A header with CR/LF is dropped; a fresh UUID is generated instead."""
+    captured = {}
+
+    async def app(scope, receive, send):
+        captured['request_id'] = scope['state']['request_id']
+        await send({'type': 'http.response.start', 'status': 200, 'headers': []})
+        await send({'type': 'http.response.body', 'body': b''})
+
+    mw = RequestIdMiddleware(app)
+
+    sent = []
+    await mw(
+        {'type': 'http', 'headers': [(b'x-request-id', b'valid-id\r\nFAKE log line')]},
+        lambda: {'type': 'http.request', 'body': b''},
+        lambda msg: sent.append(msg) or __import__('asyncio').sleep(0),
+    )
+
+    # Spoofed value rejected → falls back to a generated UUID4 (36 chars).
+    assert len(captured['request_id']) == 36
+    assert '\r' not in captured['request_id']
+    assert '\n' not in captured['request_id']
+
+
+@pytest.mark.asyncio
+async def test_rejects_overly_long_incoming_id():
+    """Values over 64 chars are rejected even without control characters."""
+    captured = {}
+
+    async def app(scope, receive, send):
+        captured['request_id'] = scope['state']['request_id']
+        await send({'type': 'http.response.start', 'status': 200, 'headers': []})
+        await send({'type': 'http.response.body', 'body': b''})
+
+    mw = RequestIdMiddleware(app)
+
+    overlong = b'a' * 200
+    await mw(
+        {'type': 'http', 'headers': [(b'x-request-id', overlong)]},
+        lambda: {'type': 'http.request', 'body': b''},
+        lambda msg: __import__('asyncio').sleep(0),
+    )
+
+    assert len(captured['request_id']) == 36  # UUID4 fallback
+
+
+@pytest.mark.asyncio
 async def test_skips_non_http():
     called = False
 
