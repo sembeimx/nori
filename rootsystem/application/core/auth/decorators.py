@@ -11,6 +11,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, RedirectResponse, Response
 
 from core.auth.jwt import verify_token as _verify_token
+from core.auth.session_guard import check_session_version
 from core.conf import config
 from core.registry import get_model
 
@@ -33,6 +34,18 @@ def _superuser_role() -> str:
     return config.get('SUPERUSER_ROLE', 'admin')
 
 
+def _session_revoked_response(request: Request) -> Response:
+    """Shared 401 / redirect when the session-version guard denies access.
+
+    Same shape as the no-user-id path so the user sees a consistent
+    "log in again" experience regardless of which check triggered.
+    """
+    accept = request.headers.get('accept', '')
+    if 'application/json' in accept:
+        return JSONResponse({'error': 'Session revoked'}, status_code=401)
+    return RedirectResponse(config.get('LOGIN_URL', '/login'), status_code=302)
+
+
 def login_required(func: Callable[..., Any]) -> Callable[..., Any]:
     """
     Decorator: redirects to /login if no session.
@@ -47,6 +60,8 @@ def login_required(func: Callable[..., Any]) -> Callable[..., Any]:
             if 'application/json' in accept:
                 return JSONResponse({'error': 'Unauthorized'}, status_code=401)
             return RedirectResponse(config.get('LOGIN_URL', '/login'), status_code=302)
+        if not await check_session_version(request):
+            return _session_revoked_response(request)
         return await func(self, request, *args, **kwargs)
 
     return wrapper
@@ -70,6 +85,9 @@ def require_role(role: str) -> Callable[..., Any]:
                 if 'application/json' in accept:
                     return JSONResponse({'error': 'Unauthorized'}, status_code=401)
                 return RedirectResponse(config.get('LOGIN_URL', '/login'), status_code=302)
+
+            if not await check_session_version(request):
+                return _session_revoked_response(request)
 
             user_role = request.session.get('role', 'user')
             superuser = _superuser_role()
@@ -104,6 +122,9 @@ def require_any_role(*roles: str) -> Callable[..., Any]:
                 if 'application/json' in accept:
                     return JSONResponse({'error': 'Unauthorized'}, status_code=401)
                 return RedirectResponse(config.get('LOGIN_URL', '/login'), status_code=302)
+
+            if not await check_session_version(request):
+                return _session_revoked_response(request)
 
             user_role = request.session.get('role', 'user')
             superuser = _superuser_role()
@@ -289,6 +310,9 @@ def require_permission(perm: str) -> Callable[..., Any]:
                 if 'application/json' in accept:
                     return JSONResponse({'error': 'Unauthorized'}, status_code=401)
                 return RedirectResponse(config.get('LOGIN_URL', '/login'), status_code=302)
+
+            if not await check_session_version(request):
+                return _session_revoked_response(request)
 
             user_role = request.session.get('role', 'user')
             superuser = _superuser_role()

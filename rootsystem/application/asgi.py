@@ -112,6 +112,14 @@ async def lifespan(app):
         _log.info('Nori started [debug=%s, db=%s]', settings.DEBUG, settings.DB_ENGINE)
     else:
         _log.info('Nori started [debug=%s, db=disabled]', settings.DEBUG)
+
+    # Validate session-version guard wiring AFTER models are registered
+    # — get_model('User') has to find the model, and the field-presence
+    # check has to see the actual schema. Loud failure if the project
+    # opted into the feature but didn't add the column.
+    from core.auth.session_guard import configure_session_guard
+
+    configure_session_guard()
     yield
     # Send a clean ``close(1001)`` to every active WebSocket so connected
     # clients reconnect immediately on rolling restarts, instead of

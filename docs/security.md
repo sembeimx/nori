@@ -378,6 +378,127 @@ Security.verify_password('wrong', hashed)         # → False (constant-time)
 
 ---
 
+## Session Revocation (Session Version Guard)
+
+Starlette's `SessionMiddleware` issues signed cookies — the signature prevents tampering, not theft. Once the cookie leaves the user's browser (XSS, malware, third-party JS leak, physical access), the attacker has the same authority as the user until the cookie's `max_age` expires. There is no native revocation channel.
+
+The `core.auth.session_guard` module plugs this hole with a per-user integer counter. At login the project copies the user's current version into the session. On every gated request, the framework compares the session version against the canonical version in the database. Bumping the version (`invalidate_session(user_id)`) invalidates every cookie carrying a stale version on the next gated request, atomically across all in-flight sessions for that user.
+
+This feature is **opt-in**. Existing projects upgrading to v1.33+ see no behavior change until they explicitly enable it.
+
+### Threat model
+
+The guard defends against a stolen / leaked session cookie continuing to authenticate after:
+
+- the user changed their password,
+- an admin deactivated or suspended the account,
+- the user clicked "log out everywhere",
+- a security event triggered a forced re-login.
+
+It does **not** defend against:
+
+- A compromised cookie used immediately (within the request itself — there's nothing to revoke yet).
+- An attacker who already has the password and can re-authenticate.
+- An XSS exploit that can read AND modify the session, including `session_version`.
+
+### Enabling the feature
+
+**1. Add the column to your User model:**
+
+```python
+# rootsystem/application/models/user.py
+from tortoise import fields
+from core.mixins import NoriModelMixin
+from tortoise.models import Model
+
+class User(NoriModelMixin, Model):
+    session_version = fields.IntField(default=0)
+    # ... existing fields ...
+```
+
+**2. Run the migration:**
+
+```bash
+python3 nori.py migrate:make 'add session_version to user'
+python3 nori.py migrate:upgrade
+```
+
+**3. Enable the check in settings:**
+
+```python
+# settings.py
+SESSION_VERSION_CHECK = True
+```
+
+**4. Populate `session_version` at login:**
+
+```python
+async def login(self, request, form):
+    user = await User.get_or_none(email=form['email'])
+    # ... password verification ...
+    request.session['user_id'] = user.id
+    request.session['session_version'] = user.session_version
+    # ... rest of login flow ...
+```
+
+**5. Restart the server.** If `SESSION_VERSION_CHECK = True` and the column is missing, Nori raises `RuntimeError` at boot with the exact migration to apply — silent degradation is intentionally NOT supported.
+
+### Revoking sessions
+
+```python
+from core.auth.session_guard import invalidate_session
+
+# From a request handler — audit event captures the actor:
+async def logout_everywhere(self, request):
+    user_id = int(request.session['user_id'])
+    await invalidate_session(user_id, request=request)
+    request.session.clear()
+    return RedirectResponse('/login', status_code=302)
+
+# From admin / CLI tooling — pass request=None to skip the audit
+# event (the caller is responsible for its own forensic trail):
+await invalidate_session(user_id_being_revoked, request=None)
+```
+
+### Failure modes
+
+When **both** the cache and the database are unreachable in the same request, the gate cannot determine whether the session is still valid. The configured fail mode decides what to do:
+
+- `SESSION_VERSION_FAIL_MODE = 'open'` (default): allow the request, write `session_guard.fail_open` to the audit log. Right for SaaS / blogs / internal tools — a brief storage hiccup should not 401 every authenticated request.
+- `SESSION_VERSION_FAIL_MODE = 'closed'`: deny the request (401 / redirect), write `session_guard.fail_closed`. Right for finance / healthcare / compliance contexts where a brief denial is preferable to a brief auth bypass.
+
+A **process-local circuit breaker** protects against sustained outages independently of the configured fail mode. Once `SESSION_VERSION_CIRCUIT_THRESHOLD` consecutive storage failures land within `SESSION_VERSION_CIRCUIT_WINDOW` seconds, the breaker forces fail-closed for `SESSION_VERSION_CIRCUIT_OPEN_DURATION` seconds regardless of the configured mode. The breaker state lives entirely in process memory — deliberately NOT in the cache, since the cache is the resource we cannot rely on at the moment we need to make this decision.
+
+| Setting | Default | Description |
+| --- | --- | --- |
+| `SESSION_VERSION_CHECK` | `False` | Master opt-in. When `False` the gate is a no-op. |
+| `SESSION_VERSION_FAIL_MODE` | `'open'` | `'open'` or `'closed'` — what to do when both stores fail. |
+| `SESSION_VERSION_CIRCUIT_THRESHOLD` | `50` | Consecutive failures before the breaker opens. |
+| `SESSION_VERSION_CIRCUIT_WINDOW` | `60` | Sliding window (seconds) for the failure counter. |
+| `SESSION_VERSION_CIRCUIT_OPEN_DURATION` | `30` | Seconds the breaker stays open before retrying. |
+
+### Audit events
+
+Every denial path writes a structured audit event to `core.audit` so security teams have a forensic trail without parsing logs:
+
+| Action | When |
+| --- | --- |
+| `session.invalidated` | `invalidate_session(user_id, request=...)` was called. |
+| `session_guard.revoked` | Version mismatch — the session was bumped between login and now. `changes` contains `session_v` and `live_v`. |
+| `session_guard.user_deleted` | DB returned `None` for the user — row was hard-deleted while sessions were live. |
+| `session_guard.fail_open` | Both cache and DB failed; configured mode allowed the request. |
+| `session_guard.fail_closed` | Both cache and DB failed; configured mode denied the request. |
+| `session_guard.circuit_open` | Process-local circuit breaker is tripped — sustained outage detected, forcing fail-closed. |
+
+### Tradeoffs
+
+- **Per-request cache hit.** Every gated request reads `session_guard:{user_id}:version` from the cache. With Redis this is sub-millisecond on a warm connection; with the in-memory backend it's effectively free. For the highest-volume routes (10k+ rps), measure before enabling.
+- **DB read on cache miss.** Cache evictions cause one extra DB round-trip per request until the cache repopulates. The `cache_set` after the DB read makes this self-healing; subsequent requests hit the cache again.
+- **Worker-local breakers.** Each process tracks its own breaker. With N workers, a cache outage trips `threshold` failures per worker independently. There is no shared coordination because the only durable shared state available is the cache — the resource we cannot rely on at the moment we need it.
+- **Cookie storage of `session_version` is integer.** Sessions remain compact. The cookie size grows by a few bytes (the integer + JSON key) per session.
+
+---
+
 This page looks long. It's not. It's the minimum for a production web application. Security isn't a feature you bolt on -- it's the foundation everything else stands on.
 
 ## Security Checklist
@@ -395,3 +516,4 @@ When building with Nori, ensure:
 - [ ] Rate limiting is applied to authentication and expensive endpoints
 - [ ] `TRUSTED_PROXIES` is configured if running behind a reverse proxy
 - [ ] `QUEUE_ALLOWED_MODULES` covers your job locations (don't widen unnecessarily)
+- [ ] `SESSION_VERSION_CHECK` is enabled if your app supports admin-initiated session revocation

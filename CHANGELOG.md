@@ -4,6 +4,29 @@ All notable changes to Nori are documented here. Format follows [Keep a Changelo
 
 ---
 
+## [1.33.0] — 2026-04-30
+
+### Added
+
+- **Session revocation via per-user version counter (`core.auth.session_guard`).** Starlette's ``SessionMiddleware`` issues signed cookies — the signature prevents tampering, not theft. Once a cookie is stolen (XSS, malware, third-party JS leak), the attacker has the same authority as the legitimate user until the cookie's ``max_age`` expires. Pre-1.33 there was no native revocation channel: a forced password change, account deactivation, or "log out everywhere" action could not invalidate already-issued cookies. The new ``session_guard`` plugs the hole with a per-user integer counter that the project copies into the session at login (``session['session_version'] = user.session_version``); on every gated request the framework compares the session version against the canonical value in the database. Calling ``invalidate_session(user_id)`` bumps the database column and synchronises the cache, atomically invalidating every cookie carrying a stale version on the next gated request — for that user, across all in-flight sessions.
+- **Read-through cache with DB authority.** The cache (Redis or memory) accelerates the lookup; the DB column is the source of truth. A cache eviction does NOT silently disable revocation — the next request hits the DB, repopulates the cache, and resumes normal operation. A revocation written to a cache-only design would last only as long as the cache key TTL.
+- **Process-local circuit breaker, no cache I/O in the decision path.** Once ``SESSION_VERSION_CIRCUIT_THRESHOLD`` consecutive storage failures land within a sliding window, the breaker forces fail-closed for a configurable cooldown duration regardless of ``SESSION_VERSION_FAIL_MODE``. The breaker state lives entirely in module globals — deliberately NOT in the cache, since the cache is the very resource we cannot rely on when we need to make the decision. Each worker process tracks its own breaker; the next successful read clears the counter.
+- **Configurable failure mode.** When **both** cache and DB are unreachable in the same request, ``SESSION_VERSION_FAIL_MODE = 'open'`` (default) allows the request and writes ``session_guard.fail_open`` to the audit log; ``'closed'`` denies and writes ``session_guard.fail_closed``. The default matches the typical Nori deployment (SaaS, blogs, internal tools); finance / healthcare projects flip to ``'closed'`` in one line.
+- **Boot-time validation: loud failure if the field is missing.** When ``SESSION_VERSION_CHECK = True``, the ASGI lifespan calls ``configure_session_guard()`` after model registration. If the User model lacks ``session_version``, the framework raises ``RuntimeError`` with the exact migration to apply rather than silently degrading to "always allow". Explicit failure is the only safe behavior when the project has opted into the feature.
+- **Structured audit events on every denial path.** ``session.invalidated``, ``session_guard.revoked``, ``session_guard.user_deleted``, ``session_guard.fail_open``, ``session_guard.fail_closed``, ``session_guard.circuit_open`` — each path writes a forensic-trail entry via ``core.audit`` so security teams don't have to parse logs to reconstruct revocation timelines. The ``revoked`` event captures both versions in ``changes`` to distinguish "session predates revocation" from "version corruption".
+- **Integration with all four auth decorators.** ``login_required``, ``require_role``, ``require_any_role``, ``require_permission`` now run the gate BEFORE the role / permission checks. Revoking a session yanks access to every gated route in the same request, including permission-gated ones — pre-1.33 a revoked admin could still hit privileged endpoints between the bump and cookie expiry.
+- **New settings.** ``SESSION_VERSION_CHECK`` (default ``False`` — opt-in), ``SESSION_VERSION_FAIL_MODE`` (default ``'open'``), ``SESSION_VERSION_CIRCUIT_THRESHOLD`` (default 50), ``SESSION_VERSION_CIRCUIT_WINDOW`` (default 60s), ``SESSION_VERSION_CIRCUIT_OPEN_DURATION`` (default 30s).
+
+### Documentation
+
+- ``docs/security.md`` gains a "Session Revocation (Session Version Guard)" section: threat model, opt-in steps, migration, configuration, failure modes, audit events, tradeoffs.
+
+### Tests
+
+967 → 990 passing. 23 new regression tests covering: feature flag bypass, anonymous request bypass, pre-feature session bypass, cache hit (match / mismatch + audit), cache miss → DB read-through + cache repopulation, cache error fall-through to DB, user-deleted denial path, fail-open / fail-closed mode switching, circuit-breaker semantics (threshold, success reset, sliding window, cache-independence), bump_session_version (db + cache + missing user), invalidate_session (with / without request), and boot-time configure_session_guard (no-op / no User registered / missing field / passing). Two integration tests in ``test_acl.py`` verify the gate fires from inside ``login_required`` and ``require_permission`` end-to-end.
+
+---
+
 ## [1.32.0] — 2026-04-30
 
 ### Fixed

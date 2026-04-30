@@ -671,6 +671,86 @@ async def test_load_permissions_skips_gate_when_user_model_unregistered(monkeypa
     assert _PERMISSIONS_TTL_KEY in session
 
 
+# ---------------------------------------------------------------------------
+# v1.33 — session-version guard integration with auth decorators
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_login_required_denies_when_session_version_revoked(monkeypatch):
+    """End-to-end: with the feature enabled and the cache reporting a
+    higher live version than the session carries, ``login_required``
+    must return 401 (or redirect for HTML). Pre-1.33 there was no
+    revocation channel — a stolen cookie kept full access until
+    expiry."""
+    from types import SimpleNamespace
+
+    import core.auth.session_guard as sg
+    from core.auth.decorators import login_required
+    from core.conf import config
+    from starlette.responses import JSONResponse
+
+    monkeypatch.setattr(
+        config,
+        '_settings',
+        SimpleNamespace(SESSION_VERSION_CHECK=True),
+    )
+    sg._reset_circuit()
+
+    async def fake_cache_get(key):
+        return 99  # admin bumped the version
+
+    monkeypatch.setattr(sg, 'cache_get', fake_cache_get)
+    monkeypatch.setattr(sg, 'audit', lambda *a, **kw: None)
+
+    class FakeController:
+        @login_required
+        async def me(self, request):
+            return JSONResponse({'ok': True})
+
+    req = FakeRequest(user_id=1)
+    req.session['session_version'] = 5  # stale
+
+    resp = await FakeController().me(req)
+    assert resp.status_code == 401, (
+        'login_required must deny when session_version is stale; '
+        'pre-1.33 it would have returned 200 for the duration of the cookie'
+    )
+
+
+@pytest.mark.asyncio
+async def test_require_permission_denies_when_session_revoked(monkeypatch):
+    """The session-version gate runs BEFORE the permission check —
+    revoking a session yanks access to every gated route, including
+    permission-gated ones, in the same request. Without this ordering
+    a revoked admin could still hit privileged endpoints between the
+    bump and the cookie's expiry."""
+    from types import SimpleNamespace
+
+    import core.auth.session_guard as sg
+    from core.conf import config
+
+    monkeypatch.setattr(
+        config,
+        '_settings',
+        SimpleNamespace(SESSION_VERSION_CHECK=True, SUPERUSER_ROLE='admin'),
+    )
+    sg._reset_circuit()
+
+    async def fake_cache_get(key):
+        return 99  # admin bumped the version
+
+    monkeypatch.setattr(sg, 'cache_get', fake_cache_get)
+    monkeypatch.setattr(sg, 'audit', lambda *a, **kw: None)
+
+    ctrl = FakeController()
+    req = FakeRequest(user_id=1, permissions=['articles.edit'])
+    req.session['session_version'] = 5  # stale
+
+    resp = await ctrl.edit(req)
+    assert resp.status_code == 401
+
+
 @pytest.mark.asyncio
 async def test_load_permissions_gate_query_error_falls_through(monkeypatch, caplog):
     """If ``User.get_or_none`` itself raises (transient DB error,
