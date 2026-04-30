@@ -80,6 +80,10 @@ class User(NoriModelMixin, Model):
 - **POST only**: All state-changing actions (Logout, Delete, Update) MUST be `POST`.
 - **Audit Logging**: Use `audit(request, action, model_name, record_id)` for sensitive operations.
 - **Serialization**: Always use `.to_dict()` to leverage `protected_fields` safety.
+- **Cache atomicity**: Any read-modify-write against the cache backend (counters, rate-limit windows, login guards, lockouts, dedup keys) MUST use `cache_incr` or `cache_atomic_update`. Plain `cache_get + cache_set` for an update is a TOCTOU bug — under concurrency, parallel callers all see the same baseline and clobber each other. The v1.18.0 audit found three of these, every one bypassing a security control.
+- **Async I/O hygiene**: Service drivers (`services/*`) MUST offload synchronous disk I/O and heavy CPU (cryptographic signing, hashing, image decoding) via `asyncio.to_thread`. Running those operations directly on the async loop freezes every other request behind them — a single slow upload or RSA token refresh stalls the whole worker.
+- **Connection reuse**: Service drivers that use `httpx` MUST hold one persistent `httpx.AsyncClient` at module level, not per-call. Each `httpx.AsyncClient()` constructor opens a new TCP/TLS connection — repeating that on every request stacks latency and exhausts socket capacity under load.
+- **Optional spec fields**: JWT/OAuth claim access MUST treat optional fields as `None` by default (`payload.get('jti')`, not `payload['jti']`). Third-party tokens won't always include them, and a `KeyError` in a logout or callback handler is a denial-of-service path.
 
 ---
 
@@ -121,6 +125,13 @@ These are Nori-specific traps discovered the hard way. Read before changing the 
 
 ### Configurable URLs / settings have defaults via `config.get(key, default)`
 - New user-overridable settings (like `LOGIN_URL`, `FORBIDDEN_URL`, `PERMISSIONS_TTL`) use `config.get('SETTING', default_value)` rather than `config.SETTING`. This keeps existing projects working when they haven't set the new key, while letting projects override via `settings.py`. Always provide a default that matches the previous hardcoded behavior — backward compatibility is non-negotiable.
+
+### Concurrency hazards: TOCTOU in cache-backed counters
+
+- **The bug class**: a function does `await cache_get(key)` → modify in Python → `await cache_set(key, new_value)`. Under concurrency this fails — two callers both read the same baseline, both compute the same `+1`, both write the same `+1`. The counter never advances. Any security gate built on top (lockouts, rate limits, dedup checks) is silently disabled. Audit Round 4 surfaced this in three independent places: `core/auth/login_guard.py`, `core/http/throttle_backends.py`, and `core/queue_worker.py` (Redis delayed-job promotion, fixed earlier).
+- **The fix**: `cache_incr` for scalar counters; `cache_atomic_update(key, fn, ttl)` for any other read-modify-write. Both live in `core/cache.py` and are documented in `docs/caching.md`. Memory backend serializes via the global lock; Redis uses Lua (`incr`) or WATCH/MULTI/EXEC retry (`atomic_update`).
+- **The check**: before shipping code that touches `cache_get` or `cache_set`, look for the partner call in the same logical operation. `rg -n 'cache_get|cache_set' <file>` plus visual review — if both appear and one informs the other, the right answer is `cache_atomic_update`, not "wrap them in a lock".
+- **NOT for distributed locks**: these primitives replace read-modify-write loops, not advisory locks across services. If you need cross-service mutual exclusion ("only one worker runs the daily report"), that's a different problem.
 
 ### Docs↔code coherence: the class of bug ruff/mypy cannot catch
 
