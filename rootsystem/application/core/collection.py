@@ -200,22 +200,29 @@ class NoriCollection(list[T]):
         return _builtin_max(non_null) if non_null else None
 
     def to_list(self) -> list[Any]:
-        """Convert to list of dicts (JSON serializable)."""
+        """Convert to list of dicts (JSON serializable).
+
+        Raises:
+            TypeError: If an element is a Tortoise model that does not
+                inherit from ``NoriModelMixin``. Walking ``_meta.fields_map``
+                would emit every field, including secrets the developer
+                assumed ``protected_fields`` was hiding (``password_hash``,
+                tokens, internal notes). Refuse loudly instead of leaking.
+        """
         result: list[Any] = []
         for i in self:
             if hasattr(i, 'to_dict') and callable(i.to_dict):
                 # Use NoriModelMixin.to_dict() when available
                 result.append(i.to_dict())
             elif hasattr(i, '_meta') and hasattr(i._meta, 'fields_map'):
-                # Tortoise model without mixin: use fields_map
-                d = {}
-                for field in i._meta.fields_map:
-                    if not field.startswith('_'):
-                        try:
-                            d[field] = getattr(i, field)
-                        except Exception:  # noqa: S110, BLE001 — silently skip inaccessible fields (lazy/descriptor) during serialization
-                            pass
-                result.append(d)
+                raise TypeError(
+                    f'{type(i).__name__!r} is a Tortoise model without NoriModelMixin. '
+                    'Serializing it would expose every field via _meta.fields_map, '
+                    'including any sensitive ones (password_hash, tokens, etc.) that '
+                    'protected_fields would have hidden. Inherit from NoriModelMixin '
+                    '(`from core import NoriModelMixin`) and declare protected_fields, '
+                    'or call .to_dict() on each instance manually before to_list().'
+                )
             elif isinstance(i, dict):
                 result.append(i)
             elif hasattr(i, '__dict__'):

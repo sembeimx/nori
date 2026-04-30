@@ -222,6 +222,49 @@ def test_to_dict():
     assert result[2].name == 'b'
 
 
+def test_to_list_refuses_tortoise_model_without_mixin():
+    """Tortoise models without NoriModelMixin must NOT auto-serialize via
+    _meta.fields_map — that path emits every field, leaking password_hash,
+    tokens, etc. that protected_fields would have hidden.
+
+    Simulate the shape of a Tortoise model with a fake _meta object so
+    the test does not require the ORM to be initialized.
+    """
+    import pytest
+
+    class FakeMeta:
+        fields_map = {'id': None, 'email': None, 'password_hash': None}
+
+    class LeakyModel:
+        _meta = FakeMeta()
+        id = 1
+        email = 'a@b'
+        password_hash = 'do-not-leak'  # noqa: S105 — fixture value, not a real secret
+
+    leaky = LeakyModel()
+
+    with pytest.raises(TypeError, match='NoriModelMixin'):
+        collect([leaky]).to_list()
+
+
+def test_to_list_works_with_nori_model_mixin_to_dict():
+    """When the model exposes to_dict() (i.e. inherits NoriModelMixin),
+    to_list() defers to it and respects whatever the model decided to
+    expose."""
+
+    class FakeMeta:
+        fields_map = {'id': None, 'email': None, 'password_hash': None}
+
+    class GoodModel:
+        _meta = FakeMeta()
+
+        def to_dict(self):
+            return {'id': 1, 'email': 'a@b'}  # password_hash filtered out by mixin
+
+    out = collect([GoodModel()]).to_list()
+    assert out == [{'id': 1, 'email': 'a@b'}]
+
+
 # --- sort_by with None values ---
 
 
