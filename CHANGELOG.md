@@ -4,6 +4,25 @@ All notable changes to Nori are documented here. Format follows [Keep a Changelo
 
 ---
 
+## [1.20.2] — 2026-04-30
+
+### Added
+
+- **Zero-config permissions fallback via the `User.roles` convention.** v1.20.1 introduced `ROLE_RESOLVER` for projects that need to override the default lookup, but many Nori projects already follow the convention of a `User` model with an M2M `roles` relation to `framework.Role`. `load_permissions()` now tries that convention as a second-tier fallback after `ROLE_RESOLVER`, so following the convention requires no boilerplate. Resolution order:
+  1. Session has `role_ids` → use them.
+  2. `ROLE_RESOLVER` configured → call it (explicit override).
+  3. `get_model('User').get(id=user_id).prefetch_related('roles')` succeeds with non-empty `.roles` → use those role IDs.
+  4. Else → warning + empty perms (existing fallback).
+
+  Wrapped in a broad `except` because steps 3+ depend on project shape: projects with a single-role `User`, a relation under a different name, or no `User` model at all (token-only auth) all fall through to the warning instead of crashing.
+
+### Documentation
+
+- `docs/authentication.md` — new "Customizing the superuser role" subsection with the rationale for renaming `SUPERUSER_ROLE` (security hardening) and the disable-bypass example (`SUPERUSER_ROLE = ''`).
+- `docs/caching.md` — new "Binary responses" subsection covering `@cache_response` byte-for-byte safety for PDFs/images/ZIPs and the legacy-shape read fallback that preserves cached entries across an upgrade.
+
+---
+
 ## [1.20.1] — 2026-04-30
 
 ### Fixed
