@@ -276,6 +276,91 @@ async def test_cache_response_caches_only_200():
     assert call_count == 2
 
 
+@pytest.mark.asyncio
+async def test_cache_response_preserves_binary_body():
+    """Binary responses (PDF, image, ZIP) must round-trip byte-for-byte.
+
+    Pre-v1.19.0, the decorator did ``body.decode('utf-8')`` before
+    storing — which crashed on raw binary or, on backends that swallowed
+    the error, served corrupted bytes from the cache. The fix base64s
+    the body so JSON-serializing backends (Redis) can store it without
+    loss.
+    """
+    from starlette.responses import Response
+
+    # PDF magic header + bytes that are NOT valid UTF-8 (0x80-0xFF block)
+    pdf_bytes = b'%PDF-1.4\n\x80\x81\x82\xff\xfe\xfd binary garbage \x00\x01'
+    call_count = 0
+
+    class FakeURL:
+        path = '/report.pdf'
+        query = ''
+
+    class FakeRequest:
+        method = 'GET'
+        url = FakeURL()
+
+    class Ctrl:
+        @cache_response(ttl=60)
+        async def report(self, request):
+            nonlocal call_count
+            call_count += 1
+            return Response(
+                content=pdf_bytes,
+                status_code=200,
+                media_type='application/pdf',
+            )
+
+    ctrl = Ctrl()
+    req = FakeRequest()
+
+    resp1 = await ctrl.report(req)
+    resp2 = await ctrl.report(req)
+
+    assert call_count == 1  # second call hit the cache
+    assert resp1.body == pdf_bytes
+    assert resp2.body == pdf_bytes  # exact byte-for-byte match
+    assert resp2.media_type == 'application/pdf'
+
+
+@pytest.mark.asyncio
+async def test_cache_response_legacy_body_field_still_renders():
+    """Cache entries written by pre-v1.19.0 used a 'body' field with a
+    utf-8 string. After upgrade, those entries should still render until
+    they expire — not crash the request."""
+    from starlette.responses import Response
+
+    from core.cache import cache_set
+
+    class FakeURL:
+        path = '/legacy-cached'
+        query = ''
+
+    class FakeRequest:
+        method = 'GET'
+        url = FakeURL()
+
+    # Pre-seed a cache entry in the OLD shape (no body_b64)
+    await cache_set(
+        'view:/legacy-cached:',
+        {
+            'body': '<h1>legacy</h1>',
+            'status_code': 200,
+            'media_type': 'text/html',
+        },
+        60,
+    )
+
+    class Ctrl:
+        @cache_response(ttl=60)
+        async def page(self, request):
+            return Response('<h1>fresh</h1>', media_type='text/html')
+
+    resp = await Ctrl().page(FakeRequest())
+    assert resp.body == b'<h1>legacy</h1>'  # served from legacy-shape cache
+    assert resp.media_type == 'text/html'
+
+
 # ---------------------------------------------------------------------------
 # RedisCacheBackend unit tests (fakeredis)
 # ---------------------------------------------------------------------------

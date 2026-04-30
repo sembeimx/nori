@@ -22,6 +22,7 @@ Usage::
 from __future__ import annotations
 
 import asyncio
+import base64
 import collections
 import inspect
 import json
@@ -447,7 +448,14 @@ async def cache_atomic_update(
 
 
 def cache_response(ttl: int = 60, key_prefix: str = 'view') -> Callable:
-    """Cache GET response bodies. Non-GET requests pass through."""
+    """Cache GET response bodies. Non-GET requests pass through.
+
+    Bodies are stored base64-encoded so binary responses (PDFs, images,
+    archives) round-trip byte-for-byte. The Redis backend serializes
+    cache values via JSON, which cannot represent raw bytes — and the
+    pre-v1.19.0 implementation called ``body.decode('utf-8')`` before
+    storing, which crashed or silently corrupted binary content.
+    """
 
     def decorator(func: Callable) -> Callable:
         @wraps(func)
@@ -460,8 +468,18 @@ def cache_response(ttl: int = 60, key_prefix: str = 'view') -> Callable:
             if cached is not None:
                 from starlette.responses import Response
 
+                # New shape: body_b64 (bytes-safe). Old shape: body (utf-8
+                # string only, pre-v1.19.0). Fall back so cached entries
+                # survive an upgrade — they expire on TTL anyway.
+                body_b64 = cached.get('body_b64')
+                if body_b64 is not None:
+                    body: bytes = base64.b64decode(body_b64)
+                else:
+                    legacy = cached.get('body', b'')
+                    body = legacy.encode('utf-8') if isinstance(legacy, str) else legacy
+
                 return Response(
-                    content=cached['body'],
+                    content=body,
                     status_code=cached['status_code'],
                     media_type=cached.get('media_type'),
                 )
@@ -470,11 +488,13 @@ def cache_response(ttl: int = 60, key_prefix: str = 'view') -> Callable:
 
             # Only cache successful responses (2xx)
             if 200 <= response.status_code < 300:
-                body = response.body
+                raw = response.body
+                if isinstance(raw, str):
+                    raw = raw.encode('utf-8')
                 await cache_set(
                     cache_key,
                     {
-                        'body': body.decode('utf-8') if isinstance(body, bytes) else body,
+                        'body_b64': base64.b64encode(raw).decode('ascii'),
                         'status_code': response.status_code,
                         'media_type': response.media_type,
                     },
