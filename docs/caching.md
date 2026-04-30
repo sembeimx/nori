@@ -86,6 +86,23 @@ async def monthly(self, request):
     ...
 ```
 
+### Binary responses
+
+`@cache_response` works with arbitrary response bodies — PDFs, images, ZIPs, anything you'd legitimately serve from a controller. The decorator stores the body as base64 in the cache value (`body_b64`) so JSON-serializing backends (Redis) can round-trip raw bytes without loss.
+
+```python
+from starlette.responses import Response
+
+class ReportController:
+
+    @cache_response(ttl=60)
+    async def report_pdf(self, request):
+        pdf_bytes = await render_report_pdf(...)
+        return Response(content=pdf_bytes, media_type='application/pdf')
+```
+
+A pre-v1.19.0 version of the decorator decoded bodies as UTF-8 before storing — that crashed on binary content or, on some backends, silently corrupted the bytes on read. From v1.19.0 onward the round-trip is byte-for-byte. Cached entries written before the upgrade stay readable until they expire (the decorator handles both shapes).
+
 ---
 
 ## Backends

@@ -108,7 +108,7 @@ You can restrict entire controllers by applying decorators above the `async def`
 * `@require_role('my_role')`
 * `@require_any_role('sales', 'management')`
 
-*(Note: The role string `'admin'` has a general bypass by default).*
+*(Note: The role string `'admin'` has a general bypass by default. The name is configurable — see [Customizing the superuser role](#customizing-the-superuser-role) below.)*
 
 ```python
 from core.auth.decorators import login_required, require_role, require_any_role
@@ -139,6 +139,20 @@ FORBIDDEN_URL = '/access-denied' # default: '/forbidden'
 ```
 
 Both settings apply to all four session-aware decorators (`login_required`, `require_role`, `require_any_role`, `require_permission`). `@token_required` is unaffected — it always returns JSON 401 since it's intended for JWT-protected API endpoints.
+
+### Customizing the superuser role
+
+`@require_role`, `@require_any_role`, and `@require_permission` all honor a global bypass: a session whose `role` matches the configured superuser role passes every check, regardless of which specific role or permission the route demanded. The default is `'admin'` for backward compatibility, but the name is configurable via `SUPERUSER_ROLE` in `settings.py`:
+
+```python
+# settings.py — rename
+SUPERUSER_ROLE = 'platform_owner'
+
+# settings.py — disable the bypass entirely (every route enforces its decorator)
+SUPERUSER_ROLE = ''
+```
+
+Why bother renaming it: hardcoding `'admin'` means **any bug** in your session handling, OAuth claim mapping, or third-party integration that lets an attacker set `session['role'] = 'admin'` grants them access to every endpoint. Picking a less-guessable name (or using something derived from your project's actual hierarchy) hardens the bypass against attacker-controlled role values. Setting `SUPERUSER_ROLE = ''` removes the bypass entirely — useful for projects that prefer pure permission-based checks with no superuser shortcut.
 
 ---
 
