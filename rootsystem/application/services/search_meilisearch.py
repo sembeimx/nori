@@ -215,7 +215,7 @@ async def _search(
 
 async def _index_document(
     index: str,
-    doc_id: str | int,
+    doc_id: str,
     document: dict,
 ) -> None:
     """Add or update a single document in a Meilisearch index.
@@ -246,7 +246,7 @@ async def _index_document(
 
 async def _remove_document(
     index: str,
-    doc_id: str | int,
+    doc_id: str,
 ) -> None:
     """Remove a single document from a Meilisearch index.
 

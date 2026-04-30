@@ -4,6 +4,32 @@ All notable changes to Nori are documented here. Format follows [Keep a Changelo
 
 ---
 
+## [1.26.0] — 2026-04-30
+
+### Fixed
+
+- **WebSocket connections orphaned on shutdown (MED).** ``core/ws.py`` had no registry of active connections. On ``SIGTERM`` the lifespan ran to completion and uvicorn dropped the WebSocket sockets without sending a close frame; clients received ``1006`` (Abnormal Closure) and most reconnect strategies treat that as a transient network error with exponential backoff — what should be a sub-second reconnect ended up taking ~30 seconds per rolling restart. The fix adds a module-level ``_active_connections`` set; both ``WebSocketHandler.__call__`` and ``JsonWebSocketHandler.__call__`` register on entry and discard in ``finally`` (so even an auth-rejected handshake does the right thing). A new ``close_all_connections(code=1001, timeout=2.0)`` walks the set and sends a clean RFC-6455 ``1001`` ("Going Away") to every peer; the ASGI lifespan invokes it before tearing down the audit flush + DB connections. A stuck peer cannot block shutdown forever — on timeout the function logs a warning and returns, matching the shape of ``audit.flush_pending()`` from v1.24.0.
+
+### Improved
+
+- **``WebSocketHandler.on_connect`` docstring reinforced.** The class docstring already warned that the default accepts every client unauthenticated, but the per-method ``on_connect`` docstring (the first one a developer sees when overriding) only said "Default: accept the connection." It now spells out the auth contract: which middlewares run for WebSockets and which don't, the recommended ``websocket.session.get('user_id')`` check, the right close codes, and a pointer to ``docs/websockets.md`` for the JWT pattern. No behavior change.
+- **Search ``doc_id`` typed as ``str``.** ``register_search_driver``, ``index_document``, and ``remove_document`` now declare ``doc_id: str`` instead of ``str | int``, and the bundled Meilisearch driver matches. Most search backends accept both types but treat ``5`` and ``"5"`` as distinct documents — index with one and remove with the other and the remove silently no-ops. Tightening the hint pushes mypy / pyright to flag the inconsistency at the call site instead of the index drifting in production. Runtime accepts whatever you pass (Python is duck-typed); the type hint is the documentation that matters.
+
+### Tests
+
+921 → 926 passing. New regression tests, each verified to fail on pre-1.26 code:
+- ``test_close_all_connections_sends_1001_to_each_active_socket`` — close fan-out reaches every tracked socket with the right code
+- ``test_close_all_connections_returns_immediately_when_empty`` — no-op fast path on the lifespan call
+- ``test_close_all_connections_swallows_per_socket_failures`` — one half-dead client does not derail the rest
+- ``test_close_all_connections_warns_on_timeout`` — stuck peer logs a warning instead of hanging shutdown
+- ``test_websocket_handler_registers_active_connections_via_real_traffic`` — end-to-end check via TestClient that the try/finally registration actually runs in the live ``__call__`` path
+
+### Investigated but not changed
+
+- **WebSocket handshake "accepts everyone by default".** The base ``on_connect`` returns ``await websocket.accept()`` unconditionally — but ``SessionMiddleware`` *does* run for WebSocket scopes and populates ``websocket.session``, so the auth pattern (override ``on_connect``, check the session, close with ``1008`` on failure) is the documented and supported contract. Making the framework reject connections by default would break legitimate public WebSocket use cases (broadcasts, presence pages, status feeds) without preventing the kind of mistake that bug claims to address — the framework cannot tell the difference between "I want a public socket" and "I forgot the auth check." Reinforced the per-method docstring instead.
+
+---
+
 ## [1.25.0] — 2026-04-30
 
 ### Fixed

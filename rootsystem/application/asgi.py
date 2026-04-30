@@ -113,6 +113,14 @@ async def lifespan(app):
     else:
         _log.info('Nori started [debug=%s, db=disabled]', settings.DEBUG)
     yield
+    # Send a clean ``close(1001)`` to every active WebSocket so connected
+    # clients reconnect immediately on rolling restarts, instead of
+    # waiting for uvicorn's graceful-timeout to drop the socket without
+    # a frame (which clients see as ``1006`` — Abnormal Closure — and
+    # treat as a transient network error with exponential backoff).
+    from core.ws import close_all_connections as _close_ws
+
+    await _close_ws()
     if settings.DB_ENABLED:
         # Drain any in-flight ``audit()`` writes BEFORE the DB
         # connection pool is closed. Otherwise a SIGTERM arriving

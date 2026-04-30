@@ -45,6 +45,16 @@ A search driver is a dict (or object) that provides **three** async callables::
 Each callable receives only simple, serializable arguments — no framework
 objects, no ORM models. This makes drivers easy to write and test.
 
+``doc_id`` is typed as ``str``. Most search backends (Meilisearch, Algolia,
+Typesense) accept both string and integer document keys, but they treat
+``5`` and ``"5"`` as distinct IDs internally — index with one type and
+remove with the other and the remove silently no-ops. Passing ``str(model.id)``
+consistently from every call site avoids that whole class of bug. Casting
+at the boundary (here, in the public API) was considered, but a forced
+``str()`` would lose the discrimination between ``uuid.UUID`` instances and
+their string forms in projects that prefer the typed objects — better to
+push the decision to the caller and document it.
+
 Register your driver with :func:`register_search_driver` and you're done.
 See ``services/search_meilisearch.py`` for a complete example.
 """
@@ -75,9 +85,9 @@ def register_search_driver(name: str, driver: dict[str, Callable]) -> None:
 
             - ``'search'``: ``async def(index: str, query: str, filters: dict,
               limit: int, offset: int) -> list[dict]``
-            - ``'index_document'``: ``async def(index: str, doc_id: str | int,
+            - ``'index_document'``: ``async def(index: str, doc_id: str,
               document: dict) -> None``
-            - ``'remove_document'``: ``async def(index: str, doc_id: str | int)
+            - ``'remove_document'``: ``async def(index: str, doc_id: str)
               -> None``
 
     Raises:
@@ -181,7 +191,7 @@ async def search(
 
 async def index_document(
     index: str,
-    doc_id: str | int,
+    doc_id: str,
     document: dict,
     *,
     driver: str | None = None,
@@ -225,7 +235,7 @@ async def index_document(
 
 async def remove_document(
     index: str,
-    doc_id: str | int,
+    doc_id: str,
     *,
     driver: str | None = None,
 ) -> None:
