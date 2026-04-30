@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import io
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -462,7 +463,7 @@ async def test_store_gcs_default_url(monkeypatch):
         patch('services.storage_gcs._get_access_token', _fake_token),
         patch('services.storage_gcs._get_client', return_value=mock_client),
     ):
-        key, url = await _store_gcs('photo.jpg', b'image-data', 'uploads')
+        key, url = await _store_gcs('photo.jpg', io.BytesIO(b'image-data'), 'uploads')
 
     assert key == 'uploads/photo.jpg'
     assert url == 'https://storage.googleapis.com/mybucket/uploads/photo.jpg'
@@ -472,6 +473,13 @@ async def test_store_gcs_default_url(monkeypatch):
     headers = mock_client.put.call_args.kwargs['headers']
     assert headers['Authorization'] == 'Bearer fake-token'
     assert headers['Content-Type'] == 'application/octet-stream'
+    # Post-1.23 the body streams as a generator with explicit
+    # Content-Length, not raw bytes — RAM regression guard.
+    sent_content = mock_client.put.call_args.kwargs['content']
+    assert not isinstance(sent_content, (bytes, bytearray)), (
+        'GCS driver buffered the upload into bytes — RAM regression'
+    )
+    assert headers['Content-Length'] == str(len(b'image-data'))
 
 
 @pytest.mark.asyncio
@@ -494,7 +502,7 @@ async def test_store_gcs_url_prefix(monkeypatch):
         patch('services.storage_gcs._get_access_token', _fake_token),
         patch('services.storage_gcs._get_client', return_value=mock_client),
     ):
-        key, url = await _store_gcs('img.png', b'png-data', 'images')
+        key, url = await _store_gcs('img.png', io.BytesIO(b'png-data'), 'images')
 
     assert key == 'images/img.png'
     assert url == 'https://cdn.example.com/images/img.png'
@@ -519,7 +527,7 @@ async def test_store_gcs_empty_upload_dir(monkeypatch):
         patch('services.storage_gcs._get_access_token', _fake_token),
         patch('services.storage_gcs._get_client', return_value=mock_client),
     ):
-        key, url = await _store_gcs('file.txt', b'data', '')
+        key, url = await _store_gcs('file.txt', io.BytesIO(b'data'), '')
 
     assert key == 'file.txt'
     assert url == 'https://storage.googleapis.com/mybucket/file.txt'

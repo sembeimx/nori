@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import io
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from services.storage_s3 import _sign_aws4, _store_s3, register
+from services.storage_s3 import _hash_and_size, _sign_aws4, _store_s3, register
 
 
 @pytest.fixture(autouse=True)
@@ -101,13 +102,22 @@ async def test_store_s3_default_endpoint(monkeypatch):
     mock_client.put = AsyncMock(return_value=mock_response)
 
     with patch('services.storage_s3._get_client', return_value=mock_client):
-        key, url = await _store_s3('photo.jpg', b'image-data', 'uploads')
+        key, url = await _store_s3('photo.jpg', io.BytesIO(b'image-data'), 'uploads')
 
     assert key == 'uploads/photo.jpg'
     assert url == 'https://mybucket.s3.us-west-2.amazonaws.com/uploads/photo.jpg'
     mock_client.put.assert_called_once()
     put_url = mock_client.put.call_args[0][0]
     assert 'mybucket.s3.us-west-2.amazonaws.com' in put_url
+    # Post-1.23 the body is sent as a streaming generator with an explicit
+    # Content-Length, not as raw bytes — guard against a regression that
+    # would re-introduce the RAM exhaustion vector.
+    sent_content = mock_client.put.call_args.kwargs['content']
+    assert not isinstance(sent_content, (bytes, bytearray)), (
+        'S3 driver buffered the upload into bytes — RAM regression'
+    )
+    sent_headers = mock_client.put.call_args.kwargs['headers']
+    assert sent_headers['content-length'] == str(len(b'image-data'))
 
 
 @pytest.mark.asyncio
@@ -126,7 +136,7 @@ async def test_store_s3_custom_endpoint(monkeypatch):
     mock_client.put = AsyncMock(return_value=mock_response)
 
     with patch('services.storage_s3._get_client', return_value=mock_client):
-        key, url = await _store_s3('doc.pdf', b'pdf-data', 'docs')
+        key, url = await _store_s3('doc.pdf', io.BytesIO(b'pdf-data'), 'docs')
 
     assert key == 'docs/doc.pdf'
     assert url == 'https://r2.example.com/files/docs/doc.pdf'
@@ -147,7 +157,7 @@ async def test_store_s3_url_prefix(monkeypatch):
     mock_client.put = AsyncMock(return_value=mock_response)
 
     with patch('services.storage_s3._get_client', return_value=mock_client):
-        key, url = await _store_s3('img.png', b'png-data', 'images')
+        key, url = await _store_s3('img.png', io.BytesIO(b'png-data'), 'images')
 
     assert url == 'https://cdn.example.com/images/img.png'
 
@@ -162,6 +172,32 @@ async def test_store_s3_empty_upload_dir():
     mock_client.put = AsyncMock(return_value=mock_response)
 
     with patch('services.storage_s3._get_client', return_value=mock_client):
-        key, url = await _store_s3('file.txt', b'data', '')
+        key, url = await _store_s3('file.txt', io.BytesIO(b'data'), '')
 
     assert key == 'file.txt'
+
+
+# ---------------------------------------------------------------------------
+# _hash_and_size() — streaming SHA-256
+# ---------------------------------------------------------------------------
+
+
+def test_hash_and_size_matches_sha256_of_full_body():
+    """Streaming hash must equal hashlib.sha256(full_body).hexdigest().
+
+    AWS V4 signing breaks if the body's hash differs by even one bit, so
+    the streaming hasher must produce the byte-for-byte same digest as
+    the previous in-memory implementation. Exercise across a chunk
+    boundary (>64 KB) to make sure we don't drop the tail.
+    """
+    import hashlib
+
+    body = (b'A' * (64 * 1024)) + (b'B' * 1234)  # spans a chunk boundary
+    expected = hashlib.sha256(body).hexdigest()
+
+    src = io.BytesIO(body)
+    digest, size = _hash_and_size(src)
+
+    assert digest == expected
+    assert size == len(body)
+    assert src.tell() == 0, 'source must be rewound after hashing for the upload step'

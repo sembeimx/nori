@@ -46,6 +46,8 @@ from __future__ import annotations
 
 import asyncio
 import os
+import shutil
+import tempfile
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -171,30 +173,31 @@ def _generate_filename(ext: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _write_to_disk(file_path: str, content: bytes, upload_dir: str) -> None:
-    """Synchronous mkdir + write — invoked from a thread executor so the
-    event loop stays unblocked during local-disk I/O. Do not call from an
-    async context directly; route through :func:`_store_local`."""
+def _stream_to_disk(source, file_path: str, upload_dir: str) -> None:
+    """Synchronous mkdir + stream-copy — runs in a thread executor.
+
+    Streams 64 KB chunks from ``source`` (a file-like positioned at
+    byte 0) to ``file_path`` via ``shutil.copyfileobj`` so the full
+    payload never sits in RAM — a 100-user / 10 MB upload burst uses
+    ~6 MB of intermediate buffers instead of ~1 GB.
+    """
     Path(upload_dir).mkdir(parents=True, exist_ok=True)
-    Path(file_path).write_bytes(content)
+    with open(file_path, 'wb') as out:
+        shutil.copyfileobj(source, out, length=64 * 1024)
 
 
 async def _store_local(
     filename: str,
-    content: bytes,
+    source,
     upload_dir: str,
 ) -> tuple[str, str]:
-    """Store a file on the local filesystem.
-
-    Creates ``upload_dir`` if it doesn't exist. This is the default
-    storage driver. The blocking mkdir + write are offloaded via
-    :func:`asyncio.to_thread` so that disk I/O does not stall the event
-    loop — under load on slow disks or network filesystems a multi-MB
-    write would otherwise hijack the loop for tens of milliseconds.
+    """Store a file on the local filesystem (streaming).
 
     Args:
         filename: Generated filename (e.g. ``'abc123.jpg'``).
-        content: Raw file bytes.
+        source: File-like object (positioned at 0) yielding the body.
+            Typically a ``tempfile.SpooledTemporaryFile`` from the
+            streaming buffer in :func:`save_upload`.
         upload_dir: Directory to save into.
 
     Returns:
@@ -202,7 +205,7 @@ async def _store_local(
         ``/uploads/{filename}``.
     """
     file_path = os.path.join(upload_dir, filename)
-    await asyncio.to_thread(_write_to_disk, file_path, content, upload_dir)
+    await asyncio.to_thread(_stream_to_disk, source, file_path, upload_dir)
     return file_path, f'/uploads/{filename}'
 
 
@@ -214,10 +217,28 @@ _DRIVERS: dict[str, Callable] = {
 def register_storage_driver(name: str, handler: Callable) -> None:
     """Register a custom storage driver.
 
-    The handler must be an async callable with signature:
-        async def handler(filename: str, content: bytes, upload_dir: str) -> tuple[str, str]
+    The handler must be an async callable with signature::
 
-    It must return a tuple of (path, url).
+        async def handler(filename: str, source, upload_dir: str) -> tuple[str, str]
+
+    where ``source`` is a file-like object positioned at byte 0 (in
+    practice a :class:`tempfile.SpooledTemporaryFile` produced by
+    :func:`_spool_body`).  The handler MUST NOT close ``source`` —
+    its lifetime is owned by :func:`save_upload`.  Stream from
+    ``source`` via ``shutil.copyfileobj`` or ``aioboto3``'s
+    ``upload_fileobj``; do NOT call ``source.read()`` unbounded
+    because the source may be a multi-GB temp file on disk.
+
+    .. note::
+
+       The driver signature changed in 1.23 from ``(filename,
+       content: bytes, upload_dir)`` to ``(filename, source,
+       upload_dir)``.  Pre-1.23 drivers must update — replace any
+       reference to ``content`` with ``source.read()`` (or, ideally,
+       a streaming copy).  This change bounds framework RAM use to
+       ~8 MB per upload regardless of payload size.
+
+    Returns ``(path, url)``.
     """
     _DRIVERS[name] = handler
 
@@ -233,28 +254,49 @@ def get_storage_drivers() -> set[str]:
 
 
 _READ_CHUNK_SIZE: int = 64 * 1024  # 64 KB
+_SPOOL_RAM_LIMIT: int = 8 * 1024 * 1024  # past this, the spool rolls to disk
+_MAGIC_HEAD_SIZE: int = 16  # bytes peeked from the spool for magic verification
 
 
-async def _read_capped(file, max_size: int) -> bytes:
-    """Read an UploadFile in chunks, aborting once we exceed ``max_size``.
+async def _spool_body(file, max_size: int) -> tuple[tempfile.SpooledTemporaryFile, int]:
+    """Stream an UploadFile body into a SpooledTemporaryFile with a hard size cap.
 
-    Starlette's ``UploadFile.read()`` with no argument loads the entire
-    body into memory in one shot. For untrusted uploads that's an OOM
-    vector — a 10GB request would allocate 10GB of RAM before the size
-    check could reject it. Reading in 64KB chunks lets us cut off as
-    soon as the running total crosses the limit.
+    Starlette's multipart parser already writes the body to a
+    SpooledTemporaryFile during request parsing.  Pre-1.23 the
+    framework then drained that spool into Python ``bytes`` via
+    ``b''.join(chunks)`` — a 10 GB upload allocated ~20 GB of RAM
+    (the chunk list plus the joined bytes) before the size check
+    could reject it.  Reading into our own spool keeps RAM bounded
+    to :data:`_SPOOL_RAM_LIMIT` regardless of payload size: the
+    spool stays in RAM up to that threshold and rolls to disk past
+    it.
+
+    The size cap is enforced *during* streaming — the loop breaks as
+    soon as the running total crosses ``max_size``, so a 10 GB
+    request reads at most ``max_size + _READ_CHUNK_SIZE`` bytes
+    before refusing.
+
+    Returns the spool (rewound to byte 0) and the total byte count.
+    Raises :class:`UploadError` if ``max_size`` is exceeded; the
+    spool is closed before the exception propagates so its disk
+    backing (if any) is reclaimed immediately.
     """
-    chunks: list[bytes] = []
+    spool = tempfile.SpooledTemporaryFile(max_size=_SPOOL_RAM_LIMIT)
     total = 0
-    while True:
-        chunk = await file.read(_READ_CHUNK_SIZE)
-        if not chunk:
-            break
-        total += len(chunk)
-        if total > max_size:
-            raise UploadError(f'File size exceeds max ({max_size} bytes)')
-        chunks.append(chunk)
-    return b''.join(chunks)
+    try:
+        while True:
+            chunk = await file.read(_READ_CHUNK_SIZE)
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > max_size:
+                raise UploadError(f'File size exceeds max ({max_size} bytes)')
+            spool.write(chunk)
+    except BaseException:
+        spool.close()
+        raise
+    spool.seek(0)
+    return spool, total
 
 
 async def save_upload(
@@ -315,32 +357,43 @@ async def save_upload(
     if isinstance(declared_size, int) and declared_size > max_size:
         raise UploadError(f'File size ({declared_size} bytes) exceeds max ({max_size} bytes)')
 
-    # Stream the body in chunks so a 10GB upload doesn't allocate 10GB
-    # of RAM before the size check rejects it. Starlette buffers the
-    # multipart parse to a SpooledTemporaryFile, so reading is cheap;
-    # the win is bounding our own in-memory accumulation.
-    content = await _read_capped(file, max_size)
-    if len(content) == 0:
-        raise UploadError('File is empty')
+    # Stream the body into a SpooledTemporaryFile (RAM up to
+    # _SPOOL_RAM_LIMIT, then disk).  Never hold the full payload in
+    # RAM — this is the load-bearing change for MED-1 (RAM
+    # exhaustion).  The spool's lifetime is owned by this function;
+    # the driver receives it in its on-disk shape and must NOT close
+    # it.
+    spool, size = await _spool_body(file, max_size)
+    try:
+        if size == 0:
+            raise UploadError('File is empty')
 
-    # Verify actual file content via magic bytes
-    _validate_magic_bytes(content, ext)
+        # Magic-byte verification: peek the first bytes for the
+        # signature check, then rewind so the driver still sees the
+        # full body from byte 0.  16 bytes is enough for every
+        # signature in _MAGIC_BYTES including the WebP RIFF+WEBP
+        # check at offset 8-12.
+        head = spool.read(_MAGIC_HEAD_SIZE)
+        spool.seek(0)
+        _validate_magic_bytes(head, ext)
 
-    # Generate unique name and dispatch to driver
-    filename = _generate_filename(ext)
+        # Generate unique name and dispatch to driver
+        filename = _generate_filename(ext)
 
-    driver_name = driver or config.get('STORAGE_DRIVER', 'local')
-    handler = _DRIVERS.get(driver_name)
-    if handler is None:
-        available = ', '.join(sorted(_DRIVERS))
-        raise ValueError(f"Unknown storage driver '{driver_name}'. Available drivers: {available}")
+        driver_name = driver or config.get('STORAGE_DRIVER', 'local')
+        handler = _DRIVERS.get(driver_name)
+        if handler is None:
+            available = ', '.join(sorted(_DRIVERS))
+            raise ValueError(f"Unknown storage driver '{driver_name}'. Available drivers: {available}")
 
-    file_path, url = await handler(filename, content, upload_dir)
+        file_path, url = await handler(filename, spool, upload_dir)
+    finally:
+        spool.close()
 
     return UploadResult(
         filename=filename,
         path=file_path,
         url=url,
-        size=len(content),
+        size=size,
         original_name=original_name,
     )

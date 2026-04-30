@@ -694,16 +694,49 @@ def framework_update(target_version: str | None = None, skip_backup: bool = Fals
                         os.makedirs(parent, exist_ok=True)
                     shutil.copy2(local_file, backup_dest)
 
-        for local_dir, extract_dir in extracted.items():
-            label = os.path.relpath(local_dir, _APP_DIR)
-            print(f'  Replacing {label}/ ...')
-            if os.path.exists(local_dir):
-                shutil.rmtree(local_dir)
-            shutil.copytree(extract_dir, local_dir)
+        # Atomic-replace pattern: copy the new tree into a sibling staging
+        # directory, swap names, then drop the old. If anything fails before
+        # the swap, the live install is untouched. The previous "rmtree then
+        # copytree" left the framework half-deleted on a disk-full or
+        # permission failure mid-update — unrecoverable without manual
+        # restore from the backup tree.
+        staged_dirs: list[tuple[str, str]] = []
+        try:
+            for local_dir, extract_dir in extracted.items():
+                label = os.path.relpath(local_dir, _APP_DIR)
+                print(f'  Replacing {label}/ ...')
+                staging = local_dir + '.new'
+                # Ensure no leftover .new from a prior failed run.
+                if os.path.exists(staging):
+                    shutil.rmtree(staging)
+                shutil.copytree(extract_dir, staging)
+                staged_dirs.append((local_dir, staging))
+        except Exception:
+            # Roll back any half-staged dirs before re-raising.
+            for _live, staging in staged_dirs:
+                if os.path.exists(staging):
+                    shutil.rmtree(staging, ignore_errors=True)
+            raise
 
+        # All staging copies succeeded — now do the swap. os.replace is
+        # atomic on POSIX for files; for directories the rename pair is
+        # short and survives a crash without losing the old tree (worst
+        # case: <local>.old persists and a follow-up run cleans it).
+        for local_dir, staging in staged_dirs:
+            old_dir = local_dir + '.old'
+            if os.path.exists(old_dir):
+                shutil.rmtree(old_dir)
+            if os.path.exists(local_dir):
+                os.replace(local_dir, old_dir)
+            os.replace(staging, local_dir)
+            shutil.rmtree(old_dir, ignore_errors=True)
+
+        # Files: stage to ``.new`` then atomic-rename. Same shape as dirs.
         for local_file, temp_path in extracted_files.items():
             print(f'  Replacing {local_file} ...')
-            shutil.copy2(temp_path, local_file)
+            staging_file = local_file + '.new'
+            shutil.copy2(temp_path, staging_file)
+            os.replace(staging_file, local_file)
 
     # Reload patches from the freshly installed core. The OLD cli.py that is
     # currently executing was loaded into memory before the update, so any

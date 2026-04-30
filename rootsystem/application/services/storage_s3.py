@@ -114,9 +114,43 @@ def _sign_aws4(
     return headers
 
 
+def _hash_and_size(source) -> tuple[str, int]:
+    """Stream-hash a file-like ``source`` and return ``(sha256_hex, byte_count)``.
+
+    Reads in 64 KB chunks then rewinds ``source`` to byte 0. AWS
+    Signature V4 requires the body's SHA-256 in the signed canonical
+    request, but pre-1.23 the framework hashed a Python ``bytes``
+    object holding the entire upload — a 10 GB body meant 10 GB
+    sitting in Python heap during ``hashlib.sha256(content)``.  This
+    helper preserves the same hash output while keeping peak RAM
+    bounded to one 64 KB chunk at a time.
+    """
+    hasher = hashlib.sha256()
+    total = 0
+    for chunk in iter(lambda: source.read(64 * 1024), b''):
+        hasher.update(chunk)
+        total += len(chunk)
+    source.seek(0)
+    return hasher.hexdigest(), total
+
+
+def _iter_chunks(source, chunk_size: int = 64 * 1024):
+    """Yield ``chunk_size``-byte chunks from ``source`` until EOF.
+
+    Used to feed httpx ``content=`` from a SpooledTemporaryFile so
+    the request body is sent in bounded chunks instead of buffered
+    into a single ``bytes`` object on the way out.
+    """
+    while True:
+        chunk = source.read(chunk_size)
+        if not chunk:
+            break
+        yield chunk
+
+
 async def _store_s3(
     filename: str,
-    content: bytes,
+    source,
     upload_dir: str,
 ) -> tuple[str, str]:
     """Upload a file to S3-compatible object storage.
@@ -129,7 +163,12 @@ async def _store_s3(
 
     Args:
         filename: Generated filename (e.g. ``'abc123.jpg'``).
-        content: Raw file bytes.
+        source: File-like object positioned at byte 0 (typically a
+            :class:`tempfile.SpooledTemporaryFile` from
+            :func:`core.http.upload._spool_body`).  The driver
+            stream-hashes ``source`` for the AWS V4 signature, then
+            stream-uploads the body via httpx — the full payload is
+            never materialised as a single ``bytes`` object.
         upload_dir: Key prefix / virtual directory.
 
     Returns:
@@ -156,7 +195,12 @@ async def _store_s3(
     else:
         put_url = f'https://{bucket}.s3.{region}.amazonaws.com/{key}'
 
-    payload_hash = hashlib.sha256(content).hexdigest()
+    # Stream-hash the source so we never hold the full body in RAM
+    # during signing. The hash + length feed both sigv4 and the
+    # explicit Content-Length below (which keeps httpx from falling
+    # back to chunked transfer-encoding, which S3 does not accept on
+    # plain PutObject).
+    payload_hash, size = _hash_and_size(source)
     content_type = 'application/octet-stream'
 
     headers = _sign_aws4(
@@ -169,9 +213,10 @@ async def _store_s3(
         secret_key=secret_key,
     )
     headers['content-type'] = content_type
+    headers['content-length'] = str(size)
 
     client = _get_client()
-    resp = await client.put(put_url, content=content, headers=headers)
+    resp = await client.put(put_url, content=_iter_chunks(source), headers=headers)
     resp.raise_for_status()
 
     # Public URL

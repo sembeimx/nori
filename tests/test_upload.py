@@ -67,6 +67,7 @@ def _cleanup_drivers():
     yield
     _DRIVERS.pop('test_custom', None)
     _DRIVERS.pop('test_reg', None)
+    _DRIVERS.pop('test_shape', None)
 
 
 # ---------------------------------------------------------------------------
@@ -234,13 +235,83 @@ async def test_save_upload_rejects_disguised_file():
 
 @pytest.mark.anyio
 async def test_store_local():
-    """Local driver writes file to disk and returns (path, url)."""
+    """Local driver writes file to disk and returns (path, url).
+
+    Post-1.23 the driver streams from a file-like ``source`` rather
+    than receiving raw bytes — see the docstring of
+    :func:`register_storage_driver`.  We pass an in-memory
+    ``BytesIO`` here for test brevity; in production the source is a
+    SpooledTemporaryFile produced by ``_spool_body``.
+    """
+    import io
     with tempfile.TemporaryDirectory() as tmpdir:
-        path, url = await _store_local('abc123.jpg', b'data', tmpdir)
+        path, url = await _store_local('abc123.jpg', io.BytesIO(b'data'), tmpdir)
         assert os.path.exists(path)
         assert url == '/uploads/abc123.jpg'
         with open(path, 'rb') as f:
             assert f.read() == b'data'
+
+
+@pytest.mark.anyio
+async def test_save_upload_passes_file_like_to_driver():
+    """Drivers receive a streaming source, not bytes — RAM exhaustion regression guard.
+
+    Pre-1.23 the framework drained the upload into a Python ``bytes``
+    object via ``b''.join(chunks)`` and passed that to the driver.
+    For a 10 GB upload that meant ~20 GB of RAM (chunk list + joined
+    bytes) before the size check could intervene.  v1.23.0 changed
+    the contract: ``save_upload`` spools the body to a
+    SpooledTemporaryFile and hands the driver a file-like ``source``
+    instead.  If a future refactor accidentally goes back to passing
+    ``bytes``, every project would silently re-acquire that DoS
+    surface.  This test fails loud the moment that happens.
+    """
+    received: dict = {}
+
+    async def inspecting_driver(filename, source, upload_dir):
+        received['type_name'] = type(source).__name__
+        received['has_read'] = hasattr(source, 'read') and callable(source.read)
+        received['has_seek'] = hasattr(source, 'seek') and callable(source.seek)
+        received['is_bytes'] = isinstance(source, (bytes, bytearray, memoryview))
+        return os.path.join(upload_dir, filename), f'/uploads/{filename}'
+
+    register_storage_driver('test_shape', inspecting_driver)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        f = FakeUploadFile(filename='photo.jpg', content_type='image/jpeg')
+        await save_upload(
+            f, allowed_types=['jpg'], upload_dir=tmpdir, driver='test_shape'
+        )
+
+    assert received['has_read'], 'driver did not receive a readable source'
+    assert received['has_seek'], 'driver did not receive a seekable source'
+    assert not received['is_bytes'], (
+        'driver received a bytes/bytearray — RAM exhaustion regression. '
+        'See _spool_body in core.http.upload.'
+    )
+
+
+@pytest.mark.anyio
+async def test_save_upload_streaming_handles_payload_above_ram_threshold(monkeypatch):
+    """A payload larger than _SPOOL_RAM_LIMIT must roll the spool to disk.
+
+    Lower the threshold to 1 KB and feed a 4 KB body — the spool
+    should auto-promote to disk during write, and the upload should
+    still succeed.  Without the streaming refactor, the same flow
+    held all 4 KB in a Python list.  At production scale (10 GB
+    uploads against an 8 MB threshold) the difference is the gap
+    between bounded RAM and OOM.
+    """
+    monkeypatch.setattr(upload_module, '_SPOOL_RAM_LIMIT', 1024)
+    body = b'\xff\xd8\xff' + b'\x00' * (4 * 1024)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        f = FakeUploadFile(filename='big.jpg', content_type='image/jpeg', content=body)
+        result = await save_upload(
+            f,
+            allowed_types=['jpg'],
+            max_size=1024 * 1024,
+            upload_dir=tmpdir,
+        )
+        assert os.path.getsize(result.path) == len(body)
 
 
 # ---------------------------------------------------------------------------

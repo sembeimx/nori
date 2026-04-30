@@ -56,22 +56,28 @@ Nori features a robust, multi-driver persistent queue system. Jobs are stored in
 
 The worker resolves the function to execute via `importlib.import_module(mod_path) + getattr(module, func_name)`. **Without restrictions, anyone with write access to the queue store (a SQL injection point that reaches the `jobs` table, or an unauthenticated Redis instance) could push a payload like `{"func": "os:system", "args": ["..."]}` and trigger arbitrary code execution with the worker's privileges.**
 
-Nori blocks this by checking `mod_path` against an allow-list of module prefixes before importing. The default — set in `settings.py` — covers the conventional Nori locations:
+Nori blocks this with three stacked checks. Each one is independently sufficient against the canonical `os:system` payload, but real attackers will look for the gaps between them:
 
-```python
-QUEUE_ALLOWED_MODULES = ['modules.', 'services.', 'app.', 'tasks.']
-```
+1. **Module allow-list (primary).** `mod_path` is checked against `QUEUE_ALLOWED_MODULES` **before** `importlib.import_module` runs. The default set in `settings.py` covers the conventional Nori locations:
 
-| Prefix | Intended for |
-| :--- | :--- |
-| `modules.` | Tasks living next to controllers (`modules.mail`, `modules.reports`, ...) |
-| `services.` | Service drivers (mail, storage, search) |
-| `app.` | Projects that nest jobs under `app/tasks/` or similar |
-| `tasks.` | Projects that put background tasks in a top-level `tasks/` package |
+    ```python
+    QUEUE_ALLOWED_MODULES = ['modules.', 'services.', 'app.', 'tasks.']
+    ```
 
-If your jobs live elsewhere, extend the list — each prefix should end with a `.` so a name like `modules` does not accidentally match `modules_evil`. Nori normalizes a missing trailing dot automatically, so `'my_jobs'` and `'my_jobs.'` are equivalent.
+    | Prefix | Intended for |
+    | :--- | :--- |
+    | `modules.` | Tasks living next to controllers (`modules.mail`, `modules.reports`, ...) |
+    | `services.` | Service drivers (mail, storage, search) |
+    | `app.` | Projects that nest jobs under `app/tasks/` or similar |
+    | `tasks.` | Projects that put background tasks in a top-level `tasks/` package |
 
-A payload whose `func` does not match any allowed prefix is rejected with `PermissionError` **before** the import. The rejection counts as a job failure, so the existing retry/backoff and dead-letter logic still apply — a poisoned job does not stall the worker.
+    If your jobs live elsewhere, extend the list — each prefix should end with a `.` so a name like `modules` does not accidentally match `modules_evil`. Nori normalizes a missing trailing dot automatically, so `'my_jobs'` and `'my_jobs.'` are equivalent.
+
+2. **Bare-identifier check on `func_name`.** Names with dots (`tasks:os.system`) or other non-identifier characters are rejected with `ValueError`. `getattr` does not actually recurse on dots — it would treat `'os.system'` as a literal attribute name and fail — but rejecting up front makes the contract explicit and removes a quirk to remember.
+
+3. **Re-export defence on `func.__module__` (1.23+).** After `getattr` resolves the callable, its `__module__` is re-checked against the same allow-list. Without this layer, an allow-listed `tasks/__init__.py` containing `from os import system` exposed `tasks:system` as a working RCE — the alias's `mod_path` (`tasks`) was inside the allow-list, but the resolved function's `__module__` (`os`) was not. The recheck refuses the call when the function was imported from outside the allow-list.
+
+A payload that fails any of these checks raises `PermissionError` (or `ValueError` for malformed shape). The rejection counts as a job failure, so the existing retry/backoff and dead-letter logic still apply — a poisoned job does not stall the worker.
 
 ### Driver Comparison
 

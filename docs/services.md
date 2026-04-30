@@ -106,19 +106,34 @@ result = await save_upload(file, allowed_types=['jpg'], driver='s3')
 A storage driver is an async function with this signature:
 
 ```python
-async def handler(filename: str, content: bytes, upload_dir: str) -> tuple[str, str]:
+async def handler(filename: str, source, upload_dir: str) -> tuple[str, str]:
     """
     Store the file and return (path_or_key, public_url).
 
     Args:
         filename: Generated UUID filename (e.g. 'a1b2c3d4.jpg').
-        content:  Raw file bytes (already validated).
+        source:   File-like object positioned at byte 0 (a
+                  ``tempfile.SpooledTemporaryFile`` produced by
+                  ``save_upload``). Stream from it via
+                  ``shutil.copyfileobj`` or a chunked iterator —
+                  do NOT call ``source.read()`` unbounded, the
+                  payload may be a multi-GB file already on disk.
+                  The handler MUST NOT close ``source``; its
+                  lifetime is owned by ``save_upload``.
         upload_dir: Target directory or key prefix.
 
     Returns:
         Tuple of (storage_path, public_url).
     """
 ```
+
+!!! warning "Driver protocol changed in 1.23"
+    Pre-1.23 drivers received ``content: bytes`` instead of a
+    streaming ``source``. The change bounds framework RAM use to
+    ~8 MB per upload regardless of file size. If you have a custom
+    driver, the simplest mechanical migration is
+    ``content = source.read()`` at the top of the handler — but
+    for large uploads switch to a streaming copy.
 
 Register it at app startup:
 

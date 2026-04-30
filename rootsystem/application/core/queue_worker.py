@@ -56,11 +56,45 @@ def _assert_allowed_module(mod_path: str) -> None:
         )
 
 
+_FUNC_NAME_RE = __import__('re').compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
+
+
 async def execute_payload(payload: dict):
-    mod_path, func_name = payload['func'].split(':')
+    func_spec = payload['func']
+    if not isinstance(func_spec, str) or func_spec.count(':') != 1:
+        raise ValueError(f'Invalid queue payload func spec: {func_spec!r} (expected "module.path:func_name")')
+    mod_path, func_name = func_spec.split(':', 1)
+
+    # Reject anything that isn't a plain identifier on the function side.
+    # ``getattr`` itself does not recurse on dots, but a permissive
+    # func_name like 'os.system' or '__class__' is suspicious enough to
+    # block here rather than rely on the lookup failing downstream.
+    if not _FUNC_NAME_RE.match(func_name):
+        raise ValueError(f'Invalid queue function name: {func_name!r}')
+
     _assert_allowed_module(mod_path)
     module = importlib.import_module(mod_path)
-    func = getattr(module, func_name)
+    func = getattr(module, func_name, None)
+
+    if not callable(func):
+        raise ValueError(f'Queue target {mod_path}:{func_name} is not callable')
+
+    # Defence in depth: even though ``mod_path`` is allow-listed, the
+    # imported module may have re-exported a function from a hostile
+    # module via ``from os import system``. Refuse to call anything
+    # whose ``__module__`` falls outside the same allow-list, so an
+    # attacker who can write to the queue store cannot trick us into
+    # invoking ``os.system`` or ``subprocess.run`` through an alias.
+    target_module = getattr(func, '__module__', None)
+    if target_module:
+        try:
+            _assert_allowed_module(target_module)
+        except PermissionError as exc:
+            raise PermissionError(
+                f'Refusing to execute {mod_path}:{func_name} — its __module__ is '
+                f'{target_module!r}, outside QUEUE_ALLOWED_MODULES.'
+            ) from exc
+
     if inspect.iscoroutinefunction(func):
         await func(*payload.get('args', []), **payload.get('kwargs', {}))
     else:

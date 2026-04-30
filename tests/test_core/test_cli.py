@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import io
 import pathlib
+import shutil
 import zipfile
 from unittest.mock import MagicMock, patch
 from urllib.error import HTTPError, URLError
@@ -1143,6 +1144,62 @@ def test_safe_extract_path_accepts_normal_relative(tmp_path):
     base.mkdir()
     dest = cli._safe_extract_path(str(base), 'sub/file.py')
     assert pathlib.Path(dest).resolve().is_relative_to(base.resolve())
+
+
+def test_framework_update_rolls_back_when_staging_fails(update_env, monkeypatch, capsys):
+    """If copytree to ``.new`` fails mid-way, the live install must stay intact.
+
+    Pre-1.23.0 the update did ``rmtree(local_dir)`` first and ``copytree(...)``
+    second. A disk-full or permission failure between the two left the
+    framework's core/ directory deleted with no way to recover other than
+    manually restoring the backup. The fix stages first and only swaps
+    when staging succeeds.
+    """
+    def fake_download(url, dest):
+        _make_release_zip(
+            dest,
+            root='nori-1.99.0',
+            dirs=_release_dirs(),
+            files={'requirements.nori.txt': '# new\n'},
+        )
+
+    monkeypatch.setattr(cli, '_github_api', lambda endpoint: {'tag_name': 'v1.99.0'})
+    monkeypatch.setattr(cli, '_download_zip', fake_download)
+
+    # Make copytree blow up after the backup phase but during the replace.
+    # The fixture has 2 dirs (core/ + models/framework/), so backups are 2
+    # copytree calls; the replace step is calls 3+. Failing on call 3
+    # exercises "replace fails after backup succeeded".
+    real_copytree = shutil.copytree
+    calls = {'n': 0}
+
+    def flaky_copytree(src, dst, *args, **kwargs):
+        calls['n'] += 1
+        if calls['n'] >= 3:
+            raise OSError(28, 'No space left on device')
+        return real_copytree(src, dst, *args, **kwargs)
+
+    import shutil as _shutil_module
+
+    monkeypatch.setattr(_shutil_module, 'copytree', flaky_copytree)
+
+    with pytest.raises(OSError):
+        cli.framework_update(target_version='1.99.0')
+
+    # The pre-existing core/version.py is still there with the OLD content.
+    # Pre-1.23.0 the replace loop did rmtree(local_dir) BEFORE copytree, so
+    # a copytree failure left version.py deleted with no automatic recovery.
+    version_file = update_env['core_dir'] / 'version.py'
+    assert version_file.exists(), (
+        'core/version.py was deleted during a failed update — '
+        'rmtree ran before copytree so a mid-replace failure left the '
+        'install in a braindead state. The fix stages first and only swaps '
+        'when staging succeeds.'
+    )
+    assert version_file.read_text() == "__version__ = '1.0.0'\n"
+
+    # No `.new` staging leftover for the swapped dirs.
+    assert not (update_env['app_dir'] / 'core.new').exists()
 
 
 def test_framework_update_refuses_zip_slip_member(update_env, monkeypatch, capsys):

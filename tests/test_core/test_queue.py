@@ -265,6 +265,72 @@ async def test_execute_payload_allows_listed_module():
     assert 'success:allowed' in _get_executed()
 
 
+@pytest.mark.asyncio
+async def test_execute_payload_rejects_dotted_func_name(monkeypatch):
+    """A func name with dots must be refused before getattr.
+
+    ``getattr`` does not recurse on dots so 'os.system' would land as
+    a literal attribute name and AttributeError, but rejecting up front
+    makes the contract obvious — and avoids relying on a quirk.
+    """
+    from core.queue_worker import execute_payload
+
+    payload = {'func': 'tasks:os.system', 'args': [], 'kwargs': {}}
+    with pytest.raises(ValueError, match='Invalid queue function name'):
+        await execute_payload(payload)
+
+
+@pytest.mark.asyncio
+async def test_execute_payload_rejects_re_exported_os_system(monkeypatch, tmp_path):
+    """Defence in depth: even if an allow-listed module re-exports
+    os.system via ``from os import system``, calling it through the
+    queue must still be refused.
+
+    Pre-1.23.0 the worker only validated ``mod_path``. After getattr
+    pulled the alias, it called the function — meaning a single
+    ``from os import system`` in any allow-listed module became an RCE
+    primitive for whoever could write to the queue store.
+    """
+    import sys
+
+    # Build a fake allow-listed package that re-exports os.system.
+    pkg_dir = tmp_path / 'fakepkg'
+    pkg_dir.mkdir()
+    (pkg_dir / '__init__.py').write_text('')
+    (pkg_dir / 'jobs.py').write_text('from os import system\n')
+    monkeypatch.syspath_prepend(str(tmp_path))
+    sys.modules.pop('fakepkg', None)
+    sys.modules.pop('fakepkg.jobs', None)
+
+    import settings
+
+    monkeypatch.setattr(settings, 'QUEUE_ALLOWED_MODULES', ['fakepkg.'])
+    from core.queue_worker import execute_payload
+
+    payload = {'func': 'fakepkg.jobs:system', 'args': ['echo pwned'], 'kwargs': {}}
+    with pytest.raises(PermissionError, match=r'__module__'):
+        await execute_payload(payload)
+
+
+@pytest.mark.asyncio
+async def test_execute_payload_rejects_non_callable_attribute(monkeypatch):
+    """A getattr that resolves to a non-callable (a constant, a dict, a
+    submodule) must raise rather than fail later in the call site."""
+    import sys
+
+    import settings
+
+    monkeypatch.setattr(settings, 'QUEUE_ALLOWED_MODULES', ['tests.'])
+    from core.queue_worker import execute_payload
+
+    # Add a non-callable attribute to this test module.
+    sys.modules[__name__].some_constant = 42  # type: ignore[attr-defined]
+
+    payload = {'func': 'tests.test_core.test_queue:some_constant', 'args': [], 'kwargs': {}}
+    with pytest.raises(ValueError, match='not callable'):
+        await execute_payload(payload)
+
+
 # -- Job table bloat regression ----------------------------------------------
 
 

@@ -4,6 +4,55 @@ All notable changes to Nori are documented here. Format follows [Keep a Changelo
 
 ---
 
+## [1.23.0] — 2026-04-30
+
+### Upgrade notes — read first
+
+Three independent MEDIUM-severity findings closed in one minor release. One is a breaking-shape change to the storage driver protocol; the other two are internal and require no caller updates.
+
+**1. Storage drivers now receive a streaming ``source``, not ``bytes``.** Pre-1.23 the framework drained every upload into ``b''.join(chunks)`` before handing it to the driver — a 10 GB upload allocated ~20 GB of Python heap (the chunk list plus the joined bytes) before the size check could intervene. The driver protocol changed:
+
+```python
+# Before (1.22.x):
+async def my_driver(filename: str, content: bytes, upload_dir: str) -> tuple[str, str]:
+    ...
+
+# After (1.23.0):
+async def my_driver(filename: str, source, upload_dir: str) -> tuple[str, str]:
+    # ``source`` is a file-like (a SpooledTemporaryFile in practice).
+    # Stream from it via shutil.copyfileobj or an iterator — do NOT
+    # call source.read() unbounded, the source may be a multi-GB
+    # temp file already on disk.
+    ...
+```
+
+Bundled drivers (``local``, ``s3``, ``gcs``) are already updated. Custom drivers registered via ``register_storage_driver()`` must update — the simplest mechanical migration is ``content = source.read()`` at the top of the handler, but for large uploads you should switch to a streaming copy.
+
+### Fixed
+
+- **Upload RAM exhaustion (MED).** ``core/http/upload.py:save_upload`` now spools the body into a ``tempfile.SpooledTemporaryFile`` capped at 8 MB in RAM (rolls to disk past that) instead of accumulating chunks into a Python list and concatenating them. RAM use is bounded to ~8 MB per in-flight upload regardless of file size — a 10 GB upload that previously OOM'd a worker now stays within process memory limits and rejects cleanly via the existing size cap. The driver protocol changed (see upgrade notes above) so the spool is passed through to the storage backend without a final ``bytes`` materialisation.
+- **S3 / GCS drivers stream the body to httpx (MED).** ``services/storage_s3.py`` now stream-hashes the source for AWS V4 signing via a new ``_hash_and_size()`` helper and sends the body via a 64 KB chunked iterator with explicit ``Content-Length`` (so httpx does not fall back to ``Transfer-Encoding: chunked``, which S3 PutObject does not accept). ``services/storage_gcs.py`` measures the spool length, then streams via ``_iter_chunks()`` with explicit ``Content-Length``. Same RAM-bounding wins on the way out.
+- **Queue worker RCE defence-in-depth (MED).** ``core/queue_worker.py:execute_payload`` now validates two more invariants on every payload before invoking the function:
+  - The ``func`` field must be a bare ``module.path:function_name`` string with exactly one ``:`` and a function name matching ``^[A-Za-z_][A-Za-z0-9_]*$``. Dotted function names (``tasks:os.system``) are rejected up front rather than relying on ``getattr`` to fail.
+  - After ``getattr`` resolves the callable, its ``__module__`` is re-checked against ``QUEUE_ALLOWED_MODULES``. This blocks the ``from os import system`` re-export vector — pre-1.23 an allow-listed ``tasks/__init__.py`` containing ``from os import system`` exposed ``tasks:system`` as a working RCE for anyone who could write to the queue store. Now the lookup proceeds, but the ``__module__`` check refuses the call because ``os`` is outside the allow-list.
+  - The callable check (``if not callable(func)``) now raises a ``ValueError`` so a payload pointing at a constant or submodule fails loud instead of crashing later in the call site.
+- **``framework:update`` atomic replace (MED).** ``core/cli.py:framework_update`` previously did ``rmtree(local_dir) → copytree(extract_dir, local_dir)`` for each of ``core``, ``commands``, ``models/framework``. If the second step failed mid-copy (disk full, permission glitch, archive corruption, ``Ctrl-C``), the project was left with the framework directory partially wiped — the next ``python3 nori.py`` would fail at import time with no easy recovery. The new flow is stage-and-swap: copy each new dir to ``<dir>.new`` first, and only after every staged copy succeeds do we ``os.replace`` them in atomically (with the previous version moved aside as ``<dir>.old`` and removed only at the end). A failure during staging raises with the live framework still intact; a failure during the replace phase is left to be cleaned up on the next run, but the live directory is never empty.
+
+### Tests
+
+896 → 903 passing. New regression tests:
+- ``test_save_upload_passes_file_like_to_driver`` — guards the RAM regression: drivers must receive a streaming source, never raw bytes
+- ``test_save_upload_streaming_handles_payload_above_ram_threshold`` — exercises the spool's roll-to-disk path with a lowered ``_SPOOL_RAM_LIMIT``
+- ``test_hash_and_size_matches_sha256_of_full_body`` — streaming SHA-256 must produce the exact digest the V4 signer needs, across a chunk boundary
+- ``test_execute_payload_rejects_dotted_func_name`` — bare-identifier check on the function name
+- ``test_execute_payload_rejects_re_exported_os_system`` — ``__module__`` recheck blocks the ``from os import system`` re-export vector
+- ``test_execute_payload_rejects_non_callable_attribute`` — non-callable lookups raise ``ValueError`` early
+- ``test_framework_update_rolls_back_when_staging_fails`` — staging failure leaves the live framework dir untouched
+
+Verified each test fails on the pre-1.23 code.
+
+---
+
 ## [1.22.0] — 2026-04-30
 
 ### Upgrade notes — read first

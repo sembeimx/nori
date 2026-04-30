@@ -205,9 +205,13 @@ The Redis backend shares counters across Gunicorn workers and Docker replicas.
 
 `push()` jobs are persisted as a `(func, args, kwargs)` tuple where `func` is a string of the form `'module.path:function_name'`. The worker resolves it via `importlib.import_module + getattr`. **Without restrictions, write access to the queue store (a SQL injection point reaching the `jobs` table, an unauthenticated Redis instance, or any breach of the persistence layer) becomes arbitrary code execution under the worker's privileges.**
 
-Nori blocks this by checking the module path against `QUEUE_ALLOWED_MODULES` (`settings.py`, default `['modules.', 'services.', 'app.', 'tasks.']`) before importing. Anything outside the list is rejected with `PermissionError` and counts as a job failure — the existing retry/backoff and dead-letter path handles it, so a poisoned payload cannot stall the worker.
+Nori blocks this in three layers, each independently sufficient for the canonical `os:system` payload but stacked because real attackers will look for the gaps between them:
 
-Prefixes are normalized to require a trailing `.` so a name like `modules` does not accidentally match `modules_evil`. This is defense in depth, not a replacement for store-level access controls (DB user grants, Redis AUTH/ACL).
+1. **Module allow-list (primary)** — the `mod_path` half of the spec is checked against `QUEUE_ALLOWED_MODULES` (`settings.py`, default `['modules.', 'services.', 'app.', 'tasks.']`) **before** `importlib.import_module` runs. Prefixes are normalized to require a trailing `.` so a name like `modules` does not accidentally match `modules_evil`. Anything outside the list is rejected with `PermissionError` and counts as a job failure — the existing retry/backoff and dead-letter path handles it, so a poisoned payload cannot stall the worker.
+2. **Bare-identifier check on `func_name`** — the function half must match `^[A-Za-z_][A-Za-z0-9_]*$`. `getattr` does not recurse on dots, but rejecting `tasks:os.system` up front makes the contract obvious and removes a quirk to remember.
+3. **Re-export defence on `func.__module__` (1.23+)** — after `getattr` resolves the callable, its `__module__` is re-checked against the same allow-list. Without this layer, an allow-listed `tasks/__init__.py` containing `from os import system` exposed `tasks:system` as a working RCE — the alias passed step 1 because its *import path* was inside the allow-list, even though the *function* came from `os`. The recheck refuses the call when the resolved `__module__` lands outside the allow-list.
+
+This is defense in depth, not a replacement for store-level access controls (DB user grants, Redis AUTH/ACL).
 
 See [Background Tasks → Security: module allow-list](background_tasks.md#security-module-allow-list) for configuration details, prefix normalization, and the full threat model.
 

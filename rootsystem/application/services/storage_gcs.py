@@ -179,9 +179,39 @@ async def _get_access_token() -> str:
         return _token_cache['token']
 
 
+def _iter_chunks(source, chunk_size: int = 64 * 1024):
+    """Yield ``chunk_size``-byte chunks from ``source`` until EOF.
+
+    Used to feed httpx ``content=`` from a SpooledTemporaryFile so
+    the request body is sent in bounded chunks instead of buffered
+    into a single ``bytes`` object on the way out.
+    """
+    while True:
+        chunk = source.read(chunk_size)
+        if not chunk:
+            break
+        yield chunk
+
+
+def _measure(source) -> int:
+    """Return the byte length of ``source`` and rewind it to byte 0.
+
+    GCS PUT requires a fixed Content-Length — without it httpx falls
+    back to ``Transfer-Encoding: chunked``, which the GCS XML API
+    does not accept on plain object uploads.  Seeking to the end
+    works on any file-like that supports ``seek`` + ``tell`` (which
+    SpooledTemporaryFile does once rolled to disk and also while
+    still in RAM via its in-memory ``BytesIO``).
+    """
+    source.seek(0, 2)
+    size = source.tell()
+    source.seek(0)
+    return size
+
+
 async def _store_gcs(
     filename: str,
-    content: bytes,
+    source,
     upload_dir: str,
 ) -> tuple[str, str]:
     """Upload a file to Google Cloud Storage.
@@ -193,7 +223,12 @@ async def _store_gcs(
 
     Args:
         filename: Generated filename (e.g. ``'abc123.jpg'``).
-        content: Raw file bytes.
+        source: File-like object positioned at byte 0 (typically a
+            :class:`tempfile.SpooledTemporaryFile` from
+            :func:`core.http.upload._spool_body`).  The body is
+            stream-uploaded in 64 KB chunks via httpx — the full
+            payload is never materialised as a single ``bytes`` in
+            this process.
         upload_dir: Key prefix / virtual directory.
 
     Returns:
@@ -212,13 +247,16 @@ async def _store_gcs(
     put_url = f'https://storage.googleapis.com/{bucket}/{key}'
     content_type = 'application/octet-stream'
 
+    size = _measure(source)
+
     client = _get_client()
     resp = await client.put(
         put_url,
-        content=content,
+        content=_iter_chunks(source),
         headers={
             'Authorization': f'Bearer {token}',
             'Content-Type': content_type,
+            'Content-Length': str(size),
         },
     )
     resp.raise_for_status()
