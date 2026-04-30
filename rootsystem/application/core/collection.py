@@ -202,12 +202,39 @@ class NoriCollection(list[T]):
     def to_list(self) -> list[Any]:
         """Convert to list of dicts (JSON serializable).
 
+        Per-element behavior, in priority order:
+
+        1. **NoriModelMixin instances** — defer to ``i.to_dict()`` so the
+           model's ``protected_fields`` declaration is respected.
+        2. **Plain Tortoise models (no NoriModelMixin)** — refused with
+           ``TypeError``. Walking ``_meta.fields_map`` would emit every
+           field including secrets the developer assumed
+           ``protected_fields`` was hiding (``password_hash``, tokens,
+           internal notes).
+        3. **dicts** — passed through unchanged.
+        4. **Plain objects with ``__dict__``** (POPOs, dataclasses,
+           ordinary classes) — every attribute whose name does NOT start
+           with ``_`` is serialized. This follows the Python convention
+           that a leading underscore marks an attribute as private.
+
+           **Implication:** if a class carries sensitive data on a public
+           name (e.g. ``self.access_token`` on a ``Credential``
+           dataclass), serializing the collection will expose it. The
+           framework cannot guess which hand-written attributes are
+           sensitive — opt in by:
+
+           - prefixing the field with ``_`` so this branch skips it, or
+           - defining an explicit ``to_dict()`` method on the class so
+             step 1 takes priority and you control the output exactly.
+
+           Unlike step 2 (Tortoise models), this branch does not refuse:
+           a developer who explicitly wrote ``self.access_token = ...``
+           on a public name has chosen the attribute's visibility.
+        5. **Anything else** — appended as-is.
+
         Raises:
             TypeError: If an element is a Tortoise model that does not
-                inherit from ``NoriModelMixin``. Walking ``_meta.fields_map``
-                would emit every field, including secrets the developer
-                assumed ``protected_fields`` was hiding (``password_hash``,
-                tokens, internal notes). Refuse loudly instead of leaking.
+                inherit from ``NoriModelMixin``.
         """
         result: list[Any] = []
         for i in self:

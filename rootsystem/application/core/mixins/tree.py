@@ -23,6 +23,28 @@ def _placeholders(count: int) -> list[str]:
     return ['%s'] * count
 
 
+def _quote_ident(ident: str) -> str:
+    """Quote a SQL identifier per the active DB dialect.
+
+    Postgres / SQLite use double quotes (``"foo"``); MySQL / MariaDB use
+    backticks (```foo```). Quoting matters when a developer chose a
+    table or column name that is mixed-case (``Order``) or a reserved
+    keyword (``desc``, ``table``) — unquoted, those produce a SQL syntax
+    error or get folded to lowercase, depending on the engine.
+
+    The caller is expected to have validated ``ident`` separately (the
+    callsites in this module reject anything that is not alphanumerics or
+    underscore via ``isalnum()``). That guard keeps quote characters,
+    spaces, and parens out of the identifier — so the quoted form here is
+    safe to interpolate without a second escape pass.
+    """
+    conn = Tortoise.get_connection('default')
+    cls_name = type(conn).__name__.lower()
+    if 'mysql' in cls_name or 'mariadb' in cls_name:
+        return f'`{ident}`'
+    return f'"{ident}"'
+
+
 class NoriTreeMixin(Model):
     """
     Mixin for adjacency-list tree structures.
@@ -79,19 +101,30 @@ class NoriTreeMixin(Model):
         pk_col = self.__class__._meta.pk_attr
         parent_col = self._parent_field
 
-        # Validate identifiers to prevent SQL injection
+        # Belt: reject anything that is not [A-Za-z0-9_]. Identifiers come
+        # from class-level metadata (developer-defined), so this is a typo
+        # guard rather than a security boundary — but it also keeps quote
+        # characters and spaces out, which makes the dialect quoting below
+        # safe to interpolate without a second escape pass.
         for ident in (table, pk_col, parent_col):
             if not ident.replace('_', '').isalnum():
                 raise ValueError(f'Invalid SQL identifier: {ident}')
 
+        # Suspenders: dialect quoting so mixed-case names (``Order``) and
+        # reserved keywords (``desc``, ``table``) survive a recursive CTE
+        # without a syntax error or silent lowercase-folding.
+        q_table = _quote_ident(table)
+        q_pk = _quote_ident(pk_col)
+        q_parent = _quote_ident(parent_col)
+
         ph = _placeholders(2)
         sql = (
             f'WITH RECURSIVE ancestors AS ('
-            f'  SELECT * FROM {table} WHERE {pk_col} = {ph[0]}'
+            f'  SELECT * FROM {q_table} WHERE {q_pk} = {ph[0]}'
             f'  UNION ALL'
-            f'  SELECT t.* FROM {table} t'
-            f'  INNER JOIN ancestors a ON t.{pk_col} = a.{parent_col}'
-            f') SELECT * FROM ancestors WHERE {pk_col} != {ph[1]}'
+            f'  SELECT t.* FROM {q_table} t'
+            f'  INNER JOIN ancestors a ON t.{q_pk} = a.{q_parent}'
+            f') SELECT * FROM ancestors WHERE {q_pk} != {ph[1]}'
         )
 
         conn = Tortoise.get_connection('default')
@@ -112,13 +145,17 @@ class NoriTreeMixin(Model):
             if not ident.replace('_', '').isalnum():
                 raise ValueError(f'Invalid SQL identifier: {ident}')
 
+        q_table = _quote_ident(table)
+        q_pk = _quote_ident(pk_col)
+        q_parent = _quote_ident(parent_col)
+
         ph = _placeholders(1)
         sql = (
             f'WITH RECURSIVE descendants AS ('
-            f'  SELECT * FROM {table} WHERE {parent_col} = {ph[0]}'
+            f'  SELECT * FROM {q_table} WHERE {q_parent} = {ph[0]}'
             f'  UNION ALL'
-            f'  SELECT t.* FROM {table} t'
-            f'  INNER JOIN descendants d ON t.{parent_col} = d.{pk_col}'
+            f'  SELECT t.* FROM {q_table} t'
+            f'  INNER JOIN descendants d ON t.{q_parent} = d.{q_pk}'
             f') SELECT * FROM descendants'
         )
 

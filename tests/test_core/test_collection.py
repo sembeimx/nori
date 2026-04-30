@@ -282,3 +282,51 @@ def test_sort_by_all_none():
     items = [Obj(name=None), Obj(name=None)]
     result = collect(items).sort_by('name')
     assert len(result) == 2
+
+
+def test_to_list_documents_popo_contract():
+    """Pin the documented serialization contract for plain Python objects.
+
+    Three behaviors that are now part of the public contract:
+
+    1. Public (non-``_``) attrs ARE exposed. The framework cannot guess
+       which hand-written attributes are sensitive — visibility is
+       delegated to the developer who wrote the class, matching Python
+       convention that ``_``-prefixed names are private.
+    2. ``_``-prefixed attrs are skipped — explicit opt-out for
+       sensitive fields.
+    3. An explicit ``to_dict()`` method takes priority, letting the
+       class control its serialized form exactly.
+
+    A future audit that flags branch 1 as a "leak" should land on this
+    test, see the docstring, and understand the contract is intentional.
+    """
+
+    # 1. Public attrs are exposed (Python convention: non-_ is public).
+    class Credential:
+        def __init__(self):
+            self.user_id = 1
+            self.access_token = 'fixture-only'  # noqa: S105 — not a real secret
+            self._internal_state = 'skip'
+
+    out = collect([Credential()]).to_list()
+    assert out == [{'user_id': 1, 'access_token': 'fixture-only'}]
+
+    # 2. _-prefixed opt-out works — sensitive data hidden by convention.
+    class Hidden:
+        def __init__(self):
+            self.user_id = 1
+            self._access_token = 'fixture-only'  # noqa: S105
+
+    assert collect([Hidden()]).to_list() == [{'user_id': 1}]
+
+    # 3. Explicit to_dict() takes priority and lets the class decide.
+    class Explicit:
+        def __init__(self):
+            self.user_id = 1
+            self.access_token = 'fixture-only'  # noqa: S105
+
+        def to_dict(self):
+            return {'user_id': self.user_id}
+
+    assert collect([Explicit()]).to_list() == [{'user_id': 1}]

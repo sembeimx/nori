@@ -4,6 +4,23 @@ All notable changes to Nori are documented here. Format follows [Keep a Changelo
 
 ---
 
+## [1.28.0] — 2026-04-30
+
+### Improved
+
+- **``NoriTreeMixin`` recursive CTEs now quote identifiers per dialect.** ``ancestors()`` and ``descendants()`` previously interpolated the table and column identifiers raw into the ``WITH RECURSIVE`` SQL. With the conventional snake_case table names that fall out of Tortoise defaults this works fine, but a model whose ``Meta.table`` collides with a SQL reserved word (``order``, ``desc``, ``table``, ``user`` on some engines) or uses mixed-case (``Order``) would either trigger a syntax error at parse time (Postgres / MySQL) or silently lowercase-fold (Postgres unquoted identifiers) and lose row matching. The fix adds a module-level ``_quote_ident(name)`` helper that returns ``"name"`` for Postgres / SQLite / unknown dialects and `` `name` `` for MySQL / MariaDB. The existing ``isalnum()`` check stays in place — it never was a security boundary (the strings come from class-level metadata, not user input) but it is a typo guard that also keeps quote characters and spaces out of the identifier so the quoted form interpolates safely without a second escape pass.
+- **``NoriCollection.to_list()`` docstring spells out the POPO contract.** The method already refused to serialize Tortoise models that lacked ``NoriModelMixin`` (otherwise ``_meta.fields_map`` would emit every field, leaking secrets the developer assumed ``protected_fields`` was hiding). For plain Python objects (``__dict__`` walk) it serialized every non-``_`` attribute and returned silently. The behavior is intentional — Python's convention is that ``_``-prefixed names are private, and a developer who hand-wrote ``self.access_token = ...`` on a public name has chosen the attribute's visibility — but it was not documented at the method level. The reinforced docstring now states the per-element contract in priority order (NoriModelMixin → Tortoise reject → dict → POPO walk → fallback) and tells the reader exactly how to opt out: ``_`` prefix or define an explicit ``to_dict()``. No behavior change.
+
+### Tests
+
+937 → 945 passing. New regression tests:
+- ``test_quote_ident_postgres_uses_double_quotes`` / ``…_sqlite_…`` / ``…_mysql_uses_backticks`` / ``…_mariadb_…`` / ``…_unknown_dialect_falls_back_to_double_quotes`` — full dialect matrix, monkeypatched fake connection by class name
+- ``test_ancestors_sql_quotes_identifiers`` — captures the generated recursive CTE and asserts ``"sample_category"``, ``"id"``, ``"parent_id"`` all appear in their quoted forms
+- ``test_descendants_sql_quotes_identifiers`` — mirror coverage for the descendants traversal
+- ``test_to_list_documents_popo_contract`` — pins the three documented behaviors (public attrs exposed, ``_`` opt-out works, ``to_dict()`` overrides the walk) so a future audit landing on this branch sees the intent and does not mis-flag the path as a leak
+
+---
+
 ## [1.27.0] — 2026-04-30
 
 ### Fixed
