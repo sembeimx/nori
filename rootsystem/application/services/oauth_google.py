@@ -132,12 +132,20 @@ async def handle_callback(
 async def get_user_profile(access_token: str) -> dict:
     """Fetch the Google user profile using an access token.
 
+    The returned ``email`` is empty unless Google reports the address as
+    verified. Google can issue an OIDC userinfo response with
+    ``email_verified=False`` when the account was created against an email
+    the user does not control (custom domains, third-party signups). Trusting
+    that address as identity would let an attacker take over the account of
+    the address's real owner, so we fail closed at the driver. Consumers
+    needing the unverified value can still read ``raw['email']``.
+
     Args:
         access_token: A valid Google OAuth2 access token.
 
     Returns:
-        Dict with keys: ``id``, ``email``, ``name``, ``picture``,
-        ``email_verified``, ``raw``.
+        Dict with keys: ``id``, ``email`` (empty if unverified), ``name``,
+        ``picture``, ``email_verified``, ``raw``.
 
     Raises:
         httpx.HTTPStatusError: If the request fails.
@@ -150,11 +158,14 @@ async def get_user_profile(access_token: str) -> dict:
         resp.raise_for_status()
         data = resp.json()
 
+    email_verified = bool(data.get('email_verified', False))
+    email = data.get('email', '') if email_verified else ''
+
     return {
         'id': data.get('sub', ''),
-        'email': data.get('email', ''),
+        'email': email,
         'name': data.get('name', ''),
         'picture': data.get('picture', ''),
-        'email_verified': data.get('email_verified', False),
+        'email_verified': email_verified,
         'raw': data,
     }

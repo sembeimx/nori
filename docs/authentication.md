@@ -359,6 +359,27 @@ Both providers follow the same 3-function interface:
 **Google profile**: `{id, email, name, picture, email_verified, raw}`
 **GitHub profile**: `{id, email, name, avatar_url, login, raw}`
 
+#### Email is fail-closed
+
+In both profiles, `email` is empty unless the provider reports the address as verified:
+
+- **Google**: `email` is set only when `email_verified=True`. Google can return `email_verified=False` for accounts created against an address the user does not control (custom domains, third-party signups). Trusting that address as identity would let an attacker take over an existing user with the same email — so the driver clears it. The unverified value is still accessible via `profile['raw']['email']` for callers that explicitly want it.
+- **GitHub**: `email` is set from `/user.email` (which GitHub guarantees is verified before being made public) or, if that's null, from the first `primary` and `verified` entry in `/user/emails`. If neither yields a verified address, `email` is empty.
+
+**The safe pattern is**:
+
+```python
+profile = await handle_callback(...)
+if not profile['email']:
+    # No verified email — refuse the login or prompt for one
+    flash(request, 'We could not verify your email with the provider.')
+    return RedirectResponse(url=request.url_for('login'), status_code=302)
+
+user = await User.get_or_create(email=profile['email'])
+```
+
+Never use `profile['email']` as a user identifier without checking it is non-empty first.
+
 ### Adding More Providers
 
 Copy any existing driver as a template. The pattern is always:

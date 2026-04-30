@@ -174,3 +174,64 @@ async def test_get_user_profile_returns_normalized_dict():
     # Verify Authorization header was sent
     get_call = mock_client.get.call_args
     assert get_call[1]['headers']['Authorization'] == 'Bearer some-token'
+
+
+@pytest.mark.asyncio
+async def test_get_user_profile_clears_email_when_unverified():
+    """Account-takeover defense: an unverified email cannot be trusted as
+    identity. The driver clears `email` so the natural pattern
+    `if profile['email']: ...` is safe by default. The unverified value
+    remains accessible via `profile['raw']['email']` for callers that
+    explicitly want it."""
+    from services.oauth_google import get_user_profile
+
+    userinfo_response = MagicMock()
+    userinfo_response.json.return_value = {
+        'sub': '42',
+        'email': 'victim@victim.com',
+        'name': 'Mallory',
+        'picture': '',
+        'email_verified': False,
+    }
+    userinfo_response.raise_for_status = MagicMock()
+
+    mock_client = AsyncMock()
+    mock_client.get.return_value = userinfo_response
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=False)
+
+    with patch('services.oauth_google.httpx.AsyncClient', return_value=mock_client):
+        profile = await get_user_profile('some-token')
+
+    assert profile['email'] == ''
+    assert profile['email_verified'] is False
+    assert profile['raw']['email'] == 'victim@victim.com'
+
+
+@pytest.mark.asyncio
+async def test_get_user_profile_clears_email_when_verified_field_missing():
+    """If Google's response omits `email_verified` entirely, treat as
+    unverified — never trust an address Google didn't explicitly mark
+    verified."""
+    from services.oauth_google import get_user_profile
+
+    userinfo_response = MagicMock()
+    userinfo_response.json.return_value = {
+        'sub': '7',
+        'email': 'unknown@example.com',
+        'name': 'Anon',
+        'picture': '',
+        # email_verified intentionally absent
+    }
+    userinfo_response.raise_for_status = MagicMock()
+
+    mock_client = AsyncMock()
+    mock_client.get.return_value = userinfo_response
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=False)
+
+    with patch('services.oauth_google.httpx.AsyncClient', return_value=mock_client):
+        profile = await get_user_profile('some-token')
+
+    assert profile['email'] == ''
+    assert profile['email_verified'] is False
