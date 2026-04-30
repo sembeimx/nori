@@ -13,7 +13,7 @@ Usage::
             return JSONResponse({'error': f'Too many attempts. Try again in {retry_after}s.'}, 429)
 
         user = await User.get_or_none(email=email)
-        if not user or not Security.verify_password(form['password'], user.password_hash):
+        if not user or not await Security.verify_password(form['password'], user.password_hash):
             await record_failed_login(email)
             return JSONResponse({'error': 'Invalid credentials'}, 401)
 

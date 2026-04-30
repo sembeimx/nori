@@ -327,9 +327,18 @@ def _check_rule(
             raise ValueError(f"Invalid parameter for 'min_value' rule: '{param}'") from None
         if value:
             try:
-                if float(value) < n_float:
-                    return _msg(field, rule, messages, n=param)
+                f = float(value)
             except ValueError:
+                return _msg(field, rule, messages, n=param)
+            # NaN and Inf compare False against any finite bound, so they
+            # would silently pass ``f < n_float``. Reject them so a user
+            # can't bypass an amount / size limit by submitting "nan" or
+            # "inf" — both are valid Python floats but not valid inputs.
+            import math
+
+            if math.isnan(f) or math.isinf(f):
+                return _msg(field, rule, messages, n=param)
+            if f < n_float:
                 return _msg(field, rule, messages, n=param)
 
     elif rule == 'max_value':
@@ -339,9 +348,14 @@ def _check_rule(
             raise ValueError(f"Invalid parameter for 'max_value' rule: '{param}'") from None
         if value:
             try:
-                if float(value) > n_float:
-                    return _msg(field, rule, messages, n=param)
+                f = float(value)
             except ValueError:
+                return _msg(field, rule, messages, n=param)
+            import math
+
+            if math.isnan(f) or math.isinf(f):
+                return _msg(field, rule, messages, n=param)
+            if f > n_float:
                 return _msg(field, rule, messages, n=param)
 
     elif rule == 'regex':

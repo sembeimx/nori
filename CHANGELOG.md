@@ -4,6 +4,52 @@ All notable changes to Nori are documented here. Format follows [Keep a Changelo
 
 ---
 
+## [1.22.0] — 2026-04-30
+
+### Upgrade notes — read first
+
+Three independent HIGH-severity findings closed in one minor release. Two are breaking-shape changes (CSRF middleware contract for multipart, async signature on `Security.hash_password` / `Security.verify_password`); the third is internal.
+
+**1. ``Security.hash_password`` and ``Security.verify_password`` are now async.** PBKDF2-HMAC with 100k iterations is CPU-bound (~50–200 ms per call). The previous synchronous methods blocked the asyncio event loop for that entire time — a burst of logins was enough to stall every other request in the worker. The methods now offload via ``asyncio.to_thread`` so the loop keeps serving traffic during the hash. **Breaking**: every caller must await the result.
+
+```python
+# Before (1.21.x):
+hashed = Security.hash_password('secret')
+ok = Security.verify_password('secret', hashed)
+
+# After (1.22.0):
+hashed = await Security.hash_password('secret')
+ok = await Security.verify_password('secret', hashed)
+```
+
+**2. ``CsrfMiddleware`` no longer buffers ``multipart/form-data``.** The previous middleware buffered every state-changing request body up to 10 MB to extract the CSRF token from the form payload — defeating Starlette's streaming for file uploads and turning a single 10 MB upload into a 10 MB middleware allocation. The new contract:
+
+- ``X-CSRF-Token`` header is checked first. If present, the body is **not** consumed.
+- ``application/json`` and ``multipart/form-data`` requests **must** send the token via ``X-CSRF-Token``. Body parsing for these content types is removed.
+- ``application/x-www-form-urlencoded`` still parses the token from the body, capped to ``CSRF_FORM_MAX_BODY_SIZE`` (default 1 MiB; configurable in settings).
+
+If your app uploads files via multipart and relies on the form-field token, switch to sending the token via ``X-CSRF-Token`` header. ``Security.generate_csrf_token`` and ``csrf_field()`` are unchanged — only the middleware's body-parsing path is.
+
+### Fixed
+
+- **CSRF middleware DoS via body buffering (HIGH).** ``core/auth/csrf.py`` rewritten to validate the header first (no body read), refuse multipart without a header, and cap urlencoded bodies via configurable ``CSRF_FORM_MAX_BODY_SIZE`` (default 1 MiB). 100 concurrent slow 9 MB uploads no longer stack 900 MB of middleware allocation. The previous hardcoded 10 MB cap (``_MAX_BODY_SIZE``) is gone.
+- **PBKDF2 blocking the event loop (HIGH).** ``core/auth/security.py:hash_password`` / ``verify_password`` now async, executing the hash on a worker thread via ``asyncio.to_thread``. New regression test ``test_hash_password_does_not_block_event_loop`` runs 8 concurrent hashes and asserts wall time stays under 4 s — would have run sequentially (~800 ms minimum) before the fix.
+- **NaN / Inf bypass on ``min_value`` and ``max_value`` (HIGH).** ``core/http/validation.py`` now rejects ``NaN``, ``+Inf``, and ``-Inf`` in both rules. Pre-1.22.0, ``validate({'amount': 'nan'}, {'amount': 'min_value:5'})`` returned no errors — ``float('nan') < 5`` is ``False``, so the bound never tripped — letting hostile clients bypass amount / size / balance limits with the literal strings ``"nan"``, ``"inf"``, or ``"-inf"``. The ``numeric`` rule already guarded against this; the value rules now match.
+
+### Tests
+
+888 → 896 passing. New regression tests:
+- ``test_min_value_rejects_nan`` / ``test_max_value_rejects_nan``
+- ``test_min_value_rejects_inf`` / ``test_max_value_rejects_neg_inf``
+- ``test_hash_password_does_not_block_event_loop``
+- ``test_multipart_without_header_is_refused``
+- ``test_multipart_with_header_passes_without_buffering``
+- ``test_form_body_cap_is_configurable``
+
+Verified each of the four bypass tests fails on the pre-1.22.0 code.
+
+---
+
 ## [1.21.1] — 2026-04-30
 
 ### Fixed

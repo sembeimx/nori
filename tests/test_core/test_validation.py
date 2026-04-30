@@ -441,6 +441,43 @@ def test_max_value_empty_skipped():
     assert errors == {}
 
 
+def test_min_value_rejects_nan():
+    """NaN compares False against any bound, so it would silently pass min_value.
+
+    Pre-fix, ``validate({'amount': 'nan'}, {'amount': 'min_value:5'})``
+    returned ``{}`` because ``float('nan') < 5.0`` is ``False``. That
+    let a hostile client bypass a balance / amount / size lower bound
+    just by submitting the literal string ``"nan"``.
+    """
+    errors = validate({'amount': 'nan'}, {'amount': 'min_value:5'})
+    assert 'amount' in errors
+
+
+def test_max_value_rejects_nan():
+    errors = validate({'amount': 'nan'}, {'amount': 'max_value:100'})
+    assert 'amount' in errors
+
+
+def test_min_value_rejects_inf():
+    """Positive infinity passes ``min_value:5`` because Inf is not < 5."""
+    errors = validate({'amount': 'inf'}, {'amount': 'min_value:5'})
+    assert 'amount' in errors
+
+
+def test_max_value_rejects_neg_inf():
+    """Negative infinity passes ``max_value:100`` because -Inf is not > 100."""
+    errors = validate({'amount': '-inf'}, {'amount': 'max_value:100'})
+    assert 'amount' in errors
+
+
+def test_min_value_finite_still_validates_normally():
+    """Sanity: ordinary numeric inputs still pass / fail as before."""
+    errors_low = validate({'age': '4'}, {'age': 'min_value:5'})
+    errors_ok = validate({'age': '5'}, {'age': 'min_value:5'})
+    assert 'age' in errors_low
+    assert errors_ok == {}
+
+
 # --- regex ---
 
 

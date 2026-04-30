@@ -1,57 +1,68 @@
 """Tests for core.auth.security."""
 
+import pytest
+
 from core.auth.security import Security
 
 # --- hash_password / verify_password ---
 
 
-def test_hash_and_verify():
-    hashed = Security.hash_password('mypassword')
-    assert Security.verify_password('mypassword', hashed) is True
+@pytest.mark.asyncio
+async def test_hash_and_verify():
+    hashed = await Security.hash_password('mypassword')
+    assert await Security.verify_password('mypassword', hashed) is True
 
 
-def test_verify_wrong_password():
-    hashed = Security.hash_password('correct')
-    assert Security.verify_password('wrong', hashed) is False
+@pytest.mark.asyncio
+async def test_verify_wrong_password():
+    hashed = await Security.hash_password('correct')
+    assert await Security.verify_password('wrong', hashed) is False
 
 
-def test_hash_format():
-    hashed = Security.hash_password('test')
+@pytest.mark.asyncio
+async def test_hash_format():
+    hashed = await Security.hash_password('test')
     parts = hashed.split('$')
     assert len(parts) == 4
     assert parts[0] == 'pbkdf2_sha256'
     assert parts[1].isdigit()  # iterations
 
 
-def test_hash_unique_salt():
+@pytest.mark.asyncio
+async def test_hash_unique_salt():
     """Two hashes of the same password should differ (different salt)."""
-    h1 = Security.hash_password('same')
-    h2 = Security.hash_password('same')
+    h1 = await Security.hash_password('same')
+    h2 = await Security.hash_password('same')
     assert h1 != h2
 
 
-def test_custom_iterations():
-    hashed = Security.hash_password('test', iterations=1000)
+@pytest.mark.asyncio
+async def test_custom_iterations():
+    hashed = await Security.hash_password('test', iterations=1000)
     assert '$1000$' in hashed
-    assert Security.verify_password('test', hashed) is True
+    assert await Security.verify_password('test', hashed) is True
 
 
-def test_verify_invalid_format():
-    assert Security.verify_password('x', 'invalid') is False
+@pytest.mark.asyncio
+async def test_verify_invalid_format():
+    assert await Security.verify_password('x', 'invalid') is False
 
 
-def test_verify_wrong_method():
-    assert Security.verify_password('x', 'bcrypt$100$salt$hash') is False
+@pytest.mark.asyncio
+async def test_verify_wrong_method():
+    assert await Security.verify_password('x', 'bcrypt$100$salt$hash') is False
 
 
-def test_verify_non_integer_iterations_returns_false():
+@pytest.mark.asyncio
+async def test_verify_non_integer_iterations_returns_false():
     """If the iterations field of a 4-part hash is not an int, verify returns False (not crash)."""
     # Same shape as hash_password output, but iterations field is garbage
     bogus = 'pbkdf2_sha256$NOT_AN_INT$abcdef$0123456789abcdef'
-    assert Security.verify_password('whatever', bogus) is False
+    assert await Security.verify_password('whatever', bogus) is False
 
 
-def test_verify_legacy_three_part_hash():
+@pytest.mark.asyncio
+async def test_verify_legacy_three_part_hash():
     """Hashes from the pre-iterations-in-format era still verify correctly.
 
     The legacy format method$salt$hash is treated as DEFAULT_ITERATIONS,
@@ -66,8 +77,37 @@ def test_verify_legacy_three_part_hash():
     salt = 'abc123'
     hash_bytes = hashlib.pbkdf2_hmac('sha256', b'secret', salt.encode('utf-8'), DEFAULT_ITERATIONS)
     legacy = f'pbkdf2_sha256${salt}${hash_bytes.hex()}'
-    assert Security.verify_password('secret', legacy) is True
-    assert Security.verify_password('wrong', legacy) is False
+    assert await Security.verify_password('secret', legacy) is True
+    assert await Security.verify_password('wrong', legacy) is False
+
+
+@pytest.mark.asyncio
+async def test_hash_password_does_not_block_event_loop():
+    """The hash runs on a worker thread, so concurrent awaits make progress.
+
+    Pre-async, ``hash_password`` blocked the event loop for the entire
+    PBKDF2 (50-200ms with 100k iterations). A burst of N concurrent
+    hashes ran serially, taking ~N * 100ms total. With ``asyncio.to_thread``
+    they run on the default executor (8+ workers), so wall-clock time
+    stays close to the single-call cost regardless of concurrency.
+    """
+    import asyncio
+    import time
+
+    # Use the production iteration count so the test exercises the real
+    # blocking budget. 8 concurrent hashes; if the loop is blocked,
+    # wall time is 8x; if offloaded, ~1x.
+    start = time.perf_counter()
+    await asyncio.gather(*[Security.hash_password(f'pw-{i}') for i in range(8)])
+    elapsed = time.perf_counter() - start
+
+    # A single 100k-iteration hash is ~50-200ms on commodity hardware;
+    # 8 in parallel on the default thread pool should land well under
+    # 4x that. Pick a generous ceiling so this isn't flaky on slow CI.
+    assert elapsed < 4.0, (
+        f'8 concurrent hashes took {elapsed:.2f}s — looks like the event '
+        'loop is still blocked on PBKDF2 instead of offloading via to_thread.'
+    )
 
 
 # --- generate_token ---

@@ -2,6 +2,22 @@
 CSRF Middleware for Starlette.
 Validates tokens on state-changing requests (POST, PUT, DELETE, PATCH).
 Must be placed AFTER SessionMiddleware in the stack.
+
+Body buffering trade-off:
+    To extract a CSRF token from a form body the middleware would have
+    to read the entire body — which defeats Starlette's streaming for
+    file uploads (a 100 MB upload becomes a 100 MB allocation in the
+    middleware). To avoid that:
+
+    * If ``X-CSRF-Token`` is present, the body is NOT read (zero buffer).
+      Recommended for AJAX / fetch / non-browser clients.
+    * For ``application/x-www-form-urlencoded`` (small forms), the body
+      is buffered up to ``config.CSRF_FORM_MAX_BODY_SIZE`` (default
+      1 MiB). Real urlencoded forms rarely exceed a few KB.
+    * For ``multipart/form-data``, the middleware refuses to buffer.
+      Multipart is the file-upload path — clients MUST send the token
+      via ``X-CSRF-Token`` header so we can validate without consuming
+      the upload stream.
 """
 
 from __future__ import annotations
@@ -14,13 +30,19 @@ from urllib.parse import parse_qs
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from core.auth.security import Security
+from core.conf import config
 from core.logger import get_logger
 
 log = get_logger('csrf')
 
 _SAFE_METHODS = {'GET', 'HEAD', 'OPTIONS', 'TRACE'}
 _CSRF_SESSION_KEY = '_csrf_token'
-_MAX_BODY_SIZE = 10 * 1024 * 1024  # 10 MB — DoS limit
+_DEFAULT_FORM_BODY_SIZE = 1 * 1024 * 1024  # 1 MiB — for urlencoded form parsing
+
+
+def _form_body_cap() -> int:
+    """Resolve the per-request urlencoded buffer cap from settings."""
+    return int(config.get('CSRF_FORM_MAX_BODY_SIZE', _DEFAULT_FORM_BODY_SIZE))
 
 
 class CsrfMiddleware:
@@ -52,28 +74,46 @@ class CsrfMiddleware:
 
         headers = dict(scope.get('headers', []))
         content_type = headers.get(b'content-type', b'').decode('latin1', errors='replace')
+        expected = session.get(_CSRF_SESSION_KEY) if session else None
 
-        # Read body with size limit and validate token
-        try:
-            body = await self._read_body(receive)
-        except ValueError:
-            return await self._send_413(send)
-
-        token = None
+        # 1. Header token — preferred. Validates without touching the body
+        #    so streaming uploads stay streamed.
+        token: str | None = None
         header_token = headers.get(b'x-csrf-token')
         if header_token:
             token = header_token.decode('latin1', errors='replace')
 
-        # JSON clients must use the X-CSRF-Token header. Body parsing is
-        # form-only because relying on Content-Type to skip CSRF becomes a
-        # bypass when CORS is misconfigured or when the client is non-browser.
-        if not token and 'application/json' not in content_type:
-            token = self._extract_form_token(body, content_type)
+        if token is not None:
+            if not expected or not hmac.compare_digest(token, expected):
+                log.warning('CSRF validation failed (header) for %s %s', method, path)
+                return await self._send_403(send)
+            return await self.app(scope, receive, send)
 
-        expected = session.get(_CSRF_SESSION_KEY) if session else None
+        # 2. No header. JSON clients must use the header — the body is
+        #    not parsed to avoid Content-Type-based bypass tricks.
+        if 'application/json' in content_type:
+            log.warning('CSRF token missing (json no header) for %s %s', method, path)
+            return await self._send_403(send)
 
+        # 3. multipart/form-data: refuse to buffer. The token has to come
+        #    in the X-CSRF-Token header so we don't kill streaming.
+        if 'multipart/form-data' in content_type:
+            log.warning(
+                'CSRF token missing for multipart upload %s %s — multipart requires X-CSRF-Token header',
+                method,
+                path,
+            )
+            return await self._send_403(send)
+
+        # 4. urlencoded form: buffer up to the cap, parse the token field.
+        try:
+            body = await self._read_body(receive, _form_body_cap())
+        except ValueError:
+            return await self._send_413(send)
+
+        token = self._extract_form_token(body, content_type)
         if not token or not expected or not hmac.compare_digest(token, expected):
-            log.warning('CSRF validation failed for %s %s', method, path)
+            log.warning('CSRF validation failed (form) for %s %s', method, path)
             return await self._send_403(send)
 
         # Replay body so downstream can read it multiple times
@@ -89,9 +129,12 @@ class CsrfMiddleware:
         await self.app(scope, replay_receive, send)
 
     def _extract_form_token(self, body: bytes, content_type: str) -> str | None:
-        """Extract _csrf_token from body (url-encoded or multipart)."""
-        if 'multipart/form-data' in content_type:
-            return self._parse_multipart_token(body, content_type)
+        """Extract ``_csrf_token`` from a urlencoded body.
+
+        Multipart bodies never reach this function — see __call__: we
+        refuse them when the X-CSRF-Token header is missing, since
+        parsing multipart requires buffering the upload.
+        """
         try:
             parsed = parse_qs(body.decode('utf-8', errors='replace'))
             values = parsed.get('_csrf_token', [])
@@ -99,45 +142,18 @@ class CsrfMiddleware:
         except Exception:
             return None
 
-    def _parse_multipart_token(self, body: bytes, content_type: str) -> str | None:
-        """Extract _csrf_token from multipart form data."""
-        try:
-            boundary = None
-            for seg in content_type.split(';'):
-                seg = seg.strip()
-                if seg.startswith('boundary='):
-                    boundary = seg[len('boundary=') :]
-                    # Strip quotes per RFC 2046
-                    if len(boundary) >= 2 and boundary[0] in ('"', "'") and boundary[-1] == boundary[0]:
-                        boundary = boundary[1:-1]
-                    break
+    async def _read_body(self, receive: Receive, max_size: int) -> bytes:
+        """Read the ASGI request body up to ``max_size`` bytes.
 
-            if not boundary:
-                return None
-
-            boundary_bytes = ('--' + boundary).encode('utf-8')
-            parts = body.split(boundary_bytes)
-
-            for part in parts:
-                if b'name="_csrf_token"' in part:
-                    chunks = part.split(b'\r\n\r\n', 1)
-                    if len(chunks) == 2:
-                        # Strip only trailing CRLF, not dashes that could be part of the token
-                        value = chunks[1].split(b'\r\n', 1)[0]
-                        return value.decode('utf-8', errors='replace')
-        except Exception:
-            return None
-        return None
-
-    async def _read_body(self, receive: Receive) -> bytes:
-        """Read the ASGI request body with size limit to prevent DoS."""
+        Raises ``ValueError`` if the body exceeds the cap.
+        """
         body: bytes = b''
         while True:
             message = await receive()
             chunk: bytes = message.get('body', b'')
             body += chunk
-            if len(body) > _MAX_BODY_SIZE:
-                raise ValueError(f'Body exceeds max size ({_MAX_BODY_SIZE} bytes)')
+            if len(body) > max_size:
+                raise ValueError(f'Body exceeds CSRF form cap ({max_size} bytes)')
             if not message.get('more_body', False):
                 break
         return body

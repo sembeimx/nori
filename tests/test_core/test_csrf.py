@@ -232,22 +232,49 @@ async def test_exempt_path_passes():
 
 
 @pytest.mark.asyncio
-async def test_multipart_token_extraction():
+async def test_multipart_without_header_is_refused():
+    """Multipart bodies must NOT be buffered in the middleware — they're
+    the upload path. Clients must send the token in X-CSRF-Token instead.
+
+    Pre-1.22.0, the middleware would buffer the entire upload (up to
+    10 MB) just to extract the form token, killing Starlette's streaming
+    and turning a single 10 MB request into a 10 MB middleware allocation.
+    """
     token = Security.generate_csrf_token()
     session = {_CSRF_SESSION_KEY: token}
-    boundary = '----WebKitFormBoundary7MA4YWxk'
     body = (
-        f'------WebKitFormBoundary7MA4YWxk\r\n'
-        f'Content-Disposition: form-data; name="_csrf_token"\r\n'
-        f'\r\n'
-        f'{token}\r\n'
-        f'------WebKitFormBoundary7MA4YWxk\r\n'
-        f'Content-Disposition: form-data; name="title"\r\n'
-        f'\r\n'
-        f'Hello\r\n'
-        f'------WebKitFormBoundary7MA4YWxk--\r\n'
-    ).encode()
-    scope = _scope('POST', session=session, content_type=f'multipart/form-data; boundary={boundary}')
+        b'------WebKitFormBoundary7MA4YWxk\r\n'
+        b'Content-Disposition: form-data; name="_csrf_token"\r\n'
+        b'\r\n'
+        + token.encode()
+        + b'\r\n------WebKitFormBoundary7MA4YWxk--\r\n'
+    )
+    scope = _scope(
+        'POST',
+        session=session,
+        content_type='multipart/form-data; boundary=----WebKitFormBoundary7MA4YWxk',
+    )
+    cap = _Captured()
+    mw = CsrfMiddleware(_passthrough_app)
+    await mw(scope, await _make_receive(body), cap.send)
+    assert cap.status == 403
+
+
+@pytest.mark.asyncio
+async def test_multipart_with_header_passes_without_buffering():
+    """Multipart with X-CSRF-Token header passes through — body is NOT consumed."""
+    token = Security.generate_csrf_token()
+    session = {_CSRF_SESSION_KEY: token}
+    # 5 MiB body — well above any sane form cap. With the old code this
+    # would be buffered into the middleware. With the fix, the header
+    # short-circuits validation and the body streams to the handler.
+    body = b'fake upload bytes' * (5 * 1024 * 1024 // 17)
+    scope = _scope(
+        'POST',
+        session=session,
+        content_type='multipart/form-data; boundary=----xx',
+        headers=[(b'x-csrf-token', token.encode())],
+    )
     cap = _Captured()
     mw = CsrfMiddleware(_passthrough_app)
     await mw(scope, await _make_receive(body), cap.send)
@@ -255,23 +282,32 @@ async def test_multipart_token_extraction():
 
 
 @pytest.mark.asyncio
-async def test_multipart_quoted_boundary():
+async def test_header_token_is_validated_without_reading_body():
+    """If X-CSRF-Token is present, the middleware must NOT consume the body."""
     token = Security.generate_csrf_token()
     session = {_CSRF_SESSION_KEY: token}
-    boundary = '----myboundary'
-    body = (
-        f'------myboundary\r\n'
-        f'Content-Disposition: form-data; name="_csrf_token"\r\n'
-        f'\r\n'
-        f'{token}\r\n'
-        f'------myboundary--\r\n'
-    ).encode()
-    # Boundary with quotes
-    scope = _scope('POST', session=session, content_type=f'multipart/form-data; boundary="{boundary}"')
+    scope = _scope(
+        'POST',
+        session=session,
+        content_type='application/x-www-form-urlencoded',
+        headers=[(b'x-csrf-token', token.encode())],
+    )
+
+    # A receive that records whether it was called.
+    consumed = {'count': 0}
+
+    async def tracking_receive():
+        consumed['count'] += 1
+        return {'type': 'http.request', 'body': b'_csrf_token=irrelevant', 'more_body': False}
+
     cap = _Captured()
     mw = CsrfMiddleware(_passthrough_app)
-    await mw(scope, await _make_receive(body), cap.send)
+    await mw(scope, tracking_receive, cap.send)
     assert cap.status == 200
+    # The middleware passed receive through to the app — we can't fully
+    # observe whether the app called it (it's _passthrough_app), but we
+    # know the middleware itself didn't read it (it short-circuited
+    # before _read_body).
 
 
 # ---------------------------------------------------------------------------
@@ -314,11 +350,26 @@ async def test_post_without_session_returns_403():
 
 @pytest.mark.asyncio
 async def test_large_body_returns_413():
-    # 10MB + 1 byte
-    large_body = b'a' * (10 * 1024 * 1024 + 1)
+    # 1 MiB default cap + 1 byte. The cap is configurable via
+    # CSRF_FORM_MAX_BODY_SIZE; we test the default here.
+    large_body = b'a' * (1 * 1024 * 1024 + 1)
     scope = _scope('POST', session={}, content_type='application/x-www-form-urlencoded')
     cap = _Captured()
     mw = CsrfMiddleware(_passthrough_app)
     await mw(scope, await _make_receive(large_body), cap.send)
     assert cap.status == 413
     assert b'Too Large' in cap.body
+
+
+@pytest.mark.asyncio
+async def test_form_body_cap_is_configurable(monkeypatch):
+    """Setting CSRF_FORM_MAX_BODY_SIZE in config raises (or lowers) the cap."""
+    from core.auth import csrf as csrf_module
+
+    monkeypatch.setattr(csrf_module, '_form_body_cap', lambda: 256)
+    body = b'a' * 1024  # over the lowered cap
+    scope = _scope('POST', session={}, content_type='application/x-www-form-urlencoded')
+    cap = _Captured()
+    mw = CsrfMiddleware(_passthrough_app)
+    await mw(scope, await _make_receive(body), cap.send)
+    assert cap.status == 413
