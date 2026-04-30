@@ -44,6 +44,7 @@ Security note:
 
 from __future__ import annotations
 
+import asyncio
 import os
 import uuid
 from collections.abc import Callable
@@ -170,6 +171,14 @@ def _generate_filename(ext: str) -> str:
 # ---------------------------------------------------------------------------
 
 
+def _write_to_disk(file_path: str, content: bytes, upload_dir: str) -> None:
+    """Synchronous mkdir + write — invoked from a thread executor so the
+    event loop stays unblocked during local-disk I/O. Do not call from an
+    async context directly; route through :func:`_store_local`."""
+    Path(upload_dir).mkdir(parents=True, exist_ok=True)
+    Path(file_path).write_bytes(content)
+
+
 async def _store_local(
     filename: str,
     content: bytes,
@@ -178,7 +187,10 @@ async def _store_local(
     """Store a file on the local filesystem.
 
     Creates ``upload_dir`` if it doesn't exist. This is the default
-    storage driver.
+    storage driver. The blocking mkdir + write are offloaded via
+    :func:`asyncio.to_thread` so that disk I/O does not stall the event
+    loop — under load on slow disks or network filesystems a multi-MB
+    write would otherwise hijack the loop for tens of milliseconds.
 
     Args:
         filename: Generated filename (e.g. ``'abc123.jpg'``).
@@ -189,12 +201,8 @@ async def _store_local(
         A tuple of ``(absolute_path, url)`` where url is
         ``/uploads/{filename}``.
     """
-    Path(upload_dir).mkdir(parents=True, exist_ok=True)
     file_path = os.path.join(upload_dir, filename)
-
-    with open(file_path, 'wb') as f:
-        f.write(content)
-
+    await asyncio.to_thread(_write_to_disk, file_path, content, upload_dir)
     return file_path, f'/uploads/{filename}'
 
 

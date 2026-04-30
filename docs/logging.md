@@ -67,6 +67,14 @@ LOG_FILE=/var/log/nori/app.log
 
 This produces: `app.log`, `app.log.1`, `app.log.2`, ..., `app.log.5`.
 
+### Performance note
+
+`RotatingFileHandler` performs synchronous disk I/O on every log emit and during rotation events. In practice this is microseconds per call (writes are buffered by the kernel) and rarely a measurable bottleneck — but it does run on the event loop, so heavy logging on a slow disk could nibble at request latency.
+
+The recommended pattern for production deploys is **stdout-only logging** (leave `LOG_FILE` unset) and let your container orchestrator (Docker, Kubernetes, systemd) collect, rotate, and forward logs out-of-process. That way the application loop is never blocked by disk I/O, and log shipping is decoupled from the request path.
+
+Use `LOG_FILE` for local development, single-VM deploys, or when you need a guaranteed on-disk record alongside stdout.
+
 ---
 
 ## Framework Loggers
