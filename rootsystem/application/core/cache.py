@@ -310,8 +310,14 @@ class RedisCacheBackend(CacheBackend):
         """INCR + EXPIRE wrapped in a Lua script so the whole operation is
         atomic across workers — INCR alone is atomic, but the EXPIRE that
         applies the TTL needs to ride along to avoid a TOCTOU window."""
+        from collections.abc import Awaitable
+        from typing import cast
+
         rkey = f'{self._prefix}{key}'
-        result = await self._redis.eval(_INCR_LUA, 1, rkey, ttl)
+        # redis-py's eval() stub unions Awaitable[Any] | Any for the
+        # sync/async overload; on the asyncio client we always get a
+        # coroutine. Cast narrows it for mypy — same pattern as ping().
+        result = await cast(Awaitable[Any], self._redis.eval(_INCR_LUA, 1, rkey, ttl))
         return int(result)
 
     async def atomic_update(

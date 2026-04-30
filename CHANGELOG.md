@@ -4,6 +4,14 @@ All notable changes to Nori are documented here. Format follows [Keep a Changelo
 
 ---
 
+## [1.30.2] — 2026-04-30
+
+### Fixed
+
+- **CI Typecheck job now passes (last green: v1.16.0).** Four mypy errors had accumulated since the v1.17 → v1.29 window, all hidden behind the same gap in the local pre-push checklist that let Lint and ruff format drift. Two were stale ``# type: ignore[return-value]`` comments in ``core/mixins/soft_deletes.py`` (``get_queryset()`` and ``with_trashed()``) that newer mypy/aerich type stubs no longer require — removed. Two were ``await self._redis.eval(...)`` sites in ``core/cache.py:incr`` and ``core/http/throttle_backends.py:check_and_add`` where redis-py's ``eval`` stub unions ``Awaitable[Any] | Any`` for the sync/async overload — on the asyncio client it is always a coroutine, but mypy cannot pick the right branch. Wrapped both in ``cast(Awaitable[Any], ...)``, the same pattern already used for ``self._redis.ping()`` in ``RedisCacheBackend.verify``. Added ``mypy rootsystem/application`` to the local pre-push checklist alongside ``ruff check`` and ``ruff format --check``.
+
+---
+
 ## [1.30.1] — 2026-04-30
 
 ### Improved

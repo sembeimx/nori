@@ -224,18 +224,27 @@ class RedisBackend(ThrottleBackend):
         window: int,
         max_requests: int,
     ) -> tuple[bool, int, float | None]:
+        from collections.abc import Awaitable
+        from typing import Any, cast
+
         rkey = f'{self._prefix}{key}'
         cutoff = now - window
         ttl = window + 60
-        result = await self._redis.eval(
-            _CHECK_AND_ADD_LUA,
-            1,
-            rkey,
-            cutoff,
-            str(now),
-            now,
-            max_requests,
-            ttl,
+        # redis-py's eval() stub unions Awaitable[Any] | Any across the
+        # sync/async overload; on the asyncio client it is always a
+        # coroutine. Cast narrows it for mypy.
+        result = await cast(
+            Awaitable[Any],
+            self._redis.eval(
+                _CHECK_AND_ADD_LUA,
+                1,
+                rkey,
+                cutoff,
+                str(now),
+                now,
+                max_requests,
+                ttl,
+            ),
         )
         allowed = bool(int(result[0]))
         count = int(result[1])

@@ -70,7 +70,7 @@ class AllObjectsManager(Manager):
     """
 
     def get_queryset(self) -> SoftDeleteQuerySet:
-        return SoftDeleteQuerySet(self._model)  # type: ignore[return-value]
+        return SoftDeleteQuerySet(self._model)
 
 
 class NoriSoftDeletes(Model):
@@ -160,7 +160,7 @@ class NoriSoftDeletes(Model):
     @classmethod
     def with_trashed(cls) -> SoftDeleteQuerySet:
         """Returns QuerySet that includes deleted records."""
-        return cls.all_objects.get_queryset()  # type: ignore[return-value]
+        return cls.all_objects.get_queryset()
 
     @classmethod
     def only_trashed(cls) -> SoftDeleteQuerySet:
