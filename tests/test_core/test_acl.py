@@ -265,16 +265,199 @@ async def test_load_permissions_resolver_failure_does_not_crash(monkeypatch, cap
 
 @pytest.mark.asyncio
 async def test_load_permissions_no_resolver_keeps_warning_path(monkeypatch):
-    """When neither role_ids nor ROLE_RESOLVER is set, behavior is the
-    pre-v1.20.1 fallback: warn + empty perms + TTL marker. Confirms the
-    resolver hook is purely additive — projects that don't configure
-    one keep the v1.20.0 behavior."""
+    """When role_ids missing, ROLE_RESOLVER unset, and User model not
+    registered, behavior is the pre-v1.20.1 fallback: warn + empty
+    perms + TTL marker. Confirms the hybrid resolution is purely
+    additive — projects with no User registered keep the v1.20.0
+    fallback."""
     from types import SimpleNamespace
 
     from core.auth.decorators import _PERMISSIONS_TTL_KEY, load_permissions
     from core.conf import config
 
     monkeypatch.setattr(config, '_settings', SimpleNamespace())
+
+    session = FakeSession()
+    perms = await load_permissions(session, user_id=99)
+    assert perms == []
+    assert _PERMISSIONS_TTL_KEY in session
+
+
+# ---------------------------------------------------------------------------
+# v1.20.2 — User.roles convention fallback (zero-config)
+# ---------------------------------------------------------------------------
+
+
+class _FakeAwaitable:
+    """Mimics a Tortoise lazy QuerySet that becomes the result on await."""
+
+    def __init__(self, result):
+        self._result = result
+
+    def prefetch_related(self, *args):
+        return self
+
+    def __await__(self):
+        async def _coro():
+            return self._result
+
+        return _coro().__await__()
+
+
+@pytest.mark.asyncio
+async def test_load_permissions_uses_user_roles_convention(monkeypatch):
+    """Zero-config path: when role_ids missing AND ROLE_RESOLVER not
+    configured, Nori falls back to ``get_model('User')`` and reads
+    ``.roles`` on the user. This unblocks projects that follow the
+    convention without forcing them to wire a resolver."""
+    import core.auth.decorators as dec_mod
+    from models.framework.permission import Permission
+    from models.framework.role import Role
+
+    perm, _ = await Permission.get_or_create(name='convention.publish')
+    role, _ = await Role.get_or_create(name='convention_role_v1202')
+    await role.permissions.add(perm)
+
+    class FakeUser:
+        def __init__(self, id):
+            self.id = id
+            self.roles = [role]
+
+    class FakeUserClass:
+        @staticmethod
+        def get(*, id):
+            return _FakeAwaitable(FakeUser(id))
+
+    real_get_model = dec_mod.get_model
+
+    def fake_get_model(name):
+        if name == 'User':
+            return FakeUserClass
+        return real_get_model(name)
+
+    monkeypatch.setattr(dec_mod, 'get_model', fake_get_model)
+
+    session = FakeSession()
+    perms = await load_permissions(session, user_id=99)
+    assert role.id in session['role_ids']
+    assert 'convention.publish' in perms
+
+
+@pytest.mark.asyncio
+async def test_load_permissions_resolver_takes_priority_over_convention(monkeypatch):
+    """When both ROLE_RESOLVER and the User convention are available,
+    the explicit resolver wins. That keeps the override semantics —
+    projects that opt out of the convention shouldn't accidentally
+    trigger the User lookup."""
+    from types import SimpleNamespace
+
+    import core.auth.decorators as dec_mod
+    from core.conf import config
+    from models.framework.permission import Permission
+    from models.framework.role import Role
+
+    resolver_perm, _ = await Permission.get_or_create(name='from.resolver')
+    convention_perm, _ = await Permission.get_or_create(name='from.convention')
+    resolver_role, _ = await Role.get_or_create(name='resolver_role_v1202')
+    convention_role, _ = await Role.get_or_create(name='convention_role_p2')
+    await resolver_role.permissions.add(resolver_perm)
+    await convention_role.permissions.add(convention_perm)
+
+    async def resolver(user_id):
+        return [resolver_role.id]
+
+    monkeypatch.setattr(config, '_settings', SimpleNamespace(ROLE_RESOLVER=resolver))
+
+    # Convention path also wired up — must NOT win
+    class FakeUser:
+        def __init__(self, id):
+            self.id = id
+            self.roles = [convention_role]
+
+    class FakeUserClass:
+        @staticmethod
+        def get(*, id):
+            return _FakeAwaitable(FakeUser(id))
+
+    real_get_model = dec_mod.get_model
+    monkeypatch.setattr(
+        dec_mod,
+        'get_model',
+        lambda name: FakeUserClass if name == 'User' else real_get_model(name),
+    )
+
+    session = FakeSession()
+    perms = await load_permissions(session, user_id=99)
+    assert 'from.resolver' in perms
+    assert 'from.convention' not in perms
+
+
+@pytest.mark.asyncio
+async def test_load_permissions_convention_falls_through_when_user_lacks_roles(monkeypatch):
+    """If the User model is registered but doesn't expose ``.roles``
+    (single-role User, custom relation name, token-only auth), the
+    fallback gracefully lands at warn + empty perms instead of
+    crashing the request."""
+    import core.auth.decorators as dec_mod
+    from core.auth.decorators import _PERMISSIONS_TTL_KEY
+
+    class UserWithoutRolesAttr:
+        def __init__(self, id):
+            self.id = id
+            self.role_id = 5  # singular, no M2M
+
+    class FakeUserClass:
+        @staticmethod
+        def get(*, id):
+            return _FakeAwaitable(UserWithoutRolesAttr(id))
+
+    real_get_model = dec_mod.get_model
+    monkeypatch.setattr(
+        dec_mod,
+        'get_model',
+        lambda name: FakeUserClass if name == 'User' else real_get_model(name),
+    )
+
+    session = FakeSession()
+    perms = await load_permissions(session, user_id=99)
+    assert perms == []
+    assert _PERMISSIONS_TTL_KEY in session
+
+
+@pytest.mark.asyncio
+async def test_load_permissions_convention_swallows_query_errors(monkeypatch):
+    """Tortoise raising DoesNotExist or any other shape-dependent error
+    must NOT take down the request. Log + fall through to empty perms."""
+    import logging
+    from types import SimpleNamespace
+
+    import core.auth.decorators as dec_mod
+    from core.auth.decorators import _PERMISSIONS_TTL_KEY
+    from core.conf import config
+
+    class FakeAwaitableExploding:
+        def prefetch_related(self, *args):
+            return self
+
+        def __await__(self):
+            async def _coro():
+                raise RuntimeError('user 99 does not exist')
+
+            return _coro().__await__()
+
+    class FakeUserClass:
+        @staticmethod
+        def get(*, id):
+            return FakeAwaitableExploding()
+
+    monkeypatch.setattr(config, '_settings', SimpleNamespace())
+    real_get_model = dec_mod.get_model
+    monkeypatch.setattr(
+        dec_mod,
+        'get_model',
+        lambda name: FakeUserClass if name == 'User' else real_get_model(name),
+    )
+    monkeypatch.setattr(logging.getLogger('nori'), 'propagate', True)
 
     session = FakeSession()
     perms = await load_permissions(session, user_id=99)

@@ -169,6 +169,36 @@ async def load_permissions(session: dict, user_id: int) -> list[str]:
                 _perm_log.error('ROLE_RESOLVER failed for user %s: %s', user_id, exc, exc_info=True)
 
     if not role_ids:
+        # Second fallback: zero-config convention. Many Nori projects
+        # register a ``User`` model with a ``roles`` M2M to
+        # ``framework.Role``; if so, derive ``role_ids`` from there
+        # without forcing the project to wire up ``ROLE_RESOLVER``.
+        # Wrapped broadly because every step is project-shape-dependent
+        # — User may not be registered, may not have ``.roles``, the
+        # row may not exist, or the relation may have a different name.
+        # Any of those is a valid project shape, not an error; we fall
+        # through to the warning so it stays visible.
+        try:
+            User = get_model('User')
+            user = await User.get(id=user_id).prefetch_related('roles')
+            roles_rel = getattr(user, 'roles', None)
+            if roles_rel is not None:
+                resolved = [r.id for r in roles_rel]
+                if resolved:
+                    role_ids = list(resolved)
+                    session['role_ids'] = role_ids
+        except LookupError:
+            # User model not registered. Expected for token-only auth
+            # or projects that haven't set up a User; do not log.
+            pass
+        except Exception as exc:  # noqa: BLE001 — shape-dependent; never crash the request
+            _perm_log.warning(
+                'Auto-resolve via get_model("User").roles failed for user %s: %s',
+                user_id,
+                exc,
+            )
+
+    if not role_ids:
         _perm_log.warning('load_permissions called but role_ids is empty for user %s', user_id)
         session['permissions'] = []
         session[_PERMISSIONS_TTL_KEY] = time.time()
