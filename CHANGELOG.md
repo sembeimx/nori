@@ -4,6 +4,68 @@ All notable changes to Nori are documented here. Format follows [Keep a Changelo
 
 ---
 
+## [1.18.0] — 2026-04-30
+
+### Upgrade notes — read first
+
+This release closes Round 4 of the deep audit and ships a systemic response to a class of bug that kept resurfacing: **cache-backed counters with TOCTOU races**. Three independent components (queue retry counter, login lockout counter, rate-limit window) had the same shape — `cache_get` → modify → `cache_set` — and all three could be bypassed by concurrent traffic. We've added atomic primitives to the cache backend, codified the convention in `AGENTS.md`, and fixed every site that hit the anti-pattern.
+
+**1. `core.cache.CacheBackend` gains `incr()` and `atomic_update()`.** Custom backends MUST implement both. `MemoryBackend` serializes via the existing asyncio lock; `RedisBackend` uses `INCR` + a Lua script for `incr` and `WATCH/MULTI/EXEC` for `atomic_update`. Convenience helpers: `cache_incr(key, ttl)` and `cache_atomic_update(key, fn, ttl)`. If you've subclassed `CacheBackend` in your project, add the two methods (or copy from `MemoryBackend` / `RedisBackend`) before upgrading.
+
+```python
+from core.cache import cache_incr
+
+attempts = await cache_incr('login:user@example.com:attempts', ttl=3600)
+if attempts >= 5:
+    # locked out
+    ...
+```
+
+**2. Throttle backend gains `check_and_add()` and uses it from the decorator.** The `@throttle('10/minute')` decorator no longer calls `get_timestamps` + `add_timestamp` separately — those two operations were the TOCTOU window. `check_and_add` is atomic in both the memory backend (asyncio lock) and the Redis backend (single Lua `EVAL`). If you implemented a custom `ThrottleBackend`, add `check_and_add(key, now, window, max_requests) -> tuple[bool, int, float | None]` before upgrading. The legacy `get_timestamps` / `add_timestamp` methods remain for direct test use.
+
+**3. `revoke_token()` no longer raises on missing `jti`; it returns a `bool`.** Pre-v1.18.0, `revoke_token()` raised `ValueError` if the payload had no `jti`. `jti` is optional in RFC 7519, so logout endpoints that accepted third-party or legacy tokens crashed. The function now logs a warning and returns `False` for the no-jti case, `True` on a successful blacklist. First-party tokens issued via `create_token()` always carry a `jti`, so the success path is unchanged. If you were relying on the raise to detect malformed tokens, branch on the return value instead.
+
+```python
+ok = await revoke_token(payload)
+if not ok:
+    _log.info('Token had no jti, relying on natural expiry.')
+```
+
+### Security
+
+- **Login brute-force bypass closed.** `record_failed_login()` previously did `cache_get` → increment → `cache_set` on a single dict. Under contention, 100 concurrent attempts all read `attempts=0`, all wrote `attempts=1`, and the lockout threshold never fired. Storage shape is now three scalar keys per identifier, and the counter goes through `cache_incr`, which is atomic in both backends. Regression test `test_brute_force_concurrent_attempts_trigger_lockout` fires 100 concurrent failed logins and asserts the account locks. (Round 4, finding 2.1.)
+- **Throttle bypass closed.** Same shape, different module: `throttle()` did `get_timestamps` + `add_timestamp`, so 50 concurrent callers against a `5/minute` limit all read `count=0` and added their entry — the limit was silently disabled. Fixed via the new `check_and_add` primitive. Memory backend serializes with the asyncio lock; Redis backend wraps `ZREMRANGEBYSCORE` + `ZCARD` + `ZADD` in a single Lua script. Regression test fires 50 concurrent calls and asserts exactly 5 are allowed. (Round 4, finding 2.2.)
+- **`revoke_token` is no longer a denial-of-service path.** Crashing on a missing optional claim let any logout request with a foreign token take down the request handler. See upgrade note 3.
+
+### Performance
+
+- **GCS RSA signing offloaded to a worker thread.** `_load_credentials()` (sync file I/O) and `_build_jwt()` (CPU-bound RSA signing) ran inline on the event loop. Under load, every token refresh — once per hour per process — stalled every other request handler. Both are now wrapped in `asyncio.to_thread`. Regression test asserts both functions are offloaded. (Round 4, finding 3.1.)
+- **Persistent `httpx.AsyncClient` across all service drivers.** Six drivers (`mail_resend`, `storage_gcs`, `storage_s3`, `oauth_github`, `oauth_google`, `search_meilisearch`) wrapped each request in `async with httpx.AsyncClient()`, paying a fresh TCP+TLS handshake every send/upload/OAuth callback. Each driver now holds one module-level client and exposes `shutdown()` for the ASGI lifespan. Audit highlighted only two; defensive sweep covered the other four to prevent the next audit round. (Round 4, finding 3.3 + audit-driven sweep.)
+
+### Added
+
+- **`core.cache.cache_incr(key, ttl=0) -> int`** — atomic increment. Returns the new value. Sets the TTL only on first increment (when the resulting value is 1) so reset semantics are predictable. Memory and Redis implementations included.
+- **`core.cache.cache_atomic_update(key, fn, ttl=0) -> Any`** — read-modify-write under the cache lock. `fn` MUST be idempotent under the Redis backend, which retries on `WatchError`. Use this when `cache_incr` is too narrow (composite values, non-integer state).
+- **`shutdown()` on every service driver.** Apps that want to close the HTTP pool cleanly on app shutdown can wire `from services.foo import shutdown as _foo_shutdown` into their lifespan handler. Drivers without registration are not affected — `_get_client()` is lazy.
+
+### Conventions (AGENTS.md §6)
+
+Codified the anti-patterns the audit kept catching, so code review surfaces them before they ship:
+
+- **Cache atomicity**: counters/limits MUST go through `cache_incr` / `cache_atomic_update`, not `cache_get` + `cache_set`.
+- **Async I/O hygiene**: service drivers MUST offload sync disk I/O and CPU-heavy work via `asyncio.to_thread`.
+- **Connection reuse**: drivers using `httpx` MUST hold one persistent `AsyncClient` at module level.
+- **Optional spec fields**: JWT/OAuth claim access MUST treat optional fields as `None` (`.get('jti')`, not `payload['jti']`).
+
+§7 also gains a "Concurrency hazards: TOCTOU in cache-backed counters" subsection with the bug class explanation, fix recipe, and the pre-merge check.
+
+### Changed
+
+- `revoke_token()` return type changed from `None` to `bool`. See upgrade note 3.
+- `CacheBackend` and `ThrottleBackend` ABCs gained new abstract methods. Custom subclasses need updating before upgrading.
+
+---
+
 ## [1.17.0] — 2026-04-30
 
 ### Upgrade notes — read first

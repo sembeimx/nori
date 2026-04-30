@@ -38,6 +38,30 @@ await cache_flush()
 
 ---
 
+## Atomic Primitives
+
+For counters, rate limits, and any read-modify-write workflow, use these instead of `cache_get` + `cache_set` — the latter is a TOCTOU race that lets concurrent callers clobber each other.
+
+```python
+from core.cache import cache_incr, cache_atomic_update
+
+# Atomic counter — survives concurrent callers without a lock
+attempts = await cache_incr('login:user@example.com:attempts', ttl=3600)
+
+# Read-modify-write under the cache lock; `fn` must be idempotent
+new_state = await cache_atomic_update(
+    'order:42:status',
+    lambda current: {**(current or {}), 'updated_at': time.time()},
+    ttl=300,
+)
+```
+
+`cache_incr` returns the new integer value. The TTL is set only on first increment (when the result is 1) so the window is predictable.
+
+`cache_atomic_update` retries under contention on the Redis backend (`WatchError`); pass an idempotent `fn`. Use it when the value is composite or non-integer; otherwise prefer `cache_incr`.
+
+---
+
 ## Response Caching Decorator
 
 The `@cache_response` decorator caches the full HTTP response for `GET` requests. Non-GET requests pass through uncached. Only **successful responses (2xx)** are cached — error responses (4xx, 5xx) are never stored.
