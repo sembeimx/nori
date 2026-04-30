@@ -4,6 +4,18 @@ All notable changes to Nori are documented here. Format follows [Keep a Changelo
 
 ---
 
+## [1.21.1] — 2026-04-30
+
+### Fixed
+
+- **Login lockout escalation no longer skips tiers under burst (HIGH).** `core/auth/login_guard.py:record_failed_login` checked `if attempts >= _MAX_ATTEMPTS`, so a single burst of `N > _MAX_ATTEMPTS` concurrent failed logins would let every request whose atomic `cache_incr` returned a value above the threshold re-fire the escalation block. The lockouts counter would jump by `N - _MAX_ATTEMPTS + 1` in milliseconds, walking past the 60s / 5m / 15m / 30m tiers and pinning the victim to the 1-hour ceiling from a single attack burst — turning the brute-force protection into a denial-of-service amplifier against legitimate accounts.
+
+  The fix is a one-character change: `==` instead of `>=`. Only the request that crosses the exact threshold escalates; later requests in the burst that see `attempts > _MAX_ATTEMPTS` are no-ops and would have been rejected by the fast-path check at the top of the function had they arrived after `locked_until` was written.
+
+  Regression test: `test_attempts_above_threshold_without_lockout_do_not_re_escalate` pre-seeds the post-burst state (stale above-threshold counter, no `locked_until` yet) and asserts the next failed login does NOT bump the lockouts counter. Verified: this test fails on the pre-1.21.1 code with the warning ``Account locked: victim@example.com (lockout #2, 300s)`` — the exact behavior the bug produces.
+
+---
+
 ## [1.21.0] — 2026-04-30
 
 ### Upgrade notes — read first

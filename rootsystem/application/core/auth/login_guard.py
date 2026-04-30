@@ -87,7 +87,15 @@ async def record_failed_login(identifier: str) -> None:
     # Atomic increment — survives 100 concurrent failed logins.
     attempts = await cache_incr(_attempts_key(identifier), ttl=_TRACKING_TTL)
 
-    if attempts >= _MAX_ATTEMPTS:
+    # Use ``==`` (not ``>=``) so only the request that crosses the threshold
+    # escalates the lockout. With ``>=``, a burst of N concurrent failed
+    # logins (where N > _MAX_ATTEMPTS) would advance the *lockouts* counter
+    # by N - _MAX_ATTEMPTS in milliseconds — skipping every tier of the
+    # escalating schedule and pinning the victim to the maximum 1-hour
+    # lockout from a single concurrent burst. Subsequent requests that
+    # see ``attempts > _MAX_ATTEMPTS`` are no-ops; they would have rejected
+    # in the fast-path above had they arrived after locked_until was set.
+    if attempts == _MAX_ATTEMPTS:
         lockouts = await cache_incr(_lockouts_key(identifier), ttl=_TRACKING_TTL)
         duration = _lockout_duration(lockouts - 1)  # cache_incr returns the new value (1-indexed)
         new_locked_until = time.time() + duration

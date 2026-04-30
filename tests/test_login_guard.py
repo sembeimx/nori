@@ -164,3 +164,62 @@ async def test_brute_force_concurrent_attempts_trigger_lockout():
         'this means the cache update is racy and brute-force attacks bypass it.'
     )
     assert retry_after > 0
+
+
+@pytest.mark.asyncio
+async def test_attempts_above_threshold_without_lockout_do_not_re_escalate():
+    """Regression for the ``>=`` vs ``==`` DoS.
+
+    Pre-1.21.1, ``record_failed_login`` ran ``if attempts >= _MAX_ATTEMPTS``.
+    That meant every request whose atomic ``cache_incr`` returned a value
+    above the threshold would re-fire the escalation block and jump the
+    lockouts counter — turning a single burst of failed logins into the
+    top-tier 1-hour lockout instead of the 60s first tier.
+
+    This test simulates the post-burst state directly: a stale
+    above-threshold attempts counter, no locked_until yet (the race
+    window). One more failed login must NOT bump the lockouts counter,
+    because escalation should fire exactly once when the exact threshold
+    is crossed and no second time as the counter keeps climbing.
+    """
+    from core.cache import cache_get, cache_set
+
+    # First lockout has already happened — lockouts == 1, attempts cleared.
+    # Simulate the moment AFTER the threshold-crossing request increments
+    # the counter to a stale-high value during a concurrent burst, and
+    # BEFORE the locked_until write lands. Another failure arrives in
+    # this window.
+    await cache_set('login_guard:victim@example.com:lockouts', 1, 3600)
+    await cache_set('login_guard:victim@example.com:attempts', 6, 3600)
+
+    await record_failed_login('victim@example.com')
+
+    lockouts = await cache_get('login_guard:victim@example.com:lockouts')
+    assert lockouts == 1, (
+        f'Above-threshold attempts re-triggered escalation: lockouts={lockouts}. '
+        'The threshold check must use == (not >=) so only the exact-threshold '
+        "request escalates; later 'tail' requests in a burst are no-ops."
+    )
+
+
+@pytest.mark.asyncio
+async def test_first_burst_lockout_stays_in_first_tier():
+    """The first lockout from a fresh account is always 60s — never higher.
+
+    Pre-1.21.1, a concurrent burst could fire several escalations in the
+    same milliseconds and the LAST ``cache_set(locked_until)`` to land
+    would be the 1-hour ceiling. After the fix, escalation runs once and
+    the first lockout is always the 60s first tier.
+    """
+    import asyncio
+
+    # 50 concurrent failed logins for a fresh account.
+    await asyncio.gather(*[record_failed_login('fresh@example.com') for _ in range(50)])
+
+    allowed, retry_after = await check_login_allowed('fresh@example.com')
+    assert allowed is False
+    assert retry_after <= _LOCKOUT_SCHEDULE[0] + 1, (
+        f'First-tier lockout was inflated: retry_after={retry_after}s, '
+        f'expected <= {_LOCKOUT_SCHEDULE[0] + 1}s. A fresh account should '
+        'never hit the 3600s tier from a single burst.'
+    )
