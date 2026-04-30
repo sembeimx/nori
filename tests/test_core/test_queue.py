@@ -78,6 +78,51 @@ async def fail_task(name: str):
     raise Exception('Task failed intentionally')
 
 
+# v1.30 regression helpers — defined at module level so
+# ``importlib.import_module(...)`` (potentially loading the module a
+# second time under a different name from pytest's collection) finds
+# them in the fresh module's namespace, not just on whichever instance
+# pytest happens to have populated.
+
+
+async def gc_marker_task(name: str) -> None:
+    """Used by ``test_memory_handler_holds_strong_reference_to_task``.
+    The body is what we assert ran; if the in-flight Task is GC-collected
+    pre-fix, this never executes and the file tracker stays empty.
+    """
+    _mark_executed(f'gc-marker:{name}')
+
+
+def blocking_sync_handler() -> None:
+    """Sync sleep used by ``test_execute_payload_offloads_sync_callable_to_thread``.
+    Pre-fix this body would block the event loop because ``execute_payload``
+    called sync callables inline.
+    """
+    import time as _time
+
+    _time.sleep(0.2)
+
+
+def sync_factory_returning_coroutine(arg: str) -> object:
+    """Legacy / hybrid pattern: sync function returning an awaitable.
+    Sync portion must run in a thread, the returned coroutine on the loop.
+    """
+    _mark_executed(f'sync:{arg}')
+
+    async def _inner() -> None:
+        _mark_executed(f'async:{arg}')
+
+    return _inner()
+
+
+async def async_loop_probe() -> None:
+    """Records that the handler ran with a running event loop —
+    ``asyncio.get_running_loop()`` raises ``RuntimeError`` if not on one.
+    """
+    asyncio.get_running_loop()
+    _mark_executed('on-loop')
+
+
 # -- Tests -------------------------------------------------------------------
 
 
@@ -351,3 +396,136 @@ def test_job_model_does_not_use_soft_deletes():
         'to drop completed jobs. With soft delete the jobs table grows '
         'indefinitely. See models/framework/job.py for the rationale.'
     )
+
+
+# -- Memory driver: strong reference to in-flight tasks ---------------------
+
+
+@pytest.mark.asyncio
+async def test_memory_handler_holds_strong_reference_to_task():
+    """Pre-1.30 ``_memory_handler`` did ``asyncio.create_task(_run())`` and
+    threw the returned Task away — Python's event loop holds only a weak
+    reference to a Task, so an unreferenced task can be garbage-collected
+    mid-``await asyncio.sleep(delay)``. The user-visible failure: a
+    ``push('mail.send', delay=30)`` would silently never run.
+    The fix mirrors ``core.audit._pending_tasks``: a module-level set
+    pins the task until ``add_done_callback(set.discard)`` releases it.
+    """
+    from core.queue import _memory_handler, _memory_tasks
+
+    initial = len(_memory_tasks)
+
+    payload = {
+        'func': 'tests.test_core.test_queue:gc_marker_task',
+        'args': ['gc-test'],
+        'kwargs': {},
+    }
+    await _memory_handler('q', payload, delay=0)
+
+    # Right after the handler returns, the Task has been created but
+    # has NOT had a chance to run its body yet (control returns from
+    # ``asyncio.create_task`` synchronously). The set must hold a
+    # strong reference; without one the loop's weak ref is the only
+    # reference and an aggressive GC pass could collect the Task.
+    assert len(_memory_tasks) == initial + 1, (
+        f'task not pinned in _memory_tasks (size went {initial} → '
+        f'{len(_memory_tasks)}); pre-fix the Task was subject to GC '
+        f'mid-sleep and the job would silently never run'
+    )
+
+    # Yield long enough for the task to run end-to-end.
+    await asyncio.sleep(0.1)
+
+    assert 'gc-marker:gc-test' in _get_executed(), (
+        'handler body did not execute — the Task was apparently lost '
+        'between scheduling and resumption'
+    )
+    assert len(_memory_tasks) == initial, (
+        'done callback did not release the task from _memory_tasks; the '
+        'set would grow unboundedly across in-flight jobs'
+    )
+
+
+# -- queue_worker: sync callable offload to thread ---------------------------
+
+
+@pytest.mark.asyncio
+async def test_execute_payload_offloads_sync_callable_to_thread():
+    """A synchronous callable dispatched through ``execute_payload`` MUST
+    run in a worker thread — running it inline on the loop freezes every
+    other request for the duration of the call. Under the memory queue
+    driver this is especially severe (the dispatch happens inside the
+    ASGI event loop, not a worker process).
+    Same shape as the v1.27.0 ``core.tasks._run()`` fix for
+    ``background()``: sync callables go through ``asyncio.to_thread``.
+    The test runs a 200 ms blocking ``time.sleep`` and concurrently
+    advances a 10 ms ticker on the loop. If the sync portion ran inline
+    the ticker would advance ~zero times during the block; with the
+    offload it must advance several.
+    """
+    from core.queue_worker import execute_payload
+
+    ticks = 0
+
+    async def ticker():
+        nonlocal ticks
+        while True:
+            await asyncio.sleep(0.01)
+            ticks += 1
+
+    ticker_task = asyncio.create_task(ticker())
+    try:
+        payload = {
+            'func': 'tests.test_core.test_queue:blocking_sync_handler',
+            'args': [],
+            'kwargs': {},
+        }
+        await execute_payload(payload)
+    finally:
+        ticker_task.cancel()
+        try:
+            await ticker_task
+        except asyncio.CancelledError:
+            pass
+
+    assert ticks >= 5, (
+        f'ticker advanced only {ticks} times during a 200 ms sync call — '
+        f'execute_payload blocked the loop instead of offloading via '
+        f'asyncio.to_thread'
+    )
+
+
+@pytest.mark.asyncio
+async def test_execute_payload_runs_sync_factory_returning_coroutine():
+    """Legacy / hybrid pattern: a sync function whose return value is an
+    awaitable. The fix keeps this working — the sync portion runs in a
+    worker thread, the resulting awaitable is awaited on the loop.
+    """
+    from core.queue_worker import execute_payload
+
+    payload = {
+        'func': 'tests.test_core.test_queue:sync_factory_returning_coroutine',
+        'args': ['x'],
+        'kwargs': {},
+    }
+    await execute_payload(payload)
+    assert 'sync:x' in _get_executed()
+    assert 'async:x' in _get_executed()
+
+
+@pytest.mark.asyncio
+async def test_execute_payload_async_callable_still_runs_on_loop():
+    """An async ``def`` target must continue to be ``await``-ed directly
+    on the loop, not handed to ``asyncio.to_thread`` (which would either
+    schedule the coroutine on a thread that has no loop, or — worse —
+    return the unawaited coroutine and let it leak).
+    """
+    from core.queue_worker import execute_payload
+
+    payload = {
+        'func': 'tests.test_core.test_queue:async_loop_probe',
+        'args': [],
+        'kwargs': {},
+    }
+    await execute_payload(payload)
+    assert 'on-loop' in _get_executed()

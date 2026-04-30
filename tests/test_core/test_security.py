@@ -1,7 +1,6 @@
 """Tests for core.auth.security."""
 
 import pytest
-
 from core.auth.security import Security
 
 # --- hash_password / verify_password ---

@@ -370,9 +370,8 @@ async def test_cache_response_legacy_body_field_still_renders():
     """Cache entries written by pre-v1.19.0 used a 'body' field with a
     utf-8 string. After upgrade, those entries should still render until
     they expire — not crash the request."""
-    from starlette.responses import Response
-
     from core.cache import cache_set
+    from starlette.responses import Response
 
     class FakeURL:
         path = '/legacy-cached'

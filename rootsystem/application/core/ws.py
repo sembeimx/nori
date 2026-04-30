@@ -238,9 +238,11 @@ async def close_all_connections(code: int = 1001, timeout: float = 2.0) -> None:
     async def _close(ws: WebSocket) -> None:
         try:
             await ws.close(code=code)
-        except Exception:
+        except Exception:  # noqa: S110 — best-effort fan-out; see comment
             # Already closed, network gone, partner crashed — none of
             # these should derail shutdown of the remaining connections.
+            # Logging here would spam ERRORs on every rolling restart for
+            # peers that already disconnected (the common case).
             pass
 
     try:

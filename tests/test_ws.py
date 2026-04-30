@@ -40,9 +40,8 @@ def test_base_handler_accepts_connection():
 
 def test_oversize_message_closes_with_1009():
     """A message exceeding max_message_size triggers a 1009 close."""
-    from starlette.websockets import WebSocketDisconnect
-
     from core.ws import WebSocketHandler
+    from starlette.websockets import WebSocketDisconnect
 
     # 1 MiB default cap; send 2 MiB of text.
     huge = 'x' * (2 * 1024 * 1024)

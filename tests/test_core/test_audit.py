@@ -364,5 +364,5 @@ async def test_flush_pending_warns_and_continues_on_timeout(monkeypatch, caplog)
             stuck.cancel()
         try:
             await stuck
-        except (asyncio.CancelledError, BaseException):
+        except (asyncio.CancelledError, BaseException):  # noqa: S110 — drain a deliberately-cancelled fixture task
             pass

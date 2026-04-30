@@ -95,10 +95,24 @@ async def execute_payload(payload: dict):
                 f'{target_module!r}, outside QUEUE_ALLOWED_MODULES.'
             ) from exc
 
+    args = payload.get('args', [])
+    kwargs = payload.get('kwargs', {})
+
     if inspect.iscoroutinefunction(func):
-        await func(*payload.get('args', []), **payload.get('kwargs', {}))
-    else:
-        func(*payload.get('args', []), **payload.get('kwargs', {}))
+        await func(*args, **kwargs)
+        return
+
+    # Sync callables MUST run in a worker thread. The memory queue driver
+    # dispatches ``execute_payload`` from inside the ASGI event loop, so a
+    # blocking call here (image processing, legacy mail SDK, ``time.sleep``,
+    # ``requests.get``) freezes every other request for its duration —
+    # exactly the bug that ``core.tasks._run()`` fixed for ``background()``
+    # in v1.27.0. The legacy "factory" pattern (sync function that returns
+    # a coroutine) still works — the sync portion runs in the thread, the
+    # returned awaitable is awaited on the loop.
+    result = await asyncio.to_thread(func, *args, **kwargs)
+    if inspect.isawaitable(result):
+        await result
 
 
 async def work(queue_name: str = 'default', sleep: int = 3):

@@ -1,4 +1,9 @@
 [tool.ruff]
+# Pin the floor so CI and dev share the same rules. ruff-action otherwise
+# falls back to "latest" when no version is detected, and silently picks
+# up newly-stabilised lints between releases — that drift is what let the
+# v1.20–1.29 CI go red without anyone noticing on the local side.
+required-version = ">=0.15.0"
 line-length = 120
 target-version = "py310"
 extend-exclude = [
@@ -57,7 +62,15 @@ max-complexity = 10
 "rootsystem/application/core/mixins/tree.py" = ["S608"]
 # Installer trusts URLs constructed from the hardcoded GitHub repo (S310) and
 # invokes git from PATH (S607). Acceptable for a one-shot install script.
-"docs/install.py" = ["S310", "S603", "S607"]
+# C901 covers parse_args (argparse builder, complexity 11) and main
+# (project-creation dispatcher, complexity 11) — both are linear top-level
+# orchestration whose complexity comes from CLI shape, not nested logic.
+"docs/install.py" = ["S310", "S603", "S607", "C901"]
+# core/auth/decorators.py: load_permissions resolves permission claims from
+# (a) the session, (b) any of N pluggable resolvers, and (c) a fallback
+# cache, with ttl + cache hits/misses on each path. The branching is
+# inherent to the dispatch shape, not a smell.
+"rootsystem/application/core/auth/decorators.py" = ["C901"]
 # core/cli.py spawns subprocesses (uvicorn, aerich, python -c scripts) with
 # hardcoded executables and args — never user input. S603 flags every
 # subprocess.run regardless of input source. S310 covers the framework:update

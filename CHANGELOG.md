@@ -4,6 +4,27 @@ All notable changes to Nori are documented here. Format follows [Keep a Changelo
 
 ---
 
+## [1.30.0] — 2026-04-30
+
+### Fixed
+
+- **``execute_payload`` ran synchronous callables inline on the event loop (HIGH).** ``core/queue_worker.py`` mirrored the same bug v1.27.0 fixed in ``core.tasks._run()``: a coroutine target was awaited correctly, but a sync target was called as ``func(*args, **kwargs)`` directly. Under the memory queue driver — which dispatches through ``_memory_handler`` from inside the ASGI event loop, not a separate worker process — that froze the entire web server for the duration of the call. A single ``push('image_processor.thumbnail', ...)`` or ``push('mail.send_via_legacy_sdk', ...)`` could pause every concurrent request. The fix matches the v1.27.0 dispatch shape: ``inspect.iscoroutinefunction(func)`` → ``await func(...)``; otherwise ``await asyncio.to_thread(func, ...)`` and, if the sync return value is itself awaitable (the legacy "sync factory returning coroutine" pattern), await it on the loop.
+- **``_memory_handler`` discarded the in-flight task, exposing it to GC mid-execution (MED).** ``core/queue.py:_memory_handler`` did ``asyncio.create_task(_run())`` and threw the returned ``Task`` away. Per the asyncio docs, the event loop holds **only a weak reference** to a Task — an unreferenced task can be garbage-collected at any time, including mid-``await``. The user-visible failure is silent: a ``push('mail.send_welcome', delay=30)`` could disappear between the ``asyncio.sleep(30)`` and ``execute_payload(...)``, and no log records the loss. The fix is the same pattern already used by ``core.audit._pending_tasks``: a module-level ``_memory_tasks: set[asyncio.Task]`` that pins each created Task; ``task.add_done_callback(_memory_tasks.discard)`` releases the reference once execution completes, so the set does not grow unboundedly.
+
+### Improved
+
+- **CI lint went green for the first time in 10+ commits.** Pre-existing lint failures had been accumulating since the ruff-action started auto-installing newer versions on every CI run (``Could not parse version from pyproject.toml`` → ``Using latest version``). New lint rules stabilised between local dev (older ruff) and CI (latest), and nobody noticed because all the pushes happened to be releases. The package now: (1) pins ``required-version = ">=0.15.0"`` under ``[tool.ruff]`` so CI and dev use the same floor; (2) auto-fixes the I001 import ordering in three test files; (3) adds ``# noqa: S110`` with motivation on two legitimate ``try/except: pass`` sites (``core/ws.py`` shutdown fan-out where a logged ERROR per already-disconnected peer would spam every rolling restart, and ``test_audit.py`` draining a deliberately-cancelled fixture task); (4) extends ``[tool.ruff.lint.per-file-ignores]`` for ``docs/install.py`` (parse_args + main, both linear CLI orchestrators) and ``core/auth/decorators.py:load_permissions`` (permission resolver dispatch), matching the pattern already in place for ``core/cli.py:main``, ``core/http/inject.py``, and the validation rule dispatcher.
+
+### Tests
+
+950 → 954 passing. New regression tests, each verified to fail on pre-1.30 code:
+- ``test_memory_handler_holds_strong_reference_to_task`` — asserts ``_memory_tasks`` size grows by 1 on dispatch and drops back to baseline once the done-callback fires; pre-fix the set did not exist
+- ``test_execute_payload_offloads_sync_callable_to_thread`` — runs a 200 ms blocking ``time.sleep`` while a 10 ms ticker advances on the loop; ticker must advance ≥5 times during the block (would advance ~zero pre-fix because the sync call ran inline)
+- ``test_execute_payload_runs_sync_factory_returning_coroutine`` — pins the legacy "sync function returning coroutine" pattern: sync portion ran (in the thread), returned coroutine awaited (on the loop), tracker shows both phases
+- ``test_execute_payload_async_callable_still_runs_on_loop`` — async ``def`` targets continue to be awaited on the loop, not handed to ``to_thread`` (which would either fail to find a running loop in the worker thread or leak the unawaited coroutine)
+
+---
+
 ## [1.29.0] — 2026-04-30
 
 ### Fixed

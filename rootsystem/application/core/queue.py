@@ -17,6 +17,15 @@ from core.registry import get_model
 _log = get_logger('queue')
 _DRIVERS = {}
 
+# Strong references to in-flight memory-driver tasks. ``asyncio.create_task``
+# returns a Task that the event loop holds only by weak reference, so an
+# unreferenced task can be garbage-collected mid-execution — particularly
+# during a long ``await asyncio.sleep(delay)``, when nothing on the call
+# stack pins the frame. Without this set a delayed welcome-mail dispatched
+# via ``push('mail.send', delay=30)`` would silently disappear. Mirrors
+# ``core.audit._pending_tasks``.
+_memory_tasks: set[asyncio.Task] = set()
+
 
 def register_queue_driver(name: str, handler: Callable):
     _DRIVERS[name] = handler
@@ -42,7 +51,9 @@ async def _memory_handler(queue: str, payload: dict, delay: int = 0):
         except Exception as exc:
             _log.error('Memory queue task failed: %s', exc, exc_info=True)
 
-    asyncio.create_task(_run())
+    task = asyncio.create_task(_run())
+    _memory_tasks.add(task)
+    task.add_done_callback(_memory_tasks.discard)
 
 
 async def _db_handler(queue: str, payload: dict, delay: int = 0):
