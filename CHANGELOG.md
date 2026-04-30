@@ -4,6 +4,27 @@ All notable changes to Nori are documented here. Format follows [Keep a Changelo
 
 ---
 
+## [1.20.1] — 2026-04-30
+
+### Fixed
+
+- **`load_permissions()` falls back to `ROLE_RESOLVER` when `role_ids` is missing.** v1.20.0 added a fail-safe that triggered `load_permissions()` from `require_permission()` when the session lacked a TTL marker, but the loader itself still gave up and returned `[]` if `role_ids` wasn't in the session. That left the user locked out for the full TTL window. The loader now invokes a project-supplied `ROLE_RESOLVER` callable (configured in `settings.py`) to derive `role_ids` from the user's actual roles in the database. Resolver exceptions are logged at ERROR but do not crash the request — falls back to empty permissions for the TTL window. Without a configured resolver, behavior matches v1.20.0 (warn + empty perms).
+
+```python
+# settings.py
+async def _resolve_user_roles(user_id: int) -> list[int]:
+    user = await User.get(id=user_id).prefetch_related('roles')
+    return [r.id for r in user.roles]
+
+ROLE_RESOLVER = _resolve_user_roles
+```
+
+### Documentation
+
+- `docs/authentication.md` — new "Recovering when role_ids is missing" subsection covering `ROLE_RESOLVER` and when to use it.
+
+---
+
 ## [1.20.0] — 2026-04-30
 
 ### Upgrade notes — read first
