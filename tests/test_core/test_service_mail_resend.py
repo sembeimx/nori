@@ -5,6 +5,7 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+import services.mail_resend as resend_mod
 from services.mail_resend import _send_via_resend, register
 
 
@@ -15,6 +16,14 @@ def _resend_settings(monkeypatch):
 
     monkeypatch.setattr(settings, 'MAIL_FROM', 'nori@test.com', raising=False)
     monkeypatch.setattr(settings, 'RESEND_API_KEY', 'test-key-123', raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _reset_client():
+    """Reset the module-level httpx client between tests."""
+    resend_mod._client = None
+    yield
+    resend_mod._client = None
 
 
 # ---------------------------------------------------------------------------
@@ -33,18 +42,20 @@ def test_register_adds_resend_driver():
 # ---------------------------------------------------------------------------
 
 
+def _mock_client_with_response(response):
+    client = AsyncMock()
+    client.post = AsyncMock(return_value=response)
+    return client
+
+
 @pytest.mark.asyncio
 async def test_send_via_resend_basic():
 
     mock_response = MagicMock()
     mock_response.raise_for_status = MagicMock()
+    mock_client = _mock_client_with_response(mock_response)
 
-    mock_client = AsyncMock()
-    mock_client.post = AsyncMock(return_value=mock_response)
-    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-    mock_client.__aexit__ = AsyncMock(return_value=False)
-
-    with patch('services.mail_resend.httpx.AsyncClient', return_value=mock_client):
+    with patch('services.mail_resend._get_client', return_value=mock_client):
         await _send_via_resend(
             to=['user@example.com'],
             subject='Hello',
@@ -68,13 +79,9 @@ async def test_send_via_resend_with_text_body():
     """Includes plain-text body when provided."""
     mock_response = MagicMock()
     mock_response.raise_for_status = MagicMock()
+    mock_client = _mock_client_with_response(mock_response)
 
-    mock_client = AsyncMock()
-    mock_client.post = AsyncMock(return_value=mock_response)
-    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-    mock_client.__aexit__ = AsyncMock(return_value=False)
-
-    with patch('services.mail_resend.httpx.AsyncClient', return_value=mock_client):
+    with patch('services.mail_resend._get_client', return_value=mock_client):
         await _send_via_resend(
             to=['user@example.com'],
             subject='Hello',
@@ -95,16 +102,37 @@ async def test_send_via_resend_raises_on_http_error():
     mock_response.raise_for_status = MagicMock(
         side_effect=httpx.HTTPStatusError('error', request=MagicMock(), response=MagicMock())
     )
+    mock_client = _mock_client_with_response(mock_response)
 
-    mock_client = AsyncMock()
-    mock_client.post = AsyncMock(return_value=mock_response)
-    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-    mock_client.__aexit__ = AsyncMock(return_value=False)
-
-    with patch('services.mail_resend.httpx.AsyncClient', return_value=mock_client):
+    with patch('services.mail_resend._get_client', return_value=mock_client):
         with pytest.raises(httpx.HTTPStatusError):
             await _send_via_resend(
                 to=['user@example.com'],
                 subject='Fail',
                 body_html='<p>Fail</p>',
             )
+
+
+@pytest.mark.asyncio
+async def test_get_client_returns_singleton():
+    """The same httpx client instance is reused across calls — that's the whole point.
+    Per-request httpx.AsyncClient() pays a fresh TCP/TLS handshake every send."""
+    c1 = resend_mod._get_client()
+    c2 = resend_mod._get_client()
+    assert c1 is c2
+
+
+@pytest.mark.asyncio
+async def test_shutdown_closes_and_clears_client():
+    """shutdown() must aclose the client and reset the singleton so a
+    subsequent _get_client() call recreates it (e.g. after reload)."""
+    client = resend_mod._get_client()
+    assert client is not None
+
+    with patch.object(client, 'aclose', AsyncMock()) as mock_close:
+        await resend_mod.shutdown()
+    mock_close.assert_awaited_once()
+    assert resend_mod._client is None
+
+    new_client = resend_mod._get_client()
+    assert new_client is not client

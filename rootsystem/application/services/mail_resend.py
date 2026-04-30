@@ -8,6 +8,12 @@ Usage in your app startup or routes.py:
 Then set MAIL_DRIVER=resend in your .env (or pass driver='resend' per-call).
 
 Requires: RESEND_API_KEY and MAIL_FROM in settings/.env
+
+Connection reuse:
+    The driver keeps a single ``httpx.AsyncClient`` for the life of the
+    process, so the TCP/TLS handshake to ``api.resend.com`` is amortized
+    across all sends. Call ``await shutdown()`` from your ASGI lifespan
+    to close the pool cleanly on app shutdown.
 """
 
 from __future__ import annotations
@@ -15,6 +21,29 @@ from __future__ import annotations
 import httpx
 from core.conf import config
 from core.mail import register_mail_driver
+
+_client: httpx.AsyncClient | None = None
+
+
+def _get_client() -> httpx.AsyncClient:
+    """Return the module-level httpx client, creating it on first use.
+
+    A single persistent client lets httpx pool TCP/TLS connections; the
+    previous per-call ``async with httpx.AsyncClient()`` paid the full
+    handshake cost on every send.
+    """
+    global _client
+    if _client is None:
+        _client = httpx.AsyncClient(timeout=30.0)
+    return _client
+
+
+async def shutdown() -> None:
+    """Close the shared httpx client. Call from your ASGI lifespan."""
+    global _client
+    if _client is not None:
+        await _client.aclose()
+        _client = None
 
 
 async def _send_via_resend(
@@ -43,13 +72,13 @@ async def _send_via_resend(
     if body_text:
         payload['text'] = body_text
 
-    async with httpx.AsyncClient() as client:
-        resp = await client.post(
-            'https://api.resend.com/emails',
-            headers={'Authorization': f'Bearer {config.RESEND_API_KEY}'},
-            json=payload,
-        )
-        resp.raise_for_status()
+    client = _get_client()
+    resp = await client.post(
+        'https://api.resend.com/emails',
+        headers={'Authorization': f'Bearer {config.RESEND_API_KEY}'},
+        json=payload,
+    )
+    resp.raise_for_status()
 
 
 def register():

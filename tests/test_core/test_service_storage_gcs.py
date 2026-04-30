@@ -32,6 +32,14 @@ def _reset_token_cache():
     gcs_mod._token_cache['expires_at'] = 0.0
 
 
+@pytest.fixture(autouse=True)
+def _reset_client():
+    """Reset the module-level httpx client between tests."""
+    gcs_mod._client = None
+    yield
+    gcs_mod._client = None
+
+
 @pytest.fixture
 def rsa_keypair():
     """Generate a throwaway RSA keypair and return the PEM-encoded private key."""
@@ -247,10 +255,8 @@ async def test_get_access_token_fetches_and_caches(fake_credentials, monkeypatch
 
     mock_client = AsyncMock()
     mock_client.post = AsyncMock(return_value=token_response)
-    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-    mock_client.__aexit__ = AsyncMock(return_value=False)
 
-    with patch('services.storage_gcs.httpx.AsyncClient', return_value=mock_client):
+    with patch('services.storage_gcs._get_client', return_value=mock_client):
         tok1 = await _get_access_token()
         tok2 = await _get_access_token()
 
@@ -280,10 +286,8 @@ async def test_get_access_token_refreshes_when_expired(fake_credentials, monkeyp
 
     mock_client = AsyncMock()
     mock_client.post = AsyncMock(return_value=token_response)
-    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-    mock_client.__aexit__ = AsyncMock(return_value=False)
 
-    with patch('services.storage_gcs.httpx.AsyncClient', return_value=mock_client):
+    with patch('services.storage_gcs._get_client', return_value=mock_client):
         tok = await _get_access_token()
 
     assert tok == 'new-token'
@@ -319,10 +323,8 @@ async def test_get_access_token_double_checked_lock_avoids_duplicate_fetch(fake_
 
     mock_client = AsyncMock()
     mock_client.post = AsyncMock(side_effect=slow_post)
-    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-    mock_client.__aexit__ = AsyncMock(return_value=False)
 
-    with patch('services.storage_gcs.httpx.AsyncClient', return_value=mock_client):
+    with patch('services.storage_gcs._get_client', return_value=mock_client):
         # Coroutine A: starts the fetch, blocks inside slow_post
         task_a = asyncio.create_task(_get_access_token())
         # Wait until A has acquired the lock and is mid-fetch
@@ -361,8 +363,6 @@ async def test_get_access_token_offloads_signing_to_thread(fake_credentials, mon
 
     mock_client = AsyncMock()
     mock_client.post = AsyncMock(return_value=token_response)
-    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-    mock_client.__aexit__ = AsyncMock(return_value=False)
 
     offloaded: list = []
     real_to_thread = asyncio.to_thread
@@ -373,7 +373,7 @@ async def test_get_access_token_offloads_signing_to_thread(fake_credentials, mon
 
     with (
         patch.object(gcs_mod.asyncio, 'to_thread', tracking_to_thread),
-        patch('services.storage_gcs.httpx.AsyncClient', return_value=mock_client),
+        patch('services.storage_gcs._get_client', return_value=mock_client),
     ):
         await _get_access_token()
 
@@ -397,10 +397,8 @@ async def test_get_access_token_posts_jwt_bearer_grant(fake_credentials, monkeyp
 
     mock_client = AsyncMock()
     mock_client.post = AsyncMock(return_value=token_response)
-    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-    mock_client.__aexit__ = AsyncMock(return_value=False)
 
-    with patch('services.storage_gcs.httpx.AsyncClient', return_value=mock_client):
+    with patch('services.storage_gcs._get_client', return_value=mock_client):
         await _get_access_token()
 
     call_url = mock_client.post.call_args[0][0]
@@ -408,6 +406,36 @@ async def test_get_access_token_posts_jwt_bearer_grant(fake_credentials, monkeyp
     assert call_url == 'https://oauth2.googleapis.com/token'
     assert call_data['grant_type'] == 'urn:ietf:params:oauth:grant-type:jwt-bearer'
     assert call_data['assertion'].count('.') == 2  # a JWT
+
+
+# ---------------------------------------------------------------------------
+# _get_client() / shutdown()
+# ---------------------------------------------------------------------------
+
+
+def test_get_client_returns_singleton():
+    """The same httpx client is reused across calls — that's the point.
+    Per-request httpx.AsyncClient() pays a fresh TCP/TLS handshake every
+    upload."""
+    c1 = gcs_mod._get_client()
+    c2 = gcs_mod._get_client()
+    assert c1 is c2
+
+
+@pytest.mark.asyncio
+async def test_shutdown_closes_and_clears_client():
+    """shutdown() must aclose the client and reset the singleton so a
+    later _get_client() call recreates it (e.g. after reload)."""
+    client = gcs_mod._get_client()
+    assert client is not None
+
+    with patch.object(client, 'aclose', AsyncMock()) as mock_close:
+        await gcs_mod.shutdown()
+    mock_close.assert_awaited_once()
+    assert gcs_mod._client is None
+
+    new_client = gcs_mod._get_client()
+    assert new_client is not client
 
 
 # ---------------------------------------------------------------------------
@@ -429,12 +457,10 @@ async def test_store_gcs_default_url(monkeypatch):
 
     mock_client = AsyncMock()
     mock_client.put = AsyncMock(return_value=mock_response)
-    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-    mock_client.__aexit__ = AsyncMock(return_value=False)
 
     with (
         patch('services.storage_gcs._get_access_token', _fake_token),
-        patch('services.storage_gcs.httpx.AsyncClient', return_value=mock_client),
+        patch('services.storage_gcs._get_client', return_value=mock_client),
     ):
         key, url = await _store_gcs('photo.jpg', b'image-data', 'uploads')
 
@@ -463,12 +489,10 @@ async def test_store_gcs_url_prefix(monkeypatch):
 
     mock_client = AsyncMock()
     mock_client.put = AsyncMock(return_value=mock_response)
-    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-    mock_client.__aexit__ = AsyncMock(return_value=False)
 
     with (
         patch('services.storage_gcs._get_access_token', _fake_token),
-        patch('services.storage_gcs.httpx.AsyncClient', return_value=mock_client),
+        patch('services.storage_gcs._get_client', return_value=mock_client),
     ):
         key, url = await _store_gcs('img.png', b'png-data', 'images')
 
@@ -490,12 +514,10 @@ async def test_store_gcs_empty_upload_dir(monkeypatch):
 
     mock_client = AsyncMock()
     mock_client.put = AsyncMock(return_value=mock_response)
-    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-    mock_client.__aexit__ = AsyncMock(return_value=False)
 
     with (
         patch('services.storage_gcs._get_access_token', _fake_token),
-        patch('services.storage_gcs.httpx.AsyncClient', return_value=mock_client),
+        patch('services.storage_gcs._get_client', return_value=mock_client),
     ):
         key, url = await _store_gcs('file.txt', b'data', '')
 

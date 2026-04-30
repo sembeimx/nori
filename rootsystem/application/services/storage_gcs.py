@@ -43,6 +43,28 @@ _TOKEN_SCOPE = 'https://www.googleapis.com/auth/devstorage.read_write'  # noqa: 
 
 _token_cache: dict = {'token': None, 'expires_at': 0.0}
 _token_lock = asyncio.Lock()
+_client: httpx.AsyncClient | None = None
+
+
+def _get_client() -> httpx.AsyncClient:
+    """Return the module-level httpx client, creating it on first use.
+
+    A single persistent client lets httpx pool TCP/TLS connections to
+    ``storage.googleapis.com`` and ``oauth2.googleapis.com`` across
+    uploads, instead of paying a fresh handshake on every PUT.
+    """
+    global _client
+    if _client is None:
+        _client = httpx.AsyncClient(timeout=30.0)
+    return _client
+
+
+async def shutdown() -> None:
+    """Close the shared httpx client. Call from your ASGI lifespan."""
+    global _client
+    if _client is not None:
+        await _client.aclose()
+        _client = None
 
 
 def _b64url(data: bytes) -> str:
@@ -141,16 +163,16 @@ async def _get_access_token() -> str:
             creds['token_uri'],
         )
 
-        async with httpx.AsyncClient() as client:
-            resp = await client.post(
-                creds['token_uri'],
-                data={
-                    'grant_type': 'urn:ietf:params:oauth:grant-type:jwt-bearer',
-                    'assertion': jwt,
-                },
-            )
-            resp.raise_for_status()
-            data = resp.json()
+        client = _get_client()
+        resp = await client.post(
+            creds['token_uri'],
+            data={
+                'grant_type': 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+                'assertion': jwt,
+            },
+        )
+        resp.raise_for_status()
+        data = resp.json()
 
         _token_cache['token'] = data['access_token']
         _token_cache['expires_at'] = time.time() + int(data.get('expires_in', 3600))
@@ -190,16 +212,16 @@ async def _store_gcs(
     put_url = f'https://storage.googleapis.com/{bucket}/{key}'
     content_type = 'application/octet-stream'
 
-    async with httpx.AsyncClient() as client:
-        resp = await client.put(
-            put_url,
-            content=content,
-            headers={
-                'Authorization': f'Bearer {token}',
-                'Content-Type': content_type,
-            },
-        )
-        resp.raise_for_status()
+    client = _get_client()
+    resp = await client.put(
+        put_url,
+        content=content,
+        headers={
+            'Authorization': f'Bearer {token}',
+            'Content-Type': content_type,
+        },
+    )
+    resp.raise_for_status()
 
     if url_prefix:
         public_url = f'{url_prefix.rstrip("/")}/{key}'
