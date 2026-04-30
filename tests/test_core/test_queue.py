@@ -123,6 +123,28 @@ async def async_loop_probe() -> None:
     _mark_executed('on-loop')
 
 
+# v1.32 helpers — bounded-concurrency probe. State lives in the file
+# tracker (not module globals) because ``execute_payload`` may import
+# this module under a different name than the one pytest collected it
+# as (``importlib.import_module('tests.test_core.test_queue')`` vs
+# pytest's importmode='prepend' shorthand) — two module instances would
+# share file state but not Python globals. The shared file is the
+# coordination point.
+
+
+async def overlap_probe() -> None:
+    """v1.32 semaphore test helper. Records ``start`` and ``end`` events
+    in the file tracker; the test post-processes the timeline to
+    compute the maximum concurrent execution count. Pre-1.32 with
+    20 × 50 ms jobs the max would be 20 (unbounded fan-out); with the
+    BoundedSemaphore(3) cap it must stay ≤ 3."""
+    import time as _time
+
+    _mark_executed(f'start:{_time.monotonic_ns()}')
+    await asyncio.sleep(0.05)
+    _mark_executed(f'end:{_time.monotonic_ns()}')
+
+
 # -- Tests -------------------------------------------------------------------
 
 
@@ -526,3 +548,145 @@ async def test_execute_payload_async_callable_still_runs_on_loop():
     }
     await execute_payload(payload)
     assert 'on-loop' in _get_executed()
+
+
+# ---------------------------------------------------------------------------
+# v1.32 — bounded memory queue concurrency
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_memory_queue_caps_concurrent_execution(monkeypatch):
+    """20 jobs dispatched concurrently with cap=3 must execute at most 3
+    in flight at any given moment.
+
+    Pre-1.32 ``_memory_handler`` was unbounded: every ``push()`` /
+    ``_memory_handler()`` call did ``asyncio.create_task(...)`` with no
+    cap, so 5000 jobs spawned 5000 in-flight coroutines. For sync jobs
+    that was bounded by the thread pool (default ~32 workers) but for
+    async jobs there was no bound at all — a single bad burst could
+    saturate the loop's scheduling cost. The semaphore caps execution.
+
+    The probe records start/end timestamps; the test computes the
+    maximum concurrent overlap from the timeline. cap=3 means the
+    overlap must stay ≤ 3 across all 20 dispatched jobs."""
+    import core.queue as queue_mod
+    import settings
+
+    monkeypatch.setattr(settings, 'QUEUE_MEMORY_CONCURRENCY', 3, raising=False)
+    # Reset the lazy-init cache so the next call sees the new cap.
+    monkeypatch.setattr(queue_mod, '_memory_semaphore', None)
+
+    payload_template = {
+        'func': 'tests.test_core.test_queue:overlap_probe',
+        'args': [],
+        'kwargs': {},
+    }
+
+    initial_inflight = len(queue_mod._memory_tasks)
+    for _ in range(20):
+        await queue_mod._memory_handler('q', dict(payload_template))
+
+    # Drain — wait until the in-flight task set drops back to its
+    # initial size. The semaphore cap of 3 should hold throughout.
+    deadline = asyncio.get_running_loop().time() + 5.0
+    while len(queue_mod._memory_tasks) > initial_inflight:
+        if asyncio.get_running_loop().time() > deadline:
+            pytest.fail('memory queue tasks did not drain within 5s')
+        await asyncio.sleep(0.02)
+
+    # Build a sweep timeline: start events +1, end events -1. The
+    # running sum at any point is the in-flight count. The high-water
+    # mark is the bound the BoundedSemaphore must enforce.
+    events: list[tuple[int, int]] = []
+    for line in _get_executed():
+        kind, _, ns_str = line.partition(':')
+        ns = int(ns_str)
+        if kind == 'start':
+            events.append((ns, 1))
+        elif kind == 'end':
+            events.append((ns, -1))
+    # Order: timestamp ascending, then -1 before +1 so an end and a
+    # start at the same nanosecond do NOT inflate the count.
+    events.sort(key=lambda e: (e[0], e[1]))
+
+    high_water = 0
+    running = 0
+    for _, delta in events:
+        running += delta
+        if running > high_water:
+            high_water = running
+
+    starts = sum(1 for _, d in events if d == 1)
+    assert starts == 20, f'expected 20 probe starts in the tracker file, got {starts}'
+
+    assert high_water <= 3, (
+        f'concurrent execution peaked at {high_water} — BoundedSemaphore(3) was bypassed; pre-1.32 this would equal 20'
+    )
+    # Sanity: with 20 × 50ms jobs and cap=3, at least 2 should overlap.
+    # If we got high_water=1, the dispatch was effectively serial —
+    # likely a test-timing artifact, not the intended bounded-
+    # concurrency shape.
+    assert high_water >= 2, (
+        f'high-water mark was {high_water} (expected ≥ 2 with cap=3 '
+        f'and 20 × 50ms jobs); test cannot distinguish a serial-'
+        f'dispatch regression from a working semaphore'
+    )
+
+
+@pytest.mark.asyncio
+async def test_memory_queue_semaphore_lazy_inits_inside_loop(monkeypatch):
+    """The semaphore must be created on first dispatch, not at module
+    import. Module-level ``asyncio.BoundedSemaphore()`` would attempt
+    to bind to whatever loop is running at import time (typically none
+    — Python 3.10+ ``DeprecationWarning``, 3.12+ raises). Lazy-init
+    ensures the semaphore binds to the loop active at the moment of
+    first dispatch.
+    """
+    import core.queue as queue_mod
+
+    monkeypatch.setattr(queue_mod, '_memory_semaphore', None)
+
+    sem = queue_mod._get_memory_semaphore()
+    assert isinstance(sem, asyncio.BoundedSemaphore)
+
+    # Subsequent calls return the same memoised instance.
+    assert queue_mod._get_memory_semaphore() is sem
+
+
+@pytest.mark.asyncio
+async def test_memory_queue_invalid_concurrency_raises(monkeypatch):
+    """A misconfigured ``QUEUE_MEMORY_CONCURRENCY`` (0, negative) must
+    raise instead of silently constructing a degenerate semaphore.
+    ``asyncio.BoundedSemaphore(0)`` would deadlock every dispatch
+    forever; raising at config-time surfaces the typo before the queue
+    silently stops processing."""
+    import core.queue as queue_mod
+    import settings
+
+    monkeypatch.setattr(settings, 'QUEUE_MEMORY_CONCURRENCY', 0, raising=False)
+    monkeypatch.setattr(queue_mod, '_memory_semaphore', None)
+
+    with pytest.raises(ValueError, match='must be ≥ 1'):
+        queue_mod._get_memory_semaphore()
+
+
+@pytest.mark.asyncio
+async def test_memory_queue_default_concurrency_is_32(monkeypatch):
+    """The default cap of 32 mirrors the default ``asyncio.to_thread``
+    worker count (Python 3.8+ ``ThreadPoolExecutor(max_workers=min(32,
+    ...))``). Choosing a smaller default would gratuitously throttle
+    sync queue jobs that already had a bounded thread pool; a larger
+    default leaks the unbounded-fan-out problem v1.32 sets out to fix.
+    """
+    import core.queue as queue_mod
+    import settings
+
+    # Make sure the setting is NOT set on settings — exercise the default.
+    monkeypatch.delattr(settings, 'QUEUE_MEMORY_CONCURRENCY', raising=False)
+    monkeypatch.setattr(queue_mod, '_memory_semaphore', None)
+
+    sem = queue_mod._get_memory_semaphore()
+    # BoundedSemaphore exposes its cap via ``_value`` (initial value)
+    # before any acquire; this is the cleanest way to assert the cap.
+    assert sem._value == 32

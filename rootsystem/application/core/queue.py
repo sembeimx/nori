@@ -26,6 +26,49 @@ _DRIVERS = {}
 # ``core.audit._pending_tasks``.
 _memory_tasks: set[asyncio.Task] = set()
 
+# Bounded concurrency cap for the memory driver. Module-level
+# instantiation of ``asyncio.BoundedSemaphore`` would bind to whichever
+# loop is running at import time (typically none — Python 3.10+ raises
+# ``DeprecationWarning`` and 3.12+ outright errors), so the semaphore is
+# lazy-initialised on first dispatch. By that point the ASGI lifespan is
+# active and ``asyncio.get_running_loop()`` returns the loop we want.
+#
+# The default of 32 mirrors the default ``asyncio.to_thread`` worker
+# count (Python 3.8+ ``ThreadPoolExecutor(max_workers=min(32, ...))``),
+# so a burst of sync queue jobs cannot oversubscribe the thread pool by
+# stacking more concurrent ``asyncio.to_thread`` callers than the pool
+# can serve. Async jobs no longer fan out unbounded — pre-1.32 a
+# ``push('async_func', ...)`` × 5000 spawned 5000 in-flight coroutines
+# all at once; now at most 32 are inside ``execute_payload`` and the
+# rest queue up at the semaphore.
+#
+# IMPORTANT: the semaphore guards EXECUTION, not pending dispatch. A
+# task awaiting ``asyncio.sleep(delay)`` does NOT hold the semaphore;
+# it acquires only just before ``execute_payload``. That keeps delayed
+# jobs cheap (one Task each, idle until the timer fires) while still
+# capping concurrent execution. If you need to cap the BACKLOG itself
+# (i.e. push() refuses to enqueue when N tasks are pending), the
+# right answer is the Redis or database driver — both are bounded by
+# their respective storage shapes.
+_memory_semaphore: asyncio.BoundedSemaphore | None = None
+
+
+def _get_memory_semaphore() -> asyncio.BoundedSemaphore:
+    """Lazy-init the BoundedSemaphore for the memory queue driver.
+
+    Module-level instantiation would attempt to bind to a non-existent
+    loop at import time. Tests that swap event loops between cases
+    must reset ``_memory_semaphore`` to ``None`` (see ``conftest.py``)
+    so the next test re-initialises against its own loop.
+    """
+    global _memory_semaphore
+    if _memory_semaphore is None:
+        cap = int(config.get('QUEUE_MEMORY_CONCURRENCY', 32))
+        if cap < 1:
+            raise ValueError(f'QUEUE_MEMORY_CONCURRENCY must be ≥ 1; got {cap}')
+        _memory_semaphore = asyncio.BoundedSemaphore(cap)
+    return _memory_semaphore
+
 
 def register_queue_driver(name: str, handler: Callable):
     _DRIVERS[name] = handler
@@ -43,11 +86,17 @@ async def push(func_path: str, *args, queue: str = 'default', delay: int = 0, **
 async def _memory_handler(queue: str, payload: dict, delay: int = 0):
     from core.queue_worker import execute_payload
 
+    semaphore = _get_memory_semaphore()
+
     async def _run():
         try:
             if delay > 0:
                 await asyncio.sleep(delay)
-            await execute_payload(payload)
+            # Acquire AFTER the delay sleep — sleeping tasks are cheap
+            # (just timer Tasks), the cap should bound concurrent
+            # execution, not pending dispatch.
+            async with semaphore:
+                await execute_payload(payload)
         except Exception as exc:
             _log.error('Memory queue task failed: %s', exc, exc_info=True)
 

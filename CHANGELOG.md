@@ -4,6 +4,22 @@ All notable changes to Nori are documented here. Format follows [Keep a Changelo
 
 ---
 
+## [1.32.0] — 2026-04-30
+
+### Fixed
+
+- **Memory queue driver fan-out is now bounded by ``BoundedSemaphore`` (MED).** Pre-1.32 ``core/queue.py:_memory_handler`` did ``asyncio.create_task(_run())`` with no concurrency cap. After v1.30.0's ``asyncio.to_thread`` offload sync queue jobs were transitively bounded by the default thread pool (~32 workers), but **async** queue jobs had no bound at all. A ``push('async_func', ...)`` × 5000 burst spawned 5000 in-flight coroutines simultaneously — memory pressure plus loop-scheduling overhead that grows with N², while the application's normal request-handling fights for the same loop. The fix introduces a module-level ``_memory_semaphore: asyncio.BoundedSemaphore`` lazy-initialised on first dispatch (module-level construction would attempt to bind to a nonexistent loop at import time, which is a ``DeprecationWarning`` on 3.10+ and an outright error on 3.12+). The semaphore wraps ``execute_payload`` only, **not** the optional ``await asyncio.sleep(delay)`` — sleeping Tasks are essentially free (just timers), the cap should bound concurrent **execution** not pending dispatch. Default cap is 32, mirroring the default ``asyncio.to_thread`` worker pool so a burst of sync jobs cannot oversubscribe the pool. Configurable via ``QUEUE_MEMORY_CONCURRENCY`` in ``settings.py``; values < 1 raise ``ValueError`` at first dispatch (silently accepting 0 would deadlock every job forever). The semaphore caps execution but **not** the backlog — 5000 jobs still create 5000 Tasks awaiting the semaphore. Projects needing real backlog bounds should use the Redis or database driver, both of which are bounded by their respective storage shapes.
+
+### Tests
+
+963 → 967 passing. New regression tests:
+- ``test_memory_queue_caps_concurrent_execution`` — 20 × 50 ms jobs with cap=3 must show high-water mark ≤ 3 across the burst (pre-fix this would equal 20)
+- ``test_memory_queue_semaphore_lazy_inits_inside_loop`` — first call returns a fresh ``BoundedSemaphore``, subsequent calls return the same memoised instance
+- ``test_memory_queue_invalid_concurrency_raises`` — ``QUEUE_MEMORY_CONCURRENCY = 0`` raises ``ValueError`` instead of silently deadlocking
+- ``test_memory_queue_default_concurrency_is_32`` — pin the default cap so a future "tweak" cannot silently gut the bound
+
+---
+
 ## [1.31.0] — 2026-04-30
 
 ### Fixed
