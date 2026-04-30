@@ -4,6 +4,101 @@ All notable changes to Nori are documented here. Format follows [Keep a Changelo
 
 ---
 
+## [1.17.0] — 2026-04-30
+
+### Upgrade notes — read first
+
+This release closes a deep audit (3 rounds) and ships three breaking-by-design behavior changes alongside performance and stability fixes. Read this section before upgrading any project that runs on custom CSRF flows, bulk soft-deletes, or background queues.
+
+**1. CSRF middleware no longer exempts JSON requests.** Pre-v1.17.0, `CsrfMiddleware` skipped validation when the request had `Content-Type: application/json`. That was a bypass: a logged-in user on a malicious site could be coerced into POST/PUT/DELETE actions via `fetch(..., {credentials: 'include'})` because the browser sent the session cookie and Nori ignored the missing token. JSON clients (SPAs, fetch, axios) now MUST send `X-CSRF-Token` on every state-changing request:
+
+```javascript
+fetch('/api/articles', {
+    method: 'POST',
+    headers: {
+        'X-CSRF-Token': document.querySelector('meta[name=csrf]').content,
+        'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(data),
+});
+```
+
+**2. Bulk soft-delete via QuerySet now soft-deletes (was hard-deleting).** Pre-v1.17.0, `await Post.objects.filter(...).delete()` on a model using `NoriSoftDeletes` executed a HARD DELETE — the framework was nuking rows the developer thought it was preserving. The mixin now overrides `QuerySet.delete()` to set `deleted_at = NOW()`. If you need a real hard delete on a soft-delete model, call `force_delete()`:
+
+```python
+# Soft delete (new default; previously was hard delete)
+await Post.objects.filter(status='draft').delete()
+
+# Real hard delete — explicit opt-in
+await Post.objects.filter(status='draft').force_delete()
+```
+
+The model-level `await post.delete()` already soft-deleted before this release; only the QuerySet path was broken.
+
+**3. Queue worker rejects payloads outside `QUEUE_ALLOWED_MODULES`.** `execute_payload()` previously imported any module named in the queue payload. With write access to the queue store (SQL injection reaching `jobs`, unauthenticated Redis), that became arbitrary code execution under the worker's privileges. The worker now checks `mod_path` against `QUEUE_ALLOWED_MODULES` (default `['modules.', 'services.', 'app.', 'tasks.']`) before importing.
+
+If your jobs live outside the default locations, extend the list in `settings.py`:
+
+```python
+QUEUE_ALLOWED_MODULES = ['modules.', 'services.', 'app.', 'tasks.', 'my_jobs.']
+```
+
+Each prefix should end with `.` (Nori normalizes missing trailing dots, but the explicit form prevents prefix-attack confusion). Out-of-list paths raise `PermissionError` and count as job failures — they retry through normal backoff and dead-letter, so a poisoned payload cannot stall the worker.
+
+### Security
+
+- **Queue payload RCE blocked via module allow-list.** See upgrade note 3. `tests/test_core/test_queue.py` covers `os:system`, `subprocess:run`, `builtins:exec`, prefix-attack normalization, and custom allow-list overrides.
+
+- **CSRF JSON exemption removed.** See upgrade note 1. The `Content-Type: application/json` short-circuit was a bypass — browsers send session cookies cross-origin regardless of the body type, and CORS misconfiguration is not a defence Nori can enforce.
+
+- **Meilisearch filter values are now escaped and keys validated.** `_build_filter_string` previously interpolated values directly: `f'{k} = "{v}"'`. An attacker submitting `Electronics" OR status = "private` for a category filter could inject `OR status = "private"` and read unauthorized documents. Values now have backslashes and double-quotes escaped; keys must match `^[A-Za-z_][A-Za-z0-9_.\-]*$` (a `ValueError` is raised otherwise — Meilisearch field names cannot legally contain operators).
+
+- **Google OAuth driver clears unverified email.** `services/oauth_google.py` previously returned `data.get('email', '')` regardless of `email_verified`. An app using `profile['email']` as identity could be tricked into linking the OAuth identity to an existing user with that address. The driver now returns `email = ''` when `email_verified` is False (or missing). The unverified value remains accessible via `profile['raw']['email']` for callers that explicitly want it. The GitHub driver was reviewed and left unchanged: it already filters `primary AND verified` through `/user/emails` when `/user.email` is null, and GitHub guarantees that a publicly-set `user.email` is verified.
+
+- **Installer integrity: `--checksum` flag + always-on SHA-256 transparency.** `docs/install.py` now prints the downloaded zip URL and SHA-256 on every install. Record it from a trusted run, then pass it back via `--checksum H` on subsequent installs to abort on mismatch. Defends against tag mutation, mirror compromise, accidental re-tag — does not replace TLS (which still blocks MitM via `urllib`'s default certificate verification). Threat model documented in `docs/installation.md`.
+
+### Performance
+
+- **Local file uploads are now offloaded to a thread.** `_store_local()` previously did `Path(file_path).write_bytes(content)` on the asyncio loop, which froze the worker for the duration of the disk write. Concurrent requests could stack behind a slow upload (NFS, network FS, large file). Writes now go through `asyncio.to_thread()` so the loop stays responsive.
+
+### Fixed
+
+- **Bulk soft-delete via QuerySet was hard-deleting.** See upgrade note 2. `SoftDeleteQuerySet.delete()` overrides the inherited Tortoise `delete()`; `force_delete()` exposes the original behavior for explicit hard delete.
+
+- **`migrate:fresh` drop subprocess crashed on projects with framework-aware `settings.py`.** The subprocess ran `import settings` but did not call `configure(settings)`, so any user-land import touching `config.X` at module load died with `RuntimeError: Nori config not initialised`. Brought into line with `migrate_init`, `migrate_upgrade`, `routes_list`. Regression test: `test_migrate_fresh_drop_subprocess_calls_configure`.
+
+- **Redis worker double-executed delayed jobs under multi-worker deployments.** The promotion loop did `ZRANGEBYSCORE` → `LPUSH` → `ZREM` as three separate round-trips. Two workers running this in parallel could both read the same set of due-for-promotion jobs before either `ZREM`med, then both `LPUSH` the same job — silent double-execution of any non-idempotent task (charges, notifications). Promotion is now a single Lua `EVAL`, atomic across the worker pool.
+
+### Added
+
+- **`install.py` preserves user files outside the manifest.** Scaffolding into a non-empty directory was previously refused outright. The installer now refuses only when manifest paths would clobber existing files, leaving anything else (TEMPLATE_USAGE.md, `.github/`, custom files) untouched. Failure cleanup respects the same boundary — a mid-run failure no longer wipes pre-existing user files.
+
+- **`Job` model regression test.** `tests/test_core/test_queue.py::test_job_model_does_not_use_soft_deletes` asserts that `Job` does not inherit `NoriSoftDeletes`. The worker hard-deletes successful jobs to keep the table bounded; soft-deleting them would let the `jobs` table grow forever and slow the polling query linearly with history. Today's code is correct — the test prevents a future contributor from "harmonizing" the model.
+
+### Documentation
+
+- `docs/security.md` — new section "Queue Worker Module Allow-List" + checklist item.
+- `docs/background_tasks.md` — atomic-locking description now spells out the database (`UPDATE ... WHERE reserved_at IS NULL`) and Redis (Lua `EVAL`) mechanisms; new "Security: module allow-list" section.
+- `docs/collections.md` — new "When NOT to use NoriCollection" section pointing at `paginate()`, `QuerySet.count()`, and Tortoise's `values_list()` for large datasets.
+- `docs/architecture.md` — warning about shadowing stdlib at the application root.
+- `docs/installation.md` — `--checksum` flag documented, with the supply-chain threat model spelled out (what it defends against, what it does not).
+- `docs/authentication.md` — "Email is fail-closed" section documenting the `profile['email']` contract for OAuth drivers.
+- `AGENTS.md` — `push()` reference now mentions `QUEUE_ALLOWED_MODULES`; `core/queue_worker.py` and `core/queue.py` added to the docs↔code high-leverage targets list.
+
+### Changed
+
+- `core.queue_worker.execute_payload()` now raises `PermissionError` for module paths outside `QUEUE_ALLOWED_MODULES` before importing.
+- `core.queue_worker._work_redis()` uses a Lua `EVAL` for delayed-job promotion (was three separate Redis calls).
+- `core.mixins.soft_deletes.NoriSoftDeletes` now exposes `SoftDeleteQuerySet` with `delete()` (soft) and `force_delete()` (hard).
+- `services.oauth_google.handle_callback()` returns `email = ''` when `email_verified` is False.
+- `services.search_meilisearch._build_filter_string()` escapes `\` and `"` in values; raises `ValueError` for keys outside `^[A-Za-z_][A-Za-z0-9_.\-]*$`.
+- `core.http.upload._store_local()` uses `asyncio.to_thread()` for the disk write.
+- `docs/install.py.parse_args()` accepts `--checksum H` (lowercased).
+- `docs/install.py.fetch_and_extract()` accepts `expected_checksum` and aborts on mismatch.
+- `core.cli.migrate_fresh()` drop subprocess calls `configure(settings)` before importing user models.
+
+---
+
 ## [1.16.0] — 2026-04-28
 
 ### Upgrade notes — read first
