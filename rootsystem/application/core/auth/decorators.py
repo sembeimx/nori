@@ -128,19 +128,23 @@ async def load_permissions(session: dict, user_id: int) -> list[str]:
         await load_permissions(request.session, user.id)
 
     If ``role_ids`` is missing or empty the session will have an empty
-    permissions list and a warning is logged.
+    permissions list and a warning is logged. The TTL marker is set in
+    every branch so :func:`require_permission`'s fail-safe load runs at
+    most once per TTL window — without that, a session lacking
+    ``role_ids`` would re-trigger the load on every request.
     """
     from core.logger import get_logger
 
     _perm_log = get_logger('auth')
 
-    Role = get_model('Role')
     role_ids = session.get('role_ids', [])
     if not role_ids:
         _perm_log.warning('load_permissions called but role_ids is empty for user %s', user_id)
         session['permissions'] = []
+        session[_PERMISSIONS_TTL_KEY] = time.time()
         return []
 
+    Role = get_model('Role')
     roles = await Role.filter(
         id__in=role_ids,
     ).prefetch_related('permissions')
@@ -181,14 +185,27 @@ def require_permission(perm: str) -> Callable[..., Any]:
             if superuser and user_role == superuser:
                 return await func(self, request, *args, **kwargs)
 
-            # Auto-refresh permissions if TTL expired (only if loaded via load_permissions before)
+            # Fail-safe permissions load. Two cases trigger a (re)load:
+            #   1. TTL marker absent AND permissions list empty — the
+            #      project's login flow forgot to call load_permissions
+            #      and the user has nothing in session; without this
+            #      branch they're locked out of every gated route.
+            #   2. TTL marker present but expired — normal periodic
+            #      refresh so role/permission changes propagate without
+            #      forcing a re-login.
+            # If permissions are populated without a TTL marker (manual
+            # session writes from an OAuth callback, tests, etc.) we
+            # respect them — overwriting would silently break those
+            # flows.
             loaded_at = request.session.get(_PERMISSIONS_TTL_KEY)
-            if loaded_at is not None:
-                ttl = int(config.get('PERMISSIONS_TTL', _DEFAULT_PERMISSIONS_TTL))
-                if time.time() - loaded_at > ttl:
-                    await load_permissions(request.session, int(user_id))
-
             permissions = request.session.get('permissions', [])
+            ttl = int(config.get('PERMISSIONS_TTL', _DEFAULT_PERMISSIONS_TTL))
+
+            needs_initial_load = loaded_at is None and not permissions
+            needs_refresh = loaded_at is not None and (time.time() - loaded_at > ttl)
+            if needs_initial_load or needs_refresh:
+                await load_permissions(request.session, int(user_id))
+                permissions = request.session.get('permissions', [])
             if perm not in permissions:
                 accept = request.headers.get('accept', '')
                 if 'application/json' in accept:

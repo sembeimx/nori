@@ -129,3 +129,75 @@ async def test_load_permissions_empty_roles():
     perms = await load_permissions(session, user_id=1)
     assert perms == []
     assert session['permissions'] == []
+
+
+@pytest.mark.asyncio
+async def test_load_permissions_sets_ttl_marker_even_with_empty_role_ids():
+    """The TTL marker must be set in every branch, including the empty-
+    role_ids early return. Otherwise the require_permission fail-safe
+    re-triggers load_permissions on every request — at minimum a noisy
+    warning storm, at worst repeated DB hits in projects that override
+    load_permissions."""
+    from core.auth.decorators import _PERMISSIONS_TTL_KEY
+
+    session = FakeSession()
+    session['role_ids'] = []
+
+    await load_permissions(session, user_id=1)
+    assert _PERMISSIONS_TTL_KEY in session
+
+
+@pytest.mark.asyncio
+async def test_require_permission_fail_safe_loads_when_session_lacks_ttl(monkeypatch):
+    """If the project's login flow forgot to call load_permissions(),
+    require_permission must trigger a load itself rather than leaving
+    the user locked out of every permission-gated route. Marker for
+    the fix: load_permissions() is called even though the session has
+    no TTL key.
+    """
+    import core.auth.decorators as dec_mod
+
+    calls = []
+
+    async def fake_loader(session, user_id):
+        calls.append(user_id)
+        # Simulate the loader populating the session
+        session['permissions'] = ['articles.edit']
+        session[dec_mod._PERMISSIONS_TTL_KEY] = 9999999999.0
+
+    monkeypatch.setattr(dec_mod, 'load_permissions', fake_loader)
+
+    ctrl = FakeController()
+    req = FakeRequest(user_id=42)
+    # Important: do NOT pre-set permissions — that's the bug case.
+    req.session.pop('permissions', None)
+
+    resp = await ctrl.edit(req)
+    assert calls == [42], 'fail-safe load_permissions was never invoked'
+    assert resp.status_code == 200  # newly loaded perms unlocked the route
+
+
+@pytest.mark.asyncio
+async def test_require_permission_does_not_overwrite_manually_set_permissions(monkeypatch):
+    """If the session has permissions but no TTL marker, those came from
+    a manual write (OAuth callback, tests, etc.). The fail-safe must NOT
+    overwrite them — doing so would silently break flows that don't go
+    through load_permissions()."""
+    import core.auth.decorators as dec_mod
+
+    calls = []
+
+    async def fake_loader(session, user_id):
+        calls.append(user_id)
+        session['permissions'] = []  # would clobber if invoked
+
+    monkeypatch.setattr(dec_mod, 'load_permissions', fake_loader)
+
+    ctrl = FakeController()
+    req = FakeRequest(user_id=42, permissions=['articles.edit'])
+    # No TTL marker — emulates manual session write
+    assert dec_mod._PERMISSIONS_TTL_KEY not in req.session
+
+    resp = await ctrl.edit(req)
+    assert calls == [], 'fail-safe must not run when permissions are already set'
+    assert resp.status_code == 200
