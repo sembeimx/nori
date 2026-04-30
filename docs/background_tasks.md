@@ -52,6 +52,27 @@ Nori features a robust, multi-driver persistent queue system. Jobs are stored in
 | `QUEUE_DRIVER` | `memory`, `database`, `redis` | `database` or `redis` for production. |
 | `REDIS_URL` | Redis connection string | Required if using the `redis` driver. Default: `redis://localhost:6379` |
 
+### Security: module allow-list
+
+The worker resolves the function to execute via `importlib.import_module(mod_path) + getattr(module, func_name)`. **Without restrictions, anyone with write access to the queue store (a SQL injection point that reaches the `jobs` table, or an unauthenticated Redis instance) could push a payload like `{"func": "os:system", "args": ["..."]}` and trigger arbitrary code execution with the worker's privileges.**
+
+Nori blocks this by checking `mod_path` against an allow-list of module prefixes before importing. The default — set in `settings.py` — covers the conventional Nori locations:
+
+```python
+QUEUE_ALLOWED_MODULES = ['modules.', 'services.', 'app.', 'tasks.']
+```
+
+| Prefix | Intended for |
+| :--- | :--- |
+| `modules.` | Tasks living next to controllers (`modules.mail`, `modules.reports`, ...) |
+| `services.` | Service drivers (mail, storage, search) |
+| `app.` | Projects that nest jobs under `app/tasks/` or similar |
+| `tasks.` | Projects that put background tasks in a top-level `tasks/` package |
+
+If your jobs live elsewhere, extend the list — each prefix should end with a `.` so a name like `modules` does not accidentally match `modules_evil`. Nori normalizes a missing trailing dot automatically, so `'my_jobs'` and `'my_jobs.'` are equivalent.
+
+A payload whose `func` does not match any allowed prefix is rejected with `PermissionError` **before** the import. The rejection counts as a job failure, so the existing retry/backoff and dead-letter logic still apply — a poisoned job does not stall the worker.
+
 ### Driver Comparison
 
 | Feature | `memory` | `database` | `redis` |

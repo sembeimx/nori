@@ -34,6 +34,13 @@ def _force_db_driver(monkeypatch):
 
     monkeypatch.setattr(settings, 'QUEUE_DRIVER', 'database')
     monkeypatch.setattr(settings, 'DB_ENABLED', True)
+    # The dummy tasks below live under tests.*, which is outside the default
+    # production allow-list. Tests opt into the prefix explicitly.
+    monkeypatch.setattr(
+        settings,
+        'QUEUE_ALLOWED_MODULES',
+        ['tests.', 'modules.', 'services.', 'app.', 'tasks.'],
+    )
 
 
 # -- Dummy tasks for testing -------------------------------------------------
@@ -169,3 +176,90 @@ async def test_atomic_reservation():
     executed = _get_executed()
     assert len(executed) == 1
     assert executed[0] == 'success:atomic'
+
+
+# -- Module allow-list (RCE defense) -----------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_execute_payload_blocks_os_system(monkeypatch):
+    """A payload pointing at `os:system` (the canonical RCE vector) is rejected
+    before importlib.import_module runs."""
+    import settings
+
+    monkeypatch.setattr(
+        settings, 'QUEUE_ALLOWED_MODULES', ['modules.', 'services.', 'app.', 'tasks.']
+    )
+    from core.queue_worker import execute_payload
+
+    payload = {'func': 'os:system', 'args': ['echo pwned'], 'kwargs': {}}
+    with pytest.raises(PermissionError, match='not in QUEUE_ALLOWED_MODULES'):
+        await execute_payload(payload)
+
+
+@pytest.mark.asyncio
+async def test_execute_payload_blocks_subprocess(monkeypatch):
+    import settings
+
+    monkeypatch.setattr(settings, 'QUEUE_ALLOWED_MODULES', ['modules.'])
+    from core.queue_worker import execute_payload
+
+    payload = {'func': 'subprocess:run', 'args': [['ls']], 'kwargs': {}}
+    with pytest.raises(PermissionError):
+        await execute_payload(payload)
+
+
+@pytest.mark.asyncio
+async def test_execute_payload_blocks_builtins_exec(monkeypatch):
+    """builtins.exec is the most direct code-injection primitive — must be
+    blocked even though `builtins` is always importable."""
+    import settings
+
+    monkeypatch.setattr(settings, 'QUEUE_ALLOWED_MODULES', ['modules.'])
+    from core.queue_worker import execute_payload
+
+    payload = {'func': 'builtins:exec', 'args': ['print(1)'], 'kwargs': {}}
+    with pytest.raises(PermissionError):
+        await execute_payload(payload)
+
+
+@pytest.mark.asyncio
+async def test_execute_payload_blocks_prefix_attack(monkeypatch):
+    """Prefix without trailing dot must not match strings sharing only the prefix.
+
+    A user setting QUEUE_ALLOWED_MODULES=['modules'] (no dot) is normalized
+    internally to 'modules.', so 'modules_evil:exploit' stays blocked —
+    'modules_evil.' does not start with 'modules.'.
+    """
+    import settings
+
+    monkeypatch.setattr(settings, 'QUEUE_ALLOWED_MODULES', ['modules'])
+    from core.queue_worker import execute_payload
+
+    payload = {'func': 'modules_evil:exploit', 'args': [], 'kwargs': {}}
+    with pytest.raises(PermissionError):
+        await execute_payload(payload)
+
+
+@pytest.mark.asyncio
+async def test_execute_payload_respects_custom_allow_list(monkeypatch):
+    """Custom QUEUE_ALLOWED_MODULES overrides the defaults entirely."""
+    import settings
+
+    monkeypatch.setattr(settings, 'QUEUE_ALLOWED_MODULES', ['my_jobs.'])
+    from core.queue_worker import execute_payload
+
+    # `modules.` is no longer allowed because the user narrowed the list.
+    payload = {'func': 'modules.foo:bar', 'args': [], 'kwargs': {}}
+    with pytest.raises(PermissionError):
+        await execute_payload(payload)
+
+
+@pytest.mark.asyncio
+async def test_execute_payload_allows_listed_module():
+    """Sanity check: an allowed module path runs through to importlib."""
+    from core.queue_worker import execute_payload
+
+    payload = {'func': 'tests.test_core.test_queue:success_task', 'args': ['allowed'], 'kwargs': {}}
+    await execute_payload(payload)
+    assert 'success:allowed' in _get_executed()

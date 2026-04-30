@@ -20,6 +20,12 @@ _log = get_logger('queue')
 MAX_ATTEMPTS = 5
 _should_exit = False
 
+# Default allow-list of module prefixes whose functions can be executed from
+# the queue. Anything not matching one of these is rejected before import,
+# so a payload like `os:system` from a compromised queue store cannot run.
+# Override via `settings.QUEUE_ALLOWED_MODULES`.
+DEFAULT_ALLOWED_MODULES = ('modules.', 'services.', 'app.', 'tasks.')
+
 
 def _handle_exit(sig, frame):
     global _should_exit
@@ -27,8 +33,32 @@ def _handle_exit(sig, frame):
     _should_exit = True
 
 
+def _normalize_prefix(prefix: str) -> str:
+    return prefix if prefix.endswith('.') else prefix + '.'
+
+
+def _assert_allowed_module(mod_path: str) -> None:
+    """Reject queue payloads whose module path is outside the allow-list.
+
+    Without this check, anyone with write access to the queue store
+    (DB row, Redis list) could push `{"func": "os:system", "args": [...]}`
+    and the worker would import-and-call it. The allow-list is the
+    primary defence — DB/Redis ACLs are the second.
+    """
+    raw = config.get('QUEUE_ALLOWED_MODULES', list(DEFAULT_ALLOWED_MODULES))
+    allowed = tuple(_normalize_prefix(p) for p in raw)
+    if not any(mod_path.startswith(p) for p in allowed):
+        raise PermissionError(
+            f'Refusing to import {mod_path!r}: not in QUEUE_ALLOWED_MODULES. '
+            f'Allowed prefixes: {list(allowed)}. '
+            f'Add the module prefix (with trailing dot) to '
+            f'QUEUE_ALLOWED_MODULES in settings.py to extend the list.'
+        )
+
+
 async def execute_payload(payload: dict):
     mod_path, func_name = payload['func'].split(':')
+    _assert_allowed_module(mod_path)
     module = importlib.import_module(mod_path)
     func = getattr(module, func_name)
     if inspect.iscoroutinefunction(func):

@@ -87,6 +87,14 @@ SEARCH_DRIVER = os.environ.get('SEARCH_DRIVER', '')  # meilisearch | (custom dri
 # Queue
 QUEUE_DRIVER = os.environ.get('QUEUE_DRIVER', 'memory')  # memory | database
 
+# Queue worker module allow-list — only functions whose import path starts
+# with one of these prefixes can be executed from the queue. This is a
+# security barrier against arbitrary code execution if the queue store
+# (DB or Redis) is ever written to by an untrusted source. Each prefix
+# should end with a '.'; missing trailing dots are added automatically.
+# Add your own prefixes if your jobs live outside the default locations.
+QUEUE_ALLOWED_MODULES = ['modules.', 'services.', 'app.', 'tasks.']
+
 # OAuth — Social login providers (configured per-provider in services/)
 GOOGLE_CLIENT_ID = os.environ.get('GOOGLE_CLIENT_ID', '')
 GOOGLE_CLIENT_SECRET = os.environ.get('GOOGLE_CLIENT_SECRET', '')
