@@ -4,6 +4,31 @@ All notable changes to Nori are documented here. Format follows [Keep a Changelo
 
 ---
 
+## [1.31.0] — 2026-04-30
+
+### Fixed
+
+- **``load_permissions`` now refuses to refresh permissions for an inactive or missing User (MED).** Pre-1.31 ``is_active`` lived entirely in the project's login flow: at login time the project rejected inactive users; after that, deactivating a user in the database had no effect on in-flight requests until the session expired. The hole was specifically the **refresh** path — every ``PERMISSIONS_TTL`` window (default 5 min), ``require_permission`` would invoke ``load_permissions`` again, which re-derived perms purely from ``role_ids`` in the session and the Role→Permission M2M. ``is_active`` was never read. So an attacker (or a forgotten admin) deactivated in the DB stayed authorised for the rest of their TTL window, and every subsequent refresh kept granting. The fix adds an active-user gate at the top of ``load_permissions``: ``User.get_or_none(id=user_id)``; if missing or ``is_active is False``, write empty perms + the TTL marker and return ``[]``. The gate is bracketed in three layers of compatibility: ``LookupError`` from ``get_model('User')`` skips the gate (token-only auth, projects without a User); ``getattr(user_obj, 'is_active', True)`` defaults the flag to True (small internal apps that never added the column); a broad ``except Exception`` logs and falls through (transient DB errors, custom Managers without ``get_or_none``) so the gate never introduces a new 500. Truly revoking a logged-in user's access still requires invalidating their session — the cached perms on the session itself are not consulted by this gate, only the refresh-time reload is.
+
+### Improved
+
+- **Validation rule dispatcher logs a WARNING for unknown rule keywords.** Pre-1.31 a typo (``requried``, ``min_lengthn``, ``maxx``) or — much more commonly — a ``regex`` pattern containing the rule separator ``|`` declared in pipe-form silently no-op'd. The pipe-form footgun is the worst variant: ``{'username': 'regex:^a|b$'}`` splits to ``['regex:^a', 'b$']``, the trailing ``'b$'`` is dispatched to ``_check_rule`` as a "rule" keyword, falls off every ``elif``, and the framework returns ``None`` — so the developer ships with half a regex and the validator passes inputs the full pattern would have rejected. ``_check_rule`` now ends with an ``else:`` branch that emits a WARNING via ``core.logger.get_logger('validation')`` naming the offending rule keyword and the field, plus an explicit hint that pipe-form rules cannot contain ``|`` in their parameter and listing every recognised rule. The branch is **soft** — validation completes for the recognised rules in the chain so a typo cannot 500 the request, only surface itself. Matching docstring note added to the ``regex`` rule body so the workaround (``{'username': ['regex:^a|b$']}`` — list form) is one click away from where a developer is most likely reading.
+
+### Tests
+
+954 → 962 passing. New regression tests, each verified to fail on pre-1.31 code:
+- ``test_load_permissions_refuses_inactive_user`` — ``is_active=False`` returns ``[]`` even with ``role_ids`` already set in session
+- ``test_load_permissions_refuses_missing_user`` — ``get_or_none`` returning ``None`` returns ``[]``
+- ``test_load_permissions_active_user_passes_through_gate`` — sanity: an active user resolves perms exactly as on v1.30.x
+- ``test_load_permissions_user_without_is_active_attr_passes`` — backward-compat: User model without ``is_active`` falls through (default True via ``getattr``)
+- ``test_load_permissions_skips_gate_when_user_model_unregistered`` — token-only auth still works (``LookupError`` skips gate)
+- ``test_load_permissions_gate_query_error_falls_through`` — transient DB / shape errors log + fall through, never propagate as 500
+- ``test_validate_warns_on_unknown_rule_keyword`` — the pipe-form footgun (``'regex:^a|b$'``) surfaces the trailing ``'b$'`` as a WARNING
+- ``test_validate_unknown_rule_keyword_does_not_raise`` — soft-warn semantics: a typo'd rule must not crash the request
+- ``test_validate_regex_with_pipe_works_in_list_form`` — pinned workaround: list form preserves the alternation pattern
+
+---
+
 ## [1.30.2] — 2026-04-30
 
 ### Fixed

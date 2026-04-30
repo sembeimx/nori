@@ -1,5 +1,6 @@
 """Tests for core.http.validation."""
 
+import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -815,3 +816,57 @@ def test_password_strength_custom_message():
         {'p.password_strength': 'Password too weak'},
     )
     assert errors['p'] == ['Password too weak']
+
+
+# --- unknown rule warning (regex pipe-form footgun + typo guard) ---
+
+
+def test_validate_warns_on_unknown_rule_keyword(monkeypatch, caplog):
+    """A pipe-separated rule string whose ``regex`` parameter contains
+    the rule separator gets sliced into garbage:
+
+        'regex:^a|b$'  →  ['regex:^a', 'b$']
+
+    The trailing ``'b$'`` is dispatched to ``_check_rule`` with rule
+    keyword ``'b$'`` — pre-1.31 it would silently no-op and the
+    developer would ship with half a regex. The warn surfaces the
+    same way for ordinary typos (``requried``, ``min_lengthn``).
+    """
+    monkeypatch.setattr(logging.getLogger('nori'), 'propagate', True)
+    with caplog.at_level(logging.WARNING, logger='nori.validation'):
+        validate({'username': 'aaa'}, {'username': 'regex:^a|b$'})
+
+    matched = [r for r in caplog.records if r.name == 'nori.validation']
+    assert any('Unknown validation rule' in r.message for r in matched), (
+        'unknown rule keyword should surface as a WARNING, not silently no-op'
+    )
+    assert any("'b$'" in r.message for r in matched), (
+        'warning should name the offending rule fragment so the dev can find it'
+    )
+
+
+def test_validate_unknown_rule_keyword_does_not_raise():
+    """The unknown-rule branch is a soft warn — validation must still
+    complete (returning the errors collected from the recognised rules)
+    rather than crashing. Otherwise a typo would 500 the request.
+    """
+    # Mix a real rule with a bogus one; validation must still report
+    # the real-rule violation (or its absence) without raising.
+    errors = validate({'name': ''}, {'name': 'required|requried'})
+    assert 'name' in errors  # 'required' caught the empty value
+    # 'requried' is the typo'd unknown rule — must NOT raise.
+
+
+def test_validate_regex_with_pipe_works_in_list_form():
+    """Documented workaround: declare the regex in list form so the
+    rule splitter does not shred the pattern at the alternation
+    operator. Pipe-form ``'regex:^a|b$'`` truncates to ``^a``; list
+    form ``['regex:^a|b$']`` preserves the full alternation.
+    """
+    # Pipe-form (broken): pattern becomes just '^a', so 'b' fails.
+    pipe_form_errors = validate({'x': 'b'}, {'x': 'regex:^a|b$'})
+    assert 'x' in pipe_form_errors  # 'b' does not match '^a'
+
+    # List form (correct): pattern is the full ^a|b$ alternation.
+    list_form_errors = validate({'x': 'b'}, {'x': ['regex:^a|b$']})
+    assert list_form_errors == {}  # 'b' matches alternation

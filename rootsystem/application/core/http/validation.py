@@ -359,6 +359,16 @@ def _check_rule(
                 return _msg(field, rule, messages, n=param)
 
     elif rule == 'regex':
+        # NOTE on pattern syntax: when rules are declared as a
+        # pipe-separated string (``'min:3|regex:^[a-z]+$'``), the
+        # ``|`` is the rule separator — patterns that themselves
+        # contain ``|`` (alternation) MUST be declared as a list:
+        #
+        #     {'username': ['regex:^a|b$']}     # ✓ pattern is ^a|b$
+        #     {'username': 'regex:^a|b$'}       # ✗ splits to ['regex:^a', 'b$']
+        #
+        # The unknown-rule branch below logs a WARNING when the
+        # pipe-form mishap surfaces a stray fragment as a "rule".
         if value:
             # Cap the value length before re.match to bound ReDoS exposure.
             # The pattern itself is developer-controlled (declared in the
@@ -397,6 +407,28 @@ def _check_rule(
             ext = filename.rsplit('.', 1)[-1].lower() if '.' in filename else ''
             if ext not in allowed:
                 return _msg(field, rule, messages, types=param)
+
+    else:
+        # Unknown rule keyword — surface it loudly. The most common
+        # cause is a regex pattern containing the rule separator
+        # ``|`` declared in pipe-form: ``'regex:^a|b$'`` splits into
+        # ``['regex:^a', 'b$']`` and the trailing ``'b$'`` lands here
+        # as a stray "rule". Without this branch the framework
+        # silently no-ops and the developer ships with a half-applied
+        # validator. The same warning catches ordinary typos
+        # (``requried``, ``min_lengthn``, ``maxx``).
+        from core.logger import get_logger
+
+        get_logger('validation').warning(
+            "Unknown validation rule %r on field %r — typo, or a regex with '|' "
+            'declared in pipe-form? Pipe-form rules cannot contain ``|`` in their '
+            "parameter; use list form (e.g. ``{'username': ['regex:^a|b$']}``) "
+            'instead. Known rules: required, min, max, email, numeric, matches, '
+            'in, url, date, confirmed, nullable, unique, array, min_value, '
+            'max_value, regex, password_strength, file, file_max, file_types.',
+            rule,
+            field,
+        )
 
     return None
 

@@ -328,6 +328,11 @@ async def test_load_permissions_uses_user_roles_convention(monkeypatch):
         def get(*, id):
             return _FakeAwaitable(FakeUser(id))
 
+        @staticmethod
+        def get_or_none(*, id):
+            # v1.31 active-user gate calls this before role resolution.
+            return _FakeAwaitable(FakeUser(id))
+
     real_get_model = dec_mod.get_model
 
     def fake_get_model(name):
@@ -379,6 +384,10 @@ async def test_load_permissions_resolver_takes_priority_over_convention(monkeypa
         def get(*, id):
             return _FakeAwaitable(FakeUser(id))
 
+        @staticmethod
+        def get_or_none(*, id):
+            return _FakeAwaitable(FakeUser(id))
+
     real_get_model = dec_mod.get_model
     monkeypatch.setattr(
         dec_mod,
@@ -409,6 +418,10 @@ async def test_load_permissions_convention_falls_through_when_user_lacks_roles(m
     class FakeUserClass:
         @staticmethod
         def get(*, id):
+            return _FakeAwaitable(UserWithoutRolesAttr(id))
+
+        @staticmethod
+        def get_or_none(*, id):
             return _FakeAwaitable(UserWithoutRolesAttr(id))
 
     real_get_model = dec_mod.get_model
@@ -450,6 +463,13 @@ async def test_load_permissions_convention_swallows_query_errors(monkeypatch):
         def get(*, id):
             return FakeAwaitableExploding()
 
+        @staticmethod
+        def get_or_none(*, id):
+            # Active-user gate (v1.31) hits the same query crash; both
+            # paths must log + fall through, never propagate the
+            # RuntimeError up the request.
+            return FakeAwaitableExploding()
+
     monkeypatch.setattr(config, '_settings', SimpleNamespace())
     real_get_model = dec_mod.get_model
     monkeypatch.setattr(
@@ -463,3 +483,223 @@ async def test_load_permissions_convention_swallows_query_errors(monkeypatch):
     perms = await load_permissions(session, user_id=99)
     assert perms == []
     assert _PERMISSIONS_TTL_KEY in session
+
+
+# ---------------------------------------------------------------------------
+# v1.31 — active-user gate in load_permissions
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_load_permissions_refuses_inactive_user(monkeypatch):
+    """If ``User.is_active`` is False, the gate denies permissions
+    *immediately* — no role resolution, no DB roundtrip for permissions.
+
+    The previous behavior (pre-1.31) was that ``is_active`` lived
+    entirely in the project's login flow: at login time, the project
+    refused inactive users and never created the session. But once the
+    session existed, deactivating the user in the DB had no effect on
+    in-flight requests UNTIL the next ``PERMISSIONS_TTL`` window
+    elapsed and ``load_permissions`` ran again — at which point Nori
+    happily reloaded role-based permissions for the now-inactive user
+    because the function never consulted ``is_active``. This gate
+    closes the **refresh** path; truly revoking a logged-in user's
+    access still requires invalidating their session, since the cached
+    perms on the session itself are not consulted by this gate.
+    """
+    import core.auth.decorators as dec_mod
+    from core.auth.decorators import _PERMISSIONS_TTL_KEY
+
+    class InactiveUser:
+        def __init__(self, id):
+            self.id = id
+            self.is_active = False
+            self.roles = []  # would otherwise resolve to perms — must NOT
+
+    class FakeUserClass:
+        @staticmethod
+        def get_or_none(*, id):
+            return _FakeAwaitable(InactiveUser(id))
+
+    real_get_model = dec_mod.get_model
+    monkeypatch.setattr(
+        dec_mod,
+        'get_model',
+        lambda name: FakeUserClass if name == 'User' else real_get_model(name),
+    )
+
+    session = FakeSession()
+    session['role_ids'] = [1, 2]  # would normally yield perms
+    perms = await load_permissions(session, user_id=99)
+
+    assert perms == []
+    assert session['permissions'] == []
+    assert _PERMISSIONS_TTL_KEY in session
+
+
+@pytest.mark.asyncio
+async def test_load_permissions_refuses_missing_user(monkeypatch):
+    """If ``User.get_or_none(id=user_id)`` returns ``None`` (the row
+    no longer exists — hard-deleted user, foreign session id), deny
+    permissions immediately. Without this, a stale session for a
+    purged user would keep rehydrating perms via ``role_ids`` from
+    the session itself.
+    """
+    import core.auth.decorators as dec_mod
+    from core.auth.decorators import _PERMISSIONS_TTL_KEY
+
+    class FakeUserClass:
+        @staticmethod
+        def get_or_none(*, id):
+            return _FakeAwaitable(None)
+
+    real_get_model = dec_mod.get_model
+    monkeypatch.setattr(
+        dec_mod,
+        'get_model',
+        lambda name: FakeUserClass if name == 'User' else real_get_model(name),
+    )
+
+    session = FakeSession()
+    session['role_ids'] = [1, 2]
+    perms = await load_permissions(session, user_id=99)
+
+    assert perms == []
+    assert _PERMISSIONS_TTL_KEY in session
+
+
+@pytest.mark.asyncio
+async def test_load_permissions_active_user_passes_through_gate(monkeypatch):
+    """The gate is a denial channel — an active user must pass
+    through unchanged, with role resolution and permission load
+    proceeding as in v1.30.x.
+    """
+    import core.auth.decorators as dec_mod
+    from models.framework.permission import Permission
+    from models.framework.role import Role
+
+    perm, _ = await Permission.get_or_create(name='gate.passthrough')
+    role, _ = await Role.get_or_create(name='gate_role_v131')
+    await role.permissions.add(perm)
+
+    class ActiveUser:
+        def __init__(self, id):
+            self.id = id
+            self.is_active = True
+
+    class FakeUserClass:
+        @staticmethod
+        def get_or_none(*, id):
+            return _FakeAwaitable(ActiveUser(id))
+
+    real_get_model = dec_mod.get_model
+    monkeypatch.setattr(
+        dec_mod,
+        'get_model',
+        lambda name: FakeUserClass if name == 'User' else real_get_model(name),
+    )
+
+    session = FakeSession()
+    session['role_ids'] = [role.id]
+    perms = await load_permissions(session, user_id=99)
+    assert 'gate.passthrough' in perms
+
+
+@pytest.mark.asyncio
+async def test_load_permissions_user_without_is_active_attr_passes(monkeypatch):
+    """Backward compatibility: small internal apps without an
+    ``is_active`` deactivation column on the User must continue to
+    work. ``getattr(user_obj, 'is_active', True)`` defaults to True
+    when the field is absent, so the gate becomes a no-op for those
+    project shapes.
+    """
+    import core.auth.decorators as dec_mod
+    from models.framework.permission import Permission
+    from models.framework.role import Role
+
+    perm, _ = await Permission.get_or_create(name='no_is_active.publish')
+    role, _ = await Role.get_or_create(name='no_is_active_role_v131')
+    await role.permissions.add(perm)
+
+    class UserNoIsActive:
+        def __init__(self, id):
+            self.id = id
+            # No ``is_active`` attribute at all.
+
+    class FakeUserClass:
+        @staticmethod
+        def get_or_none(*, id):
+            return _FakeAwaitable(UserNoIsActive(id))
+
+    real_get_model = dec_mod.get_model
+    monkeypatch.setattr(
+        dec_mod,
+        'get_model',
+        lambda name: FakeUserClass if name == 'User' else real_get_model(name),
+    )
+
+    session = FakeSession()
+    session['role_ids'] = [role.id]
+    perms = await load_permissions(session, user_id=99)
+    assert 'no_is_active.publish' in perms
+
+
+@pytest.mark.asyncio
+async def test_load_permissions_skips_gate_when_user_model_unregistered(monkeypatch):
+    """Token-only auth and projects that haven't registered ``User``
+    must pass through the gate silently. ``LookupError`` from
+    ``get_model('User')`` is the documented "no User registered"
+    signal — the gate must not turn it into a 500 or block the rest
+    of the function.
+    """
+    import core.auth.decorators as dec_mod
+    from core.auth.decorators import _PERMISSIONS_TTL_KEY
+
+    real_get_model = dec_mod.get_model
+
+    def fake_get_model(name):
+        if name == 'User':
+            raise LookupError('User model not registered')
+        return real_get_model(name)
+
+    monkeypatch.setattr(dec_mod, 'get_model', fake_get_model)
+
+    session = FakeSession()
+    session['role_ids'] = []  # nothing to resolve; lands at empty perms
+    perms = await load_permissions(session, user_id=99)
+    assert perms == []
+    assert _PERMISSIONS_TTL_KEY in session
+
+
+@pytest.mark.asyncio
+async def test_load_permissions_gate_query_error_falls_through(monkeypatch, caplog):
+    """If ``User.get_or_none`` itself raises (transient DB error,
+    custom Manager that doesn't expose the method), the gate must
+    log and fall through — never propagate the exception up to the
+    request handler. Otherwise a brief DB blip in the gate path would
+    500 every gated route while the rest of the app served fine.
+    """
+    import logging
+
+    import core.auth.decorators as dec_mod
+    from core.auth.decorators import _PERMISSIONS_TTL_KEY
+
+    class FakeUserClass:
+        @staticmethod
+        def get_or_none(*, id):
+            raise RuntimeError('transient: connection reset')
+
+    real_get_model = dec_mod.get_model
+    monkeypatch.setattr(
+        dec_mod,
+        'get_model',
+        lambda name: FakeUserClass if name == 'User' else real_get_model(name),
+    )
+    monkeypatch.setattr(logging.getLogger('nori'), 'propagate', True)
+
+    session = FakeSession()
+    with caplog.at_level(logging.WARNING, logger='nori.auth'):
+        perms = await load_permissions(session, user_id=99)
+    assert perms == []
+    assert _PERMISSIONS_TTL_KEY in session
+    assert any('Active-user gate query failed' in r.getMessage() for r in caplog.records)

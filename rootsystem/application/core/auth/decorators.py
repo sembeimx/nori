@@ -150,6 +150,56 @@ async def load_permissions(session: dict, user_id: int) -> list[str]:
 
     _perm_log = get_logger('auth')
 
+    # Active-user gate. If the project registered a ``User`` model and
+    # exposes an ``is_active`` flag, refuse to issue permissions for an
+    # inactive (or missing) user — that closes the *refresh* path that
+    # previously kept a freshly-deactivated user authorized for the
+    # remainder of the ``PERMISSIONS_TTL`` window after their
+    # ``is_active`` was flipped in the database.
+    #
+    # Within the TTL itself, the cached permissions on the session are
+    # still served — there is no shared state between processes that
+    # the framework can punch through here. Truly revoking access for
+    # a logged-in user requires invalidating their session
+    # (``session.clear()`` from an admin tool, or a cross-process
+    # session blacklist); that is project-specific tooling and out of
+    # scope for this gate.
+    #
+    # Guarded broadly: the project may not have a ``User`` model
+    # (token-only auth), and an existing ``User`` may not declare
+    # ``is_active`` (small internal apps without a deactivation flow).
+    # Both are valid project shapes — fall through to the normal load.
+    try:
+        User = get_model('User')
+        user_obj = await User.get_or_none(id=user_id)
+        if user_obj is None or getattr(user_obj, 'is_active', True) is False:
+            _perm_log.info(
+                'load_permissions: refusing permissions for user %s (missing or inactive)',
+                user_id,
+            )
+            session['permissions'] = []
+            session[_PERMISSIONS_TTL_KEY] = time.time()
+            return []
+    except LookupError:
+        # No ``User`` model registered — token-only auth or custom
+        # user shape. Skip the gate.
+        pass
+    except Exception as exc:  # noqa: BLE001 — shape-dependent; never crash the request
+        # Project-shape variations (custom Manager, no ``get_or_none``,
+        # transient DB errors, AttributeError on a stub User class in
+        # tests) must NOT take down the request at the gate. Log it and
+        # fall through to the normal load — the convention path below
+        # has its own error handling and will land at empty perms if it
+        # also fails. Failing **closed** here would block every gated
+        # route in projects whose User model deviates from the M2M
+        # convention; the gate is a best-effort revocation channel, not
+        # the primary auth boundary.
+        _perm_log.warning(
+            'Active-user gate query failed for user %s: %s — falling through to normal load',
+            user_id,
+            exc,
+        )
+
     role_ids = session.get('role_ids', [])
 
     if not role_ids:
