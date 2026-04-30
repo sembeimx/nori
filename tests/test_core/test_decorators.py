@@ -269,3 +269,80 @@ def test_require_any_role_passes_for_moderator():
     tc.get('/set')
     resp = tc.get('/multi', headers={'accept': 'application/json'})
     assert resp.status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# SUPERUSER_ROLE configurability
+# ---------------------------------------------------------------------------
+
+
+def _build_role_check_app():
+    async def set_session(request: Request):
+        request.session['user_id'] = 1
+        request.session['role'] = request.query_params.get('role', 'user')
+        return JSONResponse({'ok': True})
+
+    return Starlette(
+        routes=[
+            Route('/set', endpoint=set_session, methods=['GET']),
+            Route('/editor', endpoint=ctrl.editor_only, methods=['GET']),
+        ],
+        middleware=[Middleware(SessionMiddleware, secret_key='test-secret')],
+    )
+
+
+def test_superuser_role_can_be_renamed(monkeypatch):
+    """Setting SUPERUSER_ROLE='owner' makes 'owner' the bypass — and
+    'admin' becomes just another role with no special privileges."""
+    from types import SimpleNamespace
+
+    from core.conf import config
+
+    monkeypatch.setattr(
+        config, '_settings', SimpleNamespace(SUPERUSER_ROLE='owner', LOGIN_URL='/login', FORBIDDEN_URL='/forbidden')
+    )
+
+    tc = TestClient(_build_role_check_app())
+    tc.get('/set?role=owner')
+    resp = tc.get('/editor', headers={'accept': 'application/json'})
+    assert resp.status_code == 200  # 'owner' now bypasses
+
+    tc.get('/set?role=admin')
+    resp = tc.get('/editor', headers={'accept': 'application/json'})
+    assert resp.status_code == 403  # 'admin' is no longer privileged
+
+
+def test_superuser_role_disabled_when_empty(monkeypatch):
+    """Setting SUPERUSER_ROLE='' removes the global bypass entirely.
+    Useful for projects that prefer pure permission-based checks."""
+    from types import SimpleNamespace
+
+    from core.conf import config
+
+    monkeypatch.setattr(
+        config, '_settings', SimpleNamespace(SUPERUSER_ROLE='', LOGIN_URL='/login', FORBIDDEN_URL='/forbidden')
+    )
+
+    tc = TestClient(_build_role_check_app())
+    tc.get('/set?role=admin')
+    resp = tc.get('/editor', headers={'accept': 'application/json'})
+    assert resp.status_code == 403  # no bypass, must match 'editor'
+
+
+def test_superuser_role_defaults_to_admin_when_unset(monkeypatch):
+    """Backward compatibility: unset SUPERUSER_ROLE defaults to 'admin'.
+
+    Existing projects that never configured the setting must keep their
+    'admin' bypass working without code changes.
+    """
+    from types import SimpleNamespace
+
+    from core.conf import config
+
+    # Settings without SUPERUSER_ROLE — config.get must return 'admin'
+    monkeypatch.setattr(config, '_settings', SimpleNamespace(LOGIN_URL='/login', FORBIDDEN_URL='/forbidden'))
+
+    tc = TestClient(_build_role_check_app())
+    tc.get('/set?role=admin')
+    resp = tc.get('/editor', headers={'accept': 'application/json'})
+    assert resp.status_code == 200  # default bypass intact

@@ -18,6 +18,21 @@ _PERMISSIONS_TTL_KEY = '_permissions_loaded_at'
 _DEFAULT_PERMISSIONS_TTL = 300  # 5 minutes
 
 
+def _superuser_role() -> str:
+    """Return the role name that bypasses all auth checks.
+
+    Defaults to ``'admin'`` for backward compatibility. Projects can
+    rename it (``owner``, ``root``) or disable the bypass entirely by
+    setting ``SUPERUSER_ROLE = ''`` in ``settings.py``.
+
+    Hardcoding ``'admin'`` would also mean any bug in session handling
+    or a third-party OIDC claim that lets a user set their role to
+    ``admin`` grants total access — making the role name configurable
+    lets projects pick a name no untrusted system can produce.
+    """
+    return config.get('SUPERUSER_ROLE', 'admin')
+
+
 def login_required(func: Callable[..., Any]) -> Callable[..., Any]:
     """
     Decorator: redirects to /login if no session.
@@ -39,7 +54,8 @@ def login_required(func: Callable[..., Any]) -> Callable[..., Any]:
 
 def require_role(role: str) -> Callable[..., Any]:
     """
-    Decorator: requires a specific role. Admin bypasses all roles.
+    Decorator: requires a specific role. The configured superuser role
+    (``SUPERUSER_ROLE``, default ``'admin'``) bypasses all role checks.
 
         @require_role('editor')
         async def edit(self, request): ...
@@ -56,7 +72,8 @@ def require_role(role: str) -> Callable[..., Any]:
                 return RedirectResponse(config.get('LOGIN_URL', '/login'), status_code=302)
 
             user_role = request.session.get('role', 'user')
-            if user_role != 'admin' and user_role != role:
+            superuser = _superuser_role()
+            if (not superuser or user_role != superuser) and user_role != role:
                 accept = request.headers.get('accept', '')
                 if 'application/json' in accept:
                     return JSONResponse({'error': 'Forbidden'}, status_code=403)
@@ -71,7 +88,8 @@ def require_role(role: str) -> Callable[..., Any]:
 
 def require_any_role(*roles: str) -> Callable[..., Any]:
     """
-    Decorator: requires one of the specified roles.
+    Decorator: requires one of the specified roles. The configured
+    superuser role (``SUPERUSER_ROLE``, default ``'admin'``) bypasses.
 
         @require_any_role('admin', 'moderator')
         async def moderate(self, request): ...
@@ -88,7 +106,8 @@ def require_any_role(*roles: str) -> Callable[..., Any]:
                 return RedirectResponse(config.get('LOGIN_URL', '/login'), status_code=302)
 
             user_role = request.session.get('role', 'user')
-            if user_role != 'admin' and user_role not in roles:
+            superuser = _superuser_role()
+            if (not superuser or user_role != superuser) and user_role not in roles:
                 accept = request.headers.get('accept', '')
                 if 'application/json' in accept:
                     return JSONResponse({'error': 'Forbidden'}, status_code=403)
@@ -158,7 +177,8 @@ def require_permission(perm: str) -> Callable[..., Any]:
                 return RedirectResponse(config.get('LOGIN_URL', '/login'), status_code=302)
 
             user_role = request.session.get('role', 'user')
-            if user_role == 'admin':
+            superuser = _superuser_role()
+            if superuser and user_role == superuser:
                 return await func(self, request, *args, **kwargs)
 
             # Auto-refresh permissions if TTL expired (only if loaded via load_permissions before)
