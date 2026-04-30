@@ -185,14 +185,26 @@ async def test_post_with_header_token_passes():
 
 
 # ---------------------------------------------------------------------------
-# JSON bypass
+# JSON requests require the X-CSRF-Token header (no Content-Type bypass)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_json_post_bypasses_csrf():
+async def test_json_post_without_token_returns_403():
     session = {_CSRF_SESSION_KEY: Security.generate_csrf_token()}
     scope = _scope('POST', session=session, content_type='application/json')
+    cap = _Captured()
+    mw = CsrfMiddleware(_passthrough_app)
+    await mw(scope, await _make_receive(b'{"key": "value"}'), cap.send)
+    assert cap.status == 403
+
+
+@pytest.mark.asyncio
+async def test_json_post_with_header_token_passes():
+    token = Security.generate_csrf_token()
+    session = {_CSRF_SESSION_KEY: token}
+    headers = [(b'x-csrf-token', token.encode())]
+    scope = _scope('POST', session=session, headers=headers, content_type='application/json')
     cap = _Captured()
     mw = CsrfMiddleware(_passthrough_app)
     await mw(scope, await _make_receive(b'{"key": "value"}'), cap.send)

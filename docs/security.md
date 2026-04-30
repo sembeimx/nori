@@ -94,8 +94,11 @@ Then route it: `Route('/csp-violations', csp.report, methods=['POST'])`. Make su
 ### Exempt from CSRF
 
 - **Safe methods**: GET, HEAD, OPTIONS, TRACE
-- **JSON APIs**: Requests with `Content-Type: application/json` are exempt (browsers enforce CORS for cross-origin JSON requests)
 - **Custom paths**: Configurable exempt paths
+
+### JSON clients
+
+JSON requests are **not exempt**. The `Content-Type: application/json` header alone is not a safe CSRF defense — it relies on CORS being configured correctly, which is not a guarantee Nori can enforce. JSON clients (SPAs, fetch, axios) must send the token via the `X-CSRF-Token` header on every state-changing request.
 
 ### Usage in Templates
 

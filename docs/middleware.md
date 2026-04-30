@@ -186,9 +186,8 @@ Validates CSRF tokens on all state-changing HTTP methods (POST, PUT, DELETE, PAT
 **Key behaviors**:
 
 - **Token generation**: auto-generates a token into `session['_csrf_token']` on the first request.
-- **Token lookup**: checks `X-CSRF-Token` header first, then `_csrf_token` form field (both URL-encoded and multipart).
+- **Token lookup**: checks `X-CSRF-Token` header first, then `_csrf_token` form field (URL-encoded and multipart). JSON requests must use the header — body parsing is form-only.
 - **Safe methods**: GET, HEAD, OPTIONS, TRACE are always exempt.
-- **JSON exempt**: requests with `Content-Type: application/json` skip CSRF (browsers enforce CORS for cross-origin JSON).
 - **Body size limit**: rejects bodies larger than 10 MB with 413 (DoS protection).
 - **Constant-time comparison**: uses `hmac.compare_digest` to prevent timing attacks.
 

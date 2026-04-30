@@ -115,7 +115,7 @@ Response ←──┘
 | **SecurityHeadersMiddleware** | `core.http.security_headers` | Injects security headers on every response: `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `X-XSS-Protection: 1; mode=block`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy: camera=(), microphone=(), geolocation=()`, `Strict-Transport-Security` (HSTS, 1 year). Optional CSP if configured. |
 | **CORSMiddleware** | `starlette.middleware.cors` | Only added if `CORS_ORIGINS` is set in `.env`. Handles `OPTIONS` preflight and adds `Access-Control-*` headers. |
 | **SessionMiddleware** | `starlette.middleware.sessions` | Creates and validates signed session cookies using `SECRET_KEY`. Populates `request.session` as a dict-like object. Required by CSRF, auth decorators, and flash messages. |
-| **CsrfMiddleware** | `core.auth.csrf` | Validates CSRF tokens on state-changing methods (POST, PUT, DELETE, PATCH). Skips safe methods (GET, HEAD, OPTIONS) and JSON requests (`application/json`). Checks `X-CSRF-Token` header first, then `_csrf_token` form field. Auto-generates token if missing. Returns 403 on mismatch, 413 on oversized body (DoS protection, 10 MB limit). |
+| **CsrfMiddleware** | `core.auth.csrf` | Validates CSRF tokens on state-changing methods (POST, PUT, DELETE, PATCH). Skips safe methods (GET, HEAD, OPTIONS). Checks `X-CSRF-Token` header first, then `_csrf_token` form field (form bodies only — JSON clients must send the header). Auto-generates token if missing. Returns 403 on mismatch, 413 on oversized body (DoS protection, 10 MB limit). |
 
 ### Why This Order Matters
 

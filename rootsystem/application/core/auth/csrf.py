@@ -50,11 +50,8 @@ class CsrfMiddleware:
         if path in self.exempt_paths:
             return await self.app(scope, receive, send)
 
-        # JSON requests pass through (APIs protected by other means)
         headers = dict(scope.get('headers', []))
         content_type = headers.get(b'content-type', b'').decode('latin1', errors='replace')
-        if 'application/json' in content_type:
-            return await self.app(scope, receive, send)
 
         # Read body with size limit and validate token
         try:
@@ -67,7 +64,10 @@ class CsrfMiddleware:
         if header_token:
             token = header_token.decode('latin1', errors='replace')
 
-        if not token:
+        # JSON clients must use the X-CSRF-Token header. Body parsing is
+        # form-only because relying on Content-Type to skip CSRF becomes a
+        # bypass when CORS is misconfigured or when the client is non-browser.
+        if not token and 'application/json' not in content_type:
             token = self._extract_form_token(body, content_type)
 
         expected = session.get(_CSRF_SESSION_KEY) if session else None
