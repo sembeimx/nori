@@ -40,7 +40,7 @@ Each element in `background_tasks()` is a `(func, args_tuple, kwargs_dict)` trip
 Nori features a robust, multi-driver persistent queue system. Jobs are stored in a database or Redis and processed by a background worker. **Use this for critical tasks like bulk emails, PDF generation, or heavy processing.**
 
 ### Key Robustness Features
-- **Atomic Locking**: Only one worker can process a single job at a time (race-condition free).
+- **Atomic Locking**: Only one worker processes a job at a time. The database driver uses an atomic `UPDATE ... WHERE reserved_at IS NULL` to reserve a job; the Redis driver promotes delayed jobs via a Lua `EVAL` so `ZRANGEBYSCORE + LPUSH + ZREM` is a single atomic operation across the worker pool — no double-execution under multiple workers.
 - **Exponential Backoff**: If a job fails, the next attempt is delayed by `(attempts⁴) × 15` seconds: ~15s → ~4m → ~20m → ~1h → ~3h. This gives external services time to recover.
 - **Dead Letters**: After **5 failed attempts**, the job is marked with `failed_at` and stopped for manual inspection.
 - **Graceful Shutdown**: The worker finishes the current job before exiting on `SIGINT`/`SIGTERM`.

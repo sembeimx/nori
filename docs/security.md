@@ -199,6 +199,18 @@ The Redis backend shares counters across Gunicorn workers and Docker replicas.
 
 ---
 
+## Queue Worker Module Allow-List
+
+`push()` jobs are persisted as a `(func, args, kwargs)` tuple where `func` is a string of the form `'module.path:function_name'`. The worker resolves it via `importlib.import_module + getattr`. **Without restrictions, write access to the queue store (a SQL injection point reaching the `jobs` table, an unauthenticated Redis instance, or any breach of the persistence layer) becomes arbitrary code execution under the worker's privileges.**
+
+Nori blocks this by checking the module path against `QUEUE_ALLOWED_MODULES` (`settings.py`, default `['modules.', 'services.', 'app.', 'tasks.']`) before importing. Anything outside the list is rejected with `PermissionError` and counts as a job failure — the existing retry/backoff and dead-letter path handles it, so a poisoned payload cannot stall the worker.
+
+Prefixes are normalized to require a trailing `.` so a name like `modules` does not accidentally match `modules_evil`. This is defense in depth, not a replacement for store-level access controls (DB user grants, Redis AUTH/ACL).
+
+See [Background Tasks → Security: module allow-list](background_tasks.md#security-module-allow-list) for configuration details, prefix normalization, and the full threat model.
+
+---
+
 ## ORM: `protected_fields`
 
 Models can define a `protected_fields` class attribute to prevent sensitive data from leaking through `to_dict()`.
@@ -376,3 +388,4 @@ When building with Nori, ensure:
 - [ ] File upload `allowed_types` is restrictive (don't allow `*`)
 - [ ] Rate limiting is applied to authentication and expensive endpoints
 - [ ] `TRUSTED_PROXIES` is configured if running behind a reverse proxy
+- [ ] `QUEUE_ALLOWED_MODULES` covers your job locations (don't widen unnecessarily)
