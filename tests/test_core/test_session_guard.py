@@ -211,13 +211,13 @@ async def test_cache_miss_falls_through_to_db_and_repopulates(enable_check, stub
     until the next admin bump."""
     import core.auth.session_guard as sg
 
-    cache_writes: list[tuple[str, int]] = []
+    cache_writes: list[tuple[str, int, int]] = []
 
     async def fake_cache_get(key):
         return None
 
     async def fake_cache_set(key, value, ttl=0):
-        cache_writes.append((key, value))
+        cache_writes.append((key, value, ttl))
 
     class FakeUser:
         def __init__(self, id, version):
@@ -235,9 +235,16 @@ async def test_cache_miss_falls_through_to_db_and_repopulates(enable_check, stub
 
     req = FakeRequest(user_id=1, session_version=7)
     assert await sg.check_session_version(req) is True
-    assert cache_writes == [(sg._version_key(1), 7)], (
+    assert len(cache_writes) == 1
+    assert cache_writes[0][0] == sg._version_key(1)
+    assert cache_writes[0][1] == 7, (
         'cache must be repopulated from the DB read; otherwise every '
         'request would re-hit the DB until the admin bumps the version'
+    )
+    assert cache_writes[0][2] > 0, (
+        'cache_set MUST pass a positive TTL — entries with TTL=0 never '
+        'expire on the memory backend, which leaks the multi-worker '
+        'staleness window indefinitely until LRU eviction'
     )
 
 
@@ -496,10 +503,10 @@ async def test_bump_session_version_increments_db_and_cache(monkeypatch):
     version to the cache so the next gated request hits cache, not DB."""
     import core.auth.session_guard as sg
 
-    cache_writes: list[tuple[str, int]] = []
+    cache_writes: list[tuple[str, int, int]] = []
 
     async def fake_cache_set(key, value, ttl=0):
-        cache_writes.append((key, value))
+        cache_writes.append((key, value, ttl))
 
     class FakeUser:
         def __init__(self):
@@ -527,7 +534,9 @@ async def test_bump_session_version_increments_db_and_cache(monkeypatch):
         '(updated_at, etc.) — important for projects whose User has '
         'cascading post_save hooks'
     )
-    assert cache_writes == [(sg._version_key(7), 5)]
+    assert len(cache_writes) == 1
+    assert cache_writes[0][:2] == (sg._version_key(7), 5)
+    assert cache_writes[0][2] > 0, 'bump must pass a positive TTL on the cache write'
 
 
 @pytest.mark.asyncio
@@ -671,6 +680,49 @@ def test_configure_raises_when_session_version_field_missing(monkeypatch):
 
     with pytest.raises(RuntimeError, match='session_version'):
         sg.configure_session_guard()
+
+
+@pytest.mark.asyncio
+async def test_cache_writes_respect_configurable_ttl(monkeypatch):
+    """``SESSION_VERSION_CACHE_TTL`` overrides the default 60s. Lower
+    values tighten the multi-worker memory staleness window at the cost
+    of more DB hits; higher values trade consistency for performance on
+    Redis. The default is 60s; an explicit override must reach the
+    backend's ``set(key, value, ttl)`` call unchanged.
+    """
+    import core.auth.session_guard as sg
+    from core.conf import config
+
+    monkeypatch.setattr(
+        config,
+        '_settings',
+        SimpleNamespace(SESSION_VERSION_CACHE_TTL=15),
+    )
+
+    cache_writes: list[tuple[str, int, int]] = []
+
+    async def fake_cache_set(key, value, ttl=0):
+        cache_writes.append((key, value, ttl))
+
+    class FakeUser:
+        def __init__(self):
+            self.session_version = 0
+
+        async def save(self, **kw):
+            pass
+
+    class FakeUserClass:
+        @staticmethod
+        def get_or_none(*, id):
+            return _FakeAwaitable(FakeUser())
+
+    monkeypatch.setattr(sg, 'cache_set', fake_cache_set)
+    monkeypatch.setattr(sg, 'get_model', lambda name: FakeUserClass)
+
+    await sg.bump_session_version(99)
+    assert cache_writes == [(sg._version_key(99), 1, 15)], (
+        f'configured TTL did not propagate to cache_set; got {cache_writes}'
+    )
 
 
 def test_configure_passes_when_session_version_field_present(monkeypatch):

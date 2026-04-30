@@ -473,6 +473,7 @@ A **process-local circuit breaker** protects against sustained outages independe
 | --- | --- | --- |
 | `SESSION_VERSION_CHECK` | `False` | Master opt-in. When `False` the gate is a no-op. |
 | `SESSION_VERSION_FAIL_MODE` | `'open'` | `'open'` or `'closed'` — what to do when both stores fail. |
+| `SESSION_VERSION_CACHE_TTL` | `60` | Seconds before a cached version entry is revalidated against the DB. Caps the inconsistency window on multi-worker memory backends. |
 | `SESSION_VERSION_CIRCUIT_THRESHOLD` | `50` | Consecutive failures before the breaker opens. |
 | `SESSION_VERSION_CIRCUIT_WINDOW` | `60` | Sliding window (seconds) for the failure counter. |
 | `SESSION_VERSION_CIRCUIT_OPEN_DURATION` | `30` | Seconds the breaker stays open before retrying. |
@@ -495,6 +496,7 @@ Every denial path writes a structured audit event to `core.audit` so security te
 - **Per-request cache hit.** Every gated request reads `session_guard:{user_id}:version` from the cache. With Redis this is sub-millisecond on a warm connection; with the in-memory backend it's effectively free. For the highest-volume routes (10k+ rps), measure before enabling.
 - **DB read on cache miss.** Cache evictions cause one extra DB round-trip per request until the cache repopulates. The `cache_set` after the DB read makes this self-healing; subsequent requests hit the cache again.
 - **Worker-local breakers.** Each process tracks its own breaker. With N workers, a cache outage trips `threshold` failures per worker independently. There is no shared coordination because the only durable shared state available is the cache — the resource we cannot rely on at the moment we need it.
+- **Multi-worker memory backend has a bounded staleness window.** `CACHE_BACKEND = 'memory'` with `WORKERS > 1` means each worker's cache is independent: an `invalidate_session()` running on Worker A only updates Worker A's in-memory dict. Worker B keeps serving its own cached version until that entry expires (`SESSION_VERSION_CACHE_TTL`, default 60s). For production deployments that need instant cross-worker propagation, use `CACHE_BACKEND = 'redis'` — there is no inconsistency window with Redis because all workers share one cache namespace. The startup warning when memory backend is detected in production already flags this combo; this section is the explanation of why it matters specifically for revocation.
 - **Cookie storage of `session_version` is integer.** Sessions remain compact. The cookie size grows by a few bytes (the integer + JSON key) per session.
 
 ---

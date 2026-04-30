@@ -4,6 +4,23 @@ All notable changes to Nori are documented here. Format follows [Keep a Changelo
 
 ---
 
+## [1.33.1] — 2026-04-30
+
+### Improved
+
+- **``session_guard`` now writes cache entries with an explicit, configurable TTL (LOW).** v1.33.0 called ``cache_set(key, value)`` without an explicit TTL, falling back to ``cache_set``'s 300-second default. With Redis (the recommended production backend) that was operationally cosmetic — Redis shares the cache namespace across workers, so ``invalidate_session()`` on Worker A propagates to every reader the moment it returns. With ``CACHE_BACKEND = 'memory'`` and ``WORKERS > 1`` (uncommon in production but reachable in dev), the per-worker dicts are independent: Worker A's bump only updated Worker A's memory, leaving Worker B serving the stale version for up to the entire 300s TTL window. The fix introduces ``SESSION_VERSION_CACHE_TTL`` (default 60s) and passes it explicitly on every ``cache_set`` call. Multi-worker memory deployments now have a bounded staleness window of one minute by default; tighter consistency comes from lowering the value, looser from raising it. Redis behavior is unchanged in practice (entries are still revalidated against the DB once per TTL window, which catches the rare class of cache/DB drift from manual writes or partial failover replay). The startup warning emitted when memory backend is detected in production (``asgi.py:77``) already covers the broader recommendation to switch to Redis.
+
+### Documentation
+
+- ``docs/security.md`` "Session Revocation" section now lists ``SESSION_VERSION_CACHE_TTL`` in the settings table and the tradeoffs section spells out the multi-worker memory staleness window explicitly so the recommendation to use Redis is anchored to a concrete failure mode rather than general advice.
+
+### Tests
+
+990 → 991 passing. New regression test:
+- ``test_cache_writes_respect_configurable_ttl`` — ``SESSION_VERSION_CACHE_TTL = 15`` propagates through ``bump_session_version`` to the backend's ``set(key, value, ttl)`` call. Two existing tests upgraded to assert that every ``cache_set`` from ``session_guard`` carries a positive TTL (``cache_writes[i][2] > 0``); pre-1.33.1 they would have shown ``ttl=300`` as the silent default and the new explicit-TTL contract was untested.
+
+---
+
 ## [1.33.0] — 2026-04-30
 
 ### Added

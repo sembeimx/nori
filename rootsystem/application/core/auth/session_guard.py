@@ -90,6 +90,35 @@ _log = get_logger('session_guard')
 
 _PREFIX = 'session_guard:'
 
+# Default TTL on every cache write of a user's session version. Tighter
+# than ``cache_set``'s 300s default for two reasons:
+#
+#   1. Multi-worker memory backend has no shared state — Worker A's
+#      ``invalidate_session()`` updates only Worker A's in-memory dict;
+#      Worker B keeps serving its own cached value until that entry
+#      expires. The TTL caps the "stale revocation" window per worker.
+#      With Redis (the recommended production cache backend) the entries
+#      are shared, so the TTL is operationally cosmetic — it only
+#      matters that it is short enough to bound the multi-worker memory
+#      edge case.
+#
+#   2. Even with Redis, an explicit short TTL makes the read-through
+#      cache self-healing on rare classes of corruption: if the cache
+#      somehow drifts from the DB (manual ``redis-cli SET``, partial
+#      failover replay), every entry is revalidated against the DB at
+#      least once per TTL window.
+#
+# Configurable via ``SESSION_VERSION_CACHE_TTL`` in ``settings.py`` —
+# raise it for performance-sensitive workloads on Redis, lower it for
+# stricter consistency on memory backends. Cannot be 0 (no expiry) —
+# that would defeat the purpose of bounding the inconsistency window.
+_DEFAULT_CACHE_TTL: int = 60
+
+
+def _cache_ttl() -> int:
+    """Return the configured cache TTL for session-version entries."""
+    return int(config.get('SESSION_VERSION_CACHE_TTL', _DEFAULT_CACHE_TTL))
+
 
 def _version_key(user_id: int) -> str:
     return f'{_PREFIX}{user_id}:version'
@@ -234,9 +263,11 @@ async def _get_live_version(user_id: int) -> int | None:
 
     # Best-effort cache populate. If this fails the request still
     # succeeds — the next request will hit the DB again, which is
-    # the correct degraded behavior.
+    # the correct degraded behavior. TTL is bounded so a stale entry
+    # on one worker (memory backend, multi-worker deployment) cannot
+    # outlive the inconsistency window.
     try:
-        await cache_set(_version_key(user_id), live_v)
+        await cache_set(_version_key(user_id), live_v, _cache_ttl())
     except Exception as exc:
         _log.warning('Session guard cache write failed for user %s: %s', user_id, exc)
 
@@ -368,9 +399,11 @@ async def bump_session_version(user_id: int) -> int:
 
     # Sync the cache so the next gated request sees the new version
     # without a DB round-trip. Best-effort: if the cache is down, the
-    # next request will repopulate from the DB anyway.
+    # next request will repopulate from the DB anyway. The same TTL
+    # as the read-through populate so all session-guard cache entries
+    # follow one bounded-staleness contract.
     try:
-        await cache_set(_version_key(user_id), new_version)
+        await cache_set(_version_key(user_id), new_version, _cache_ttl())
     except Exception as exc:
         _log.warning('Session guard cache update after bump failed for user %s: %s', user_id, exc)
 
