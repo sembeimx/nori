@@ -121,12 +121,36 @@ def test_get_secret_returns_jwt_secret_when_configured():
 
 
 @pytest.mark.asyncio
-async def test_revoke_token_raises_without_jti():
-    """revoke_token must reject payloads that have no jti claim."""
+async def test_revoke_token_returns_false_without_jti(caplog, monkeypatch):
+    """revoke_token must NOT crash on jti-less payloads.
+
+    `jti` is optional in RFC 7519, so legacy or third-party tokens may
+    omit it. A logout controller that accepts those tokens must not be
+    able to crash the request — degrade gracefully with a warning and
+    rely on the token's natural exp.
+    """
+    import logging
+
     from core.auth.jwt import revoke_token
 
-    with pytest.raises(ValueError, match='jti'):
-        await revoke_token({'user_id': 1, 'exp': 9999999999})
+    # core.logger sets propagate=False on the 'nori' root; caplog listens on
+    # the actual root, so we re-enable propagation for this test.
+    monkeypatch.setattr(logging.getLogger('nori'), 'propagate', True)
+
+    with caplog.at_level(logging.WARNING, logger='nori.jwt'):
+        result = await revoke_token({'user_id': 1, 'exp': 9999999999})
+
+    assert result is False
+    assert any('jti' in r.getMessage() for r in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_revoke_token_returns_true_when_blacklisted():
+    """A successful revoke returns True — callers can branch on the result."""
+    from core.auth.jwt import create_token, revoke_token
+
+    token = create_token({'user_id': 1}, expires_in=3600)
+    assert await revoke_token(token) is True
 
 
 @pytest.mark.asyncio

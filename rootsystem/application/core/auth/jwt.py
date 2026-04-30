@@ -170,17 +170,26 @@ async def _is_blacklisted(jti: str) -> bool:
     return value is not None
 
 
-async def revoke_token(token_or_payload: str | dict) -> None:
+async def revoke_token(token_or_payload: str | dict) -> bool:
     """Revoke a JWT by adding its ``jti`` to the blacklist.
 
     The blacklist entry expires when the token itself would have expired,
     so the cache doesn't grow indefinitely.
 
+    Tokens issued by ``create_token`` always carry a ``jti``, so revocation
+    works out of the box for first-party tokens. ``jti`` is optional in the
+    JWT spec, so third-party or legacy tokens without one cannot be
+    blacklisted reliably — for those, this function logs a warning and
+    returns ``False`` instead of raising. This keeps logout controllers
+    crash-free when handling foreign tokens; rely on token expiry alone
+    in that case.
+
     Args:
         token_or_payload: A JWT string or an already-decoded payload dict.
 
-    Raises:
-        ValueError: If the token has no ``jti`` claim.
+    Returns:
+        ``True`` if the token was added to the blacklist, ``False`` if the
+        token was already invalid/expired or had no ``jti`` to track.
 
     Usage::
 
@@ -197,16 +206,21 @@ async def revoke_token(token_or_payload: str | dict) -> None:
     if isinstance(token_or_payload, str):
         payload = await verify_token(token_or_payload)
         if payload is None:
-            return  # Already invalid/expired, nothing to revoke
+            return False  # Already invalid/expired, nothing to revoke
     else:
         payload = token_or_payload
 
     jti = payload.get('jti')
     if not jti:
-        raise ValueError("Cannot revoke a token without a 'jti' claim")
+        # `jti` is optional per RFC 7519 — third-party tokens may omit it.
+        # Raising here would crash logout controllers that accept foreign
+        # tokens; degrade gracefully and rely on natural expiry instead.
+        _log.warning('revoke_token: payload has no jti claim, cannot blacklist')
+        return False
 
     # TTL = remaining time until expiry (or 1 hour if no exp)
     exp = payload.get('exp', int(time.time()) + 3600)
     ttl = max(exp - int(time.time()), 1)
 
     await cache_set(f'{_BLACKLIST_PREFIX}{jti}', True, ttl=ttl)
+    return True
