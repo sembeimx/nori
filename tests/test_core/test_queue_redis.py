@@ -24,6 +24,7 @@ def mock_redis():
     r.brpop = AsyncMock(return_value=None)
     r.zrangebyscore = AsyncMock(return_value=[])
     r.zrem = AsyncMock()
+    r.eval = AsyncMock(return_value=0)
     return r
 
 
@@ -224,18 +225,10 @@ async def test_redis_worker_dead_letters_after_max_attempts(mock_redis):
 
 
 @pytest.mark.asyncio
-async def test_redis_worker_promotes_delayed_jobs(mock_redis):
-    """Delayed jobs whose time has come are promoted to the main queue."""
-    delayed_job = json.dumps(
-        {
-            'func': 'mod:task',
-            'args': [],
-            'kwargs': {},
-            'attempts': 0,
-        }
-    ).encode()
-
-    mock_redis.zrangebyscore = AsyncMock(return_value=[delayed_job])
+async def test_redis_worker_promotes_delayed_jobs_atomically(mock_redis):
+    """Delayed jobs are promoted via a single Lua EVAL — not the non-atomic
+    ZRANGEBYSCORE + LPUSH + ZREM sequence that races across workers and
+    double-executes the same job under multi-worker deployments."""
     mock_redis.brpop = AsyncMock(return_value=None)
 
     import core.queue_worker as qw
@@ -244,23 +237,36 @@ async def test_redis_worker_promotes_delayed_jobs(mock_redis):
 
     call_count = 0
 
-    async def _zrange_then_stop(*a, **kw):
+    async def _eval_then_stop(*a, **kw):
         nonlocal call_count
         call_count += 1
-        if call_count == 1:
-            return [delayed_job]
-        qw._should_exit = True
-        return []
+        if call_count >= 1:
+            qw._should_exit = True
+        return 1  # number of items promoted
 
-    mock_redis.zrangebyscore = AsyncMock(side_effect=_zrange_then_stop)
+    mock_redis.eval = AsyncMock(side_effect=_eval_then_stop)
 
     with patch('core.queue._get_redis', return_value=mock_redis):
         with patch('core.queue_worker._register_signals'):
             await _work_redis('promo')
 
-    # Delayed job should have been promoted: lpush to main queue + zrem from delayed
-    mock_redis.lpush.assert_called()
-    mock_redis.zrem.assert_called()
+    # Verify EVAL was called with the right keys, args, and Lua body
+    mock_redis.eval.assert_called()
+    eval_args = mock_redis.eval.call_args[0]
+    script, numkeys, delayed_key, main_key, score = eval_args[:5]
+
+    assert 'ZRANGEBYSCORE' in script
+    assert 'LPUSH' in script
+    assert 'ZREM' in script
+    assert numkeys == 2
+    assert delayed_key == 'nori:queue:promo:delayed'
+    assert main_key == 'nori:queue:promo'
+    assert isinstance(score, (int, float))
+
+    # The non-atomic primitives must NOT be invoked directly during promotion
+    mock_redis.zrangebyscore.assert_not_called()
+    mock_redis.zrem.assert_not_called()
+    # lpush is reserved for dead-letter writes; not used here because brpop returns None
 
     qw._should_exit = False
 

@@ -125,6 +125,22 @@ async def _work_database(queue_name: str, sleep: int = 3):
     _log.info('Worker stopped cleanly.')
 
 
+# Atomic promotion of delayed Redis jobs whose score is <= now.
+# Without this, two workers can each ZRANGEBYSCORE the same set of items
+# before either of them ZREMs, then both LPUSH the same job — the worker
+# pool ends up processing duplicates. Redis runs Lua scripts on a single
+# thread, so wrapping the read+lpush+zrem cycle in EVAL makes the whole
+# promotion atomic across workers.
+_PROMOTE_DELAYED_LUA = """
+local items = redis.call('ZRANGEBYSCORE', KEYS[1], '-inf', ARGV[1])
+for i, item in ipairs(items) do
+    redis.call('LPUSH', KEYS[2], item)
+    redis.call('ZREM', KEYS[1], item)
+end
+return #items
+"""
+
+
 async def _work_redis(queue_name: str):
     """Redis-backed worker: uses BRPOP for near-instant job pickup."""
     from core.queue import _get_redis
@@ -139,11 +155,8 @@ async def _work_redis(queue_name: str):
 
     global _should_exit
     while not _should_exit:
-        # 1. Promote delayed jobs whose time has come
-        ready = await r.zrangebyscore(delayed_key, '-inf', time.time())
-        for item in ready:
-            await r.lpush(key, item)
-            await r.zrem(delayed_key, item)
+        # 1. Promote delayed jobs whose time has come — atomic (see Lua above)
+        await r.eval(_PROMOTE_DELAYED_LUA, 2, delayed_key, key, time.time())
 
         # 2. Block-pop the next job (1s timeout to check _should_exit)
         result = await r.brpop(key, timeout=1)
