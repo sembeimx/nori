@@ -127,17 +127,47 @@ async def load_permissions(session: dict, user_id: int) -> list[str]:
 
         await load_permissions(request.session, user.id)
 
-    If ``role_ids`` is missing or empty the session will have an empty
-    permissions list and a warning is logged. The TTL marker is set in
-    every branch so :func:`require_permission`'s fail-safe load runs at
-    most once per TTL window — without that, a session lacking
-    ``role_ids`` would re-trigger the load on every request.
+    If ``role_ids`` is missing from the session and ``ROLE_RESOLVER`` is
+    configured in ``settings.py``, the resolver is invoked to derive
+    role IDs from the project's User model — this is the recommended
+    pattern, since Nori has no built-in User model and cannot navigate
+    a project-specific User→Role relationship on its own.
+
+    Example resolver in ``settings.py``::
+
+        async def _resolve_user_roles(user_id: int) -> list[int]:
+            user = await User.get(id=user_id).prefetch_related('roles')
+            return [r.id for r in user.roles]
+
+        ROLE_RESOLVER = _resolve_user_roles
+
+    Without a resolver and without ``role_ids`` in session, the function
+    logs a warning and writes an empty permissions list. The TTL marker
+    is set in every branch so :func:`require_permission`'s fail-safe
+    load runs at most once per TTL window.
     """
     from core.logger import get_logger
 
     _perm_log = get_logger('auth')
 
     role_ids = session.get('role_ids', [])
+
+    if not role_ids:
+        # First fallback: project-supplied resolver derives role_ids from
+        # the User model. This is what unblocks the lockout case when a
+        # login flow forgets to populate role_ids — instead of a
+        # permanent empty-perms state, the framework asks the project
+        # how to find the user's roles.
+        resolver = config.get('ROLE_RESOLVER', None)
+        if callable(resolver):
+            try:
+                resolved = await resolver(user_id)
+                if resolved:
+                    role_ids = list(resolved)
+                    session['role_ids'] = role_ids
+            except Exception as exc:  # noqa: BLE001 — resolver is project code; never crash the request
+                _perm_log.error('ROLE_RESOLVER failed for user %s: %s', user_id, exc, exc_info=True)
+
     if not role_ids:
         _perm_log.warning('load_permissions called but role_ids is empty for user %s', user_id)
         session['permissions'] = []

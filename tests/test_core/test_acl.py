@@ -201,3 +201,82 @@ async def test_require_permission_does_not_overwrite_manually_set_permissions(mo
     resp = await ctrl.edit(req)
     assert calls == [], 'fail-safe must not run when permissions are already set'
     assert resp.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_load_permissions_uses_role_resolver_when_role_ids_missing(monkeypatch):
+    """If the project's login flow forgot to set role_ids, ROLE_RESOLVER
+    (a project-supplied async callable) bridges the gap by deriving
+    role_ids from the User model. Without this hook the fail-safe load
+    returns [] and the user is locked for the TTL window."""
+    from types import SimpleNamespace
+
+    from core.auth.decorators import _PERMISSIONS_TTL_KEY, load_permissions
+    from core.conf import config
+    from models.framework.permission import Permission
+    from models.framework.role import Role
+
+    perm, _ = await Permission.get_or_create(name='articles.publish')
+    role, _ = await Role.get_or_create(name='editor_role_v201')
+    await role.permissions.add(perm)
+
+    resolver_calls = []
+
+    async def resolver(user_id):
+        resolver_calls.append(user_id)
+        return [role.id]
+
+    monkeypatch.setattr(config, '_settings', SimpleNamespace(ROLE_RESOLVER=resolver))
+
+    session = FakeSession()
+    # Note: NO role_ids — emulates the bug case
+    perms = await load_permissions(session, user_id=99)
+
+    assert resolver_calls == [99]
+    assert 'articles.publish' in perms
+    assert session['role_ids'] == [role.id]
+    assert _PERMISSIONS_TTL_KEY in session
+
+
+@pytest.mark.asyncio
+async def test_load_permissions_resolver_failure_does_not_crash(monkeypatch, caplog):
+    """A buggy ROLE_RESOLVER must NOT take down the request — log the
+    error, fall back to empty perms, set the TTL marker."""
+    import logging
+    from types import SimpleNamespace
+
+    from core.auth.decorators import _PERMISSIONS_TTL_KEY, load_permissions
+    from core.conf import config
+
+    async def broken_resolver(user_id):
+        raise RuntimeError('database is on fire')
+
+    monkeypatch.setattr(config, '_settings', SimpleNamespace(ROLE_RESOLVER=broken_resolver))
+    monkeypatch.setattr(logging.getLogger('nori'), 'propagate', True)
+
+    session = FakeSession()
+    with caplog.at_level(logging.ERROR, logger='nori.auth'):
+        perms = await load_permissions(session, user_id=99)
+
+    assert perms == []
+    assert _PERMISSIONS_TTL_KEY in session
+    assert any('ROLE_RESOLVER failed' in r.getMessage() for r in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_load_permissions_no_resolver_keeps_warning_path(monkeypatch):
+    """When neither role_ids nor ROLE_RESOLVER is set, behavior is the
+    pre-v1.20.1 fallback: warn + empty perms + TTL marker. Confirms the
+    resolver hook is purely additive — projects that don't configure
+    one keep the v1.20.0 behavior."""
+    from types import SimpleNamespace
+
+    from core.auth.decorators import _PERMISSIONS_TTL_KEY, load_permissions
+    from core.conf import config
+
+    monkeypatch.setattr(config, '_settings', SimpleNamespace())
+
+    session = FakeSession()
+    perms = await load_permissions(session, user_id=99)
+    assert perms == []
+    assert _PERMISSIONS_TTL_KEY in session

@@ -215,6 +215,25 @@ async def login(self, request: Request):
 
 **Important**: `load_permissions()` reads `role_ids` from the session to query the `Role→Permission` M2M. If `role_ids` is missing or empty, a warning is logged and the user will have no permissions.
 
+#### Recovering when `role_ids` is missing (`ROLE_RESOLVER`)
+
+Nori has no built-in `User` model — every project defines its own User shape and User→Role relationship. That means the framework cannot resolve `role_ids` from a `user_id` on its own. If your login flow forgets to set `session['role_ids']` (or an OAuth flow only gives you a `user_id`), every permission check will fail until manual re-login.
+
+To bridge that gap, configure a `ROLE_RESOLVER` callable in `settings.py`:
+
+```python
+# settings.py
+async def _resolve_user_roles(user_id: int) -> list[int]:
+    user = await User.get(id=user_id).prefetch_related('roles')
+    return [r.id for r in user.roles]
+
+ROLE_RESOLVER = _resolve_user_roles
+```
+
+When `load_permissions()` runs without `role_ids` in the session, it invokes the resolver, stores the resulting list under `session['role_ids']`, and proceeds with the normal Role→Permission lookup. Resolver exceptions are logged at ERROR but do not crash the request — the user simply ends up with empty permissions for the TTL window.
+
+Calling `load_permissions()` at login is still the right pattern. `ROLE_RESOLVER` is a fail-safe for the case where it doesn't happen.
+
 ### Protecting Routes
 
 ```python
