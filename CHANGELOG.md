@@ -4,6 +4,14 @@ All notable changes to Nori are documented here. Format follows [Keep a Changelo
 
 ---
 
+## [1.30.1] — 2026-04-30
+
+### Improved
+
+- **CI Lint job now also passes the ``ruff format --check`` step.** v1.30.0 unblocked ``ruff check`` after 10+ red CI runs, but the workflow has a second step (``ruff format --check .``) that only ran once the first step started passing — and it surfaced 15 files where formatting drift had accumulated across the same untracked-version window. v1.30.1 runs ``ruff format`` against the tree (cosmetic only: collapsing multi-line strings that fit on one line at the project's 120-char width). No behavior change. Added ``ruff format --check`` to the local pre-push checklist alongside ``ruff check`` so this drift cannot recur silently.
+
+---
+
 ## [1.30.0] — 2026-04-30
 
 ### Fixed

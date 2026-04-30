@@ -458,9 +458,7 @@ def _safe_extract_path(base_dir: str, relative_path: str) -> str:
     try:
         dest.relative_to(base)
     except ValueError as exc:
-        raise RuntimeError(
-            f'Refusing to extract member outside target directory: {relative_path!r}'
-        ) from exc
+        raise RuntimeError(f'Refusing to extract member outside target directory: {relative_path!r}') from exc
     return str(dest)
 
 

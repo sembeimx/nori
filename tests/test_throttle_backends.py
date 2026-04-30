@@ -262,13 +262,10 @@ async def test_memory_check_and_add_concurrent_does_not_overshoot():
     backend = MemoryBackend()
     now = time.time()
 
-    results = await asyncio.gather(
-        *[backend.check_and_add('rate-key', now, 60, 5) for _ in range(50)]
-    )
+    results = await asyncio.gather(*[backend.check_and_add('rate-key', now, 60, 5) for _ in range(50)])
     allowed_count = sum(1 for allowed, _, _ in results if allowed)
     assert allowed_count == 5, (
-        f'Expected exactly 5 allowed under contention; got {allowed_count}. '
-        f'check_and_add is not atomic.'
+        f'Expected exactly 5 allowed under contention; got {allowed_count}. check_and_add is not atomic.'
     )
 
 

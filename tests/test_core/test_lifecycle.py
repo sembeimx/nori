@@ -140,9 +140,7 @@ async def test_run_shutdown_handlers_swallows_per_handler_errors(monkeypatch, ca
         'a crashing handler dropped a later healthy handler — shutdown '
         'must be best-effort across all registered services'
     )
-    assert any('crashing' in r.message for r in caplog.records), (
-        'failing handler must be logged at ERROR with its name'
-    )
+    assert any('crashing' in r.message for r in caplog.records), 'failing handler must be logged at ERROR with its name'
 
 
 @pytest.mark.asyncio
@@ -173,6 +171,5 @@ async def test_run_shutdown_handlers_warns_on_per_handler_timeout(monkeypatch, c
         'stuck handler must produce a timeout warning, not silent loss'
     )
     assert finished_after_stuck == ['after'], (
-        'stuck handler blocked the rest of shutdown — per-handler '
-        'timeout is supposed to keep the queue moving'
+        'stuck handler blocked the rest of shutdown — per-handler timeout is supposed to keep the queue moving'
     )

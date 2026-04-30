@@ -232,9 +232,7 @@ async def test_execute_payload_blocks_os_system(monkeypatch):
     before importlib.import_module runs."""
     import settings
 
-    monkeypatch.setattr(
-        settings, 'QUEUE_ALLOWED_MODULES', ['modules.', 'services.', 'app.', 'tasks.']
-    )
+    monkeypatch.setattr(settings, 'QUEUE_ALLOWED_MODULES', ['modules.', 'services.', 'app.', 'tasks.'])
     from core.queue_worker import execute_payload
 
     payload = {'func': 'os:system', 'args': ['echo pwned'], 'kwargs': {}}
@@ -437,8 +435,7 @@ async def test_memory_handler_holds_strong_reference_to_task():
     await asyncio.sleep(0.1)
 
     assert 'gc-marker:gc-test' in _get_executed(), (
-        'handler body did not execute — the Task was apparently lost '
-        'between scheduling and resumption'
+        'handler body did not execute — the Task was apparently lost between scheduling and resumption'
     )
     assert len(_memory_tasks) == initial, (
         'done callback did not release the task from _memory_tasks; the '

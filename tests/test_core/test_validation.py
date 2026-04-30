@@ -636,9 +636,7 @@ async def test_validate_async_unique_with_custom_except_column():
     sql = sql_call[0][0]
     # The 4th param replaces the hardcoded ``id`` in the WHERE clause.
     assert 'code != $2' in sql, sql
-    assert 'id != $2' not in sql, (
-        f'unique rule still emits hardcoded "id != $2" — except_column override broken: {sql}'
-    )
+    assert 'id != $2' not in sql, f'unique rule still emits hardcoded "id != $2" — except_column override broken: {sql}'
     assert sql_call[0][1] == ['Widget', 'P-001']
 
 

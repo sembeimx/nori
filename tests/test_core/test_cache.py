@@ -466,8 +466,7 @@ async def test_cache_response_vary_on_segments_by_header_value():
     assert call_count == 2
     body = json.loads(resp_es.body.decode())
     assert body['lang'] == 'es', (
-        "vary_on did not segment cache by header — Spanish request received "
-        "the previously-cached English variant"
+        'vary_on did not segment cache by header — Spanish request received the previously-cached English variant'
     )
 
 
@@ -502,9 +501,7 @@ async def test_cache_response_default_key_unchanged_without_vary_on():
 
     backend = get_backend()
     keys = list(backend._store.keys())
-    assert keys == ['view:/products:page=1'], (
-        f'cache key shape regressed (no vary_on path): got {keys!r}'
-    )
+    assert keys == ['view:/products:page=1'], f'cache key shape regressed (no vary_on path): got {keys!r}'
 
 
 @pytest.mark.asyncio
@@ -572,10 +569,7 @@ async def test_cache_response_vary_on_lookup_is_case_insensitive():
     ctrl = Ctrl()
     await ctrl.home(FakeRequest({'accept-language': 'en'}))
     await ctrl.home(FakeRequest({'Accept-Language': 'en'}))
-    assert call_count == 1, (
-        'header lookup was case-sensitive — same logical header value '
-        'produced different cache keys'
-    )
+    assert call_count == 1, 'header lookup was case-sensitive — same logical header value produced different cache keys'
 
 
 # ---------------------------------------------------------------------------
@@ -947,9 +941,7 @@ async def test_memory_incr_does_not_apply_ttl_to_existing_no_ttl_counter():
 @pytest.mark.asyncio
 async def test_memory_atomic_update_initial_value_is_none():
     backend = MemoryCacheBackend()
-    result = await backend.atomic_update(
-        'key', lambda current: 'first' if current is None else 'wrong'
-    )
+    result = await backend.atomic_update('key', lambda current: 'first' if current is None else 'wrong')
     assert result == 'first'
     assert await backend.get('key') == 'first'
 
@@ -971,9 +963,7 @@ async def test_memory_atomic_update_atomic_under_concurrency():
     def increment(current):
         return (current or 0) + 1
 
-    results = await asyncio.gather(
-        *[backend.atomic_update('counter', increment) for _ in range(50)]
-    )
+    results = await asyncio.gather(*[backend.atomic_update('counter', increment) for _ in range(50)])
     assert sorted(results) == list(range(1, 51))
     assert await backend.get('counter') == 50
 
@@ -1058,9 +1048,7 @@ async def test_redis_atomic_update_initial_none(fake_redis_with_lua):
 
     with _patched_redis_backend(fake_redis_with_lua):
         backend = RedisCacheBackend('redis://localhost:6379')
-        result = await backend.atomic_update(
-            'key', lambda c: 'created' if c is None else 'wrong'
-        )
+        result = await backend.atomic_update('key', lambda c: 'created' if c is None else 'wrong')
 
     assert result == 'created'
     assert await backend.get('key') == 'created'

@@ -193,8 +193,7 @@ class MemoryCacheBackend(CacheBackend):
                 else:
                     if not isinstance(stored_value, int):
                         raise TypeError(
-                            f"cache.incr: existing value at {key!r} is not an int "
-                            f"(got {type(stored_value).__name__})"
+                            f'cache.incr: existing value at {key!r} is not an int (got {type(stored_value).__name__})'
                         )
                     value = stored_value
                     existing_expires_at = expires_at
@@ -531,9 +530,7 @@ def cache_response(
             # remain reachable. A request that varies in any of those
             # header values gets a distinct key and a distinct slot.
             if vary_on:
-                vary_segment = ','.join(
-                    f'{h.lower()}={request.headers.get(h, "")}' for h in vary_on
-                )
+                vary_segment = ','.join(f'{h.lower()}={request.headers.get(h, "")}' for h in vary_on)
                 cache_key = f'{cache_key}:vary={vary_segment}'
             cached = await cache_get(cache_key)
             if cached is not None:

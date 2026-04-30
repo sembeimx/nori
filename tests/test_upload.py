@@ -47,10 +47,10 @@ class FakeUploadFile:
 
     async def read(self, size=-1):
         if size is None or size < 0:
-            data = self._content[self._pos:]
+            data = self._content[self._pos :]
             self._pos = len(self._content)
             return data
-        data = self._content[self._pos:self._pos + size]
+        data = self._content[self._pos : self._pos + size]
         self._pos += len(data)
         return data
 
@@ -244,6 +244,7 @@ async def test_store_local():
     SpooledTemporaryFile produced by ``_spool_body``.
     """
     import io
+
     with tempfile.TemporaryDirectory() as tmpdir:
         path, url = await _store_local('abc123.jpg', io.BytesIO(b'data'), tmpdir)
         assert os.path.exists(path)
@@ -278,15 +279,12 @@ async def test_save_upload_passes_file_like_to_driver():
     register_storage_driver('test_shape', inspecting_driver)
     with tempfile.TemporaryDirectory() as tmpdir:
         f = FakeUploadFile(filename='photo.jpg', content_type='image/jpeg')
-        await save_upload(
-            f, allowed_types=['jpg'], upload_dir=tmpdir, driver='test_shape'
-        )
+        await save_upload(f, allowed_types=['jpg'], upload_dir=tmpdir, driver='test_shape')
 
     assert received['has_read'], 'driver did not receive a readable source'
     assert received['has_seek'], 'driver did not receive a seekable source'
     assert not received['is_bytes'], (
-        'driver received a bytes/bytearray — RAM exhaustion regression. '
-        'See _spool_body in core.http.upload.'
+        'driver received a bytes/bytearray — RAM exhaustion regression. See _spool_body in core.http.upload.'
     )
 
 

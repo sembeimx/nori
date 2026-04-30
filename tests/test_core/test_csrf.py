@@ -245,9 +245,7 @@ async def test_multipart_without_header_is_refused():
     body = (
         b'------WebKitFormBoundary7MA4YWxk\r\n'
         b'Content-Disposition: form-data; name="_csrf_token"\r\n'
-        b'\r\n'
-        + token.encode()
-        + b'\r\n------WebKitFormBoundary7MA4YWxk--\r\n'
+        b'\r\n' + token.encode() + b'\r\n------WebKitFormBoundary7MA4YWxk--\r\n'
     )
     scope = _scope(
         'POST',

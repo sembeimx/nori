@@ -84,12 +84,9 @@ def test_run_in_background_does_not_overwrite_existing_task():
     run_in_background(response, audit_log)
 
     assert isinstance(response.background, BackgroundTasks), (
-        'run_in_background must promote a single existing task to '
-        'BackgroundTasks rather than overwrite it'
+        'run_in_background must promote a single existing task to BackgroundTasks rather than overwrite it'
     )
-    assert len(response.background.tasks) == 2, (
-        f'expected 2 tasks queued, got {len(response.background.tasks)}'
-    )
+    assert len(response.background.tasks) == 2, f'expected 2 tasks queued, got {len(response.background.tasks)}'
 
 
 @pytest.mark.asyncio
@@ -109,9 +106,7 @@ async def test_run_in_background_runs_both_existing_and_new_task():
     run_in_background(response, second)
 
     await response.background()
-    assert runs == ['first', 'second'], (
-        f'expected ordered execution [first, second], got {runs}'
-    )
+    assert runs == ['first', 'second'], f'expected ordered execution [first, second], got {runs}'
 
 
 def test_run_in_background_appends_to_existing_background_tasks():
@@ -131,9 +126,7 @@ def test_run_in_background_appends_to_existing_background_tasks():
 
     run_in_background(response, t2)
 
-    assert response.background is initial, (
-        'existing BackgroundTasks was replaced — should be appended in place'
-    )
+    assert response.background is initial, 'existing BackgroundTasks was replaced — should be appended in place'
     assert len(initial.tasks) == 2
 
 
@@ -269,7 +262,4 @@ async def test_background_tasks_plural_offloads_sync_callables():
     await asyncio.gather(bg(), ticker())
 
     assert completed.is_set()
-    assert ticker_count >= 5, (
-        f'background_tasks() blocked the loop on a sync callable '
-        f'(ticker_count={ticker_count})'
-    )
+    assert ticker_count >= 5, f'background_tasks() blocked the loop on a sync callable (ticker_count={ticker_count})'

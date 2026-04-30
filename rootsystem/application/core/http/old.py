@@ -75,11 +75,7 @@ def flash_old(
     the re-rendered form.
     """
     skip = set(_DEFAULT_EXCLUDE if exclude is None else exclude)
-    safe = {
-        k: v
-        for k, v in dict(form).items()
-        if k not in skip and not _is_uploaded_file(v)
-    }
+    safe = {k: v for k, v in dict(form).items() if k not in skip and not _is_uploaded_file(v)}
     request.session[_SESSION_KEY] = safe
 
 

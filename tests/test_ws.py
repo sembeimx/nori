@@ -157,12 +157,8 @@ async def test_close_all_connections_swallows_per_socket_failures():
         _active_connections.discard(healthy)
         _active_connections.discard(broken)
 
-    assert healthy.closed_with == [1001], (
-        'a failing close on one socket dropped the close on a healthy peer'
-    )
-    assert broken.closed_with == [], (
-        'broken socket was supposed to raise — did the fixture wire fail=True?'
-    )
+    assert healthy.closed_with == [1001], 'a failing close on one socket dropped the close on a healthy peer'
+    assert broken.closed_with == [], 'broken socket was supposed to raise — did the fixture wire fail=True?'
 
 
 @pytest.mark.asyncio
@@ -221,6 +217,4 @@ def test_websocket_handler_registers_active_connections_via_real_traffic():
         'live WebSocket did not register itself in _active_connections — '
         f'close_all_connections() at shutdown will miss it (count={snapshot_inside})'
     )
-    assert snapshot_after == 0, (
-        f'WebSocket leaked from _active_connections after close (count={snapshot_after})'
-    )
+    assert snapshot_after == 0, f'WebSocket leaked from _active_connections after close (count={snapshot_after})'

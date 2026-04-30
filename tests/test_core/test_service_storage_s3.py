@@ -113,9 +113,7 @@ async def test_store_s3_default_endpoint(monkeypatch):
     # Content-Length, not as raw bytes — guard against a regression that
     # would re-introduce the RAM exhaustion vector.
     sent_content = mock_client.put.call_args.kwargs['content']
-    assert not isinstance(sent_content, (bytes, bytearray)), (
-        'S3 driver buffered the upload into bytes — RAM regression'
-    )
+    assert not isinstance(sent_content, (bytes, bytearray)), 'S3 driver buffered the upload into bytes — RAM regression'
     sent_headers = mock_client.put.call_args.kwargs['headers']
     assert sent_headers['content-length'] == str(len(b'image-data'))
 

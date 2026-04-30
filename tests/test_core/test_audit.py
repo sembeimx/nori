@@ -282,9 +282,7 @@ async def test_audit_registers_pending_task_for_lifespan_flush():
     req = FakeRequest(user_id=1)
     task = audit(req, 'pending_track')
     try:
-        assert task in _pending_tasks, (
-            'audit() did not register its task — flush_pending() cannot await it'
-        )
+        assert task in _pending_tasks, 'audit() did not register its task — flush_pending() cannot await it'
     finally:
         await task
 

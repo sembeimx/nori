@@ -1155,6 +1155,7 @@ def test_framework_update_rolls_back_when_staging_fails(update_env, monkeypatch,
     manually restoring the backup. The fix stages first and only swaps
     when staging succeeds.
     """
+
     def fake_download(url, dest):
         _make_release_zip(
             dest,
@@ -1204,6 +1205,7 @@ def test_framework_update_rolls_back_when_staging_fails(update_env, monkeypatch,
 
 def test_framework_update_refuses_zip_slip_member(update_env, monkeypatch, capsys):
     """A malicious release zip with a .. member is rejected, not extracted."""
+
     def fake_download(url, dest):
         with zipfile.ZipFile(dest, 'w') as zf:
             zf.writestr('nori-1.99.0/', '')
