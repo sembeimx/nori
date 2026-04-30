@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import asyncio
 import collections
+import inspect
 import json
 import time
 from abc import ABC, abstractmethod
@@ -42,8 +43,29 @@ __all__ = [
     'cache_set',
     'cache_delete',
     'cache_flush',
+    'cache_incr',
+    'cache_atomic_update',
     'cache_response',
 ]
+
+
+def _json_default(obj: object) -> str:
+    """Module-level JSON serializer for datetime/Decimal/UUID.
+
+    Shared between RedisCacheBackend.set() and atomic_update() so both go
+    through the same serialization rules.
+    """
+    from datetime import date, datetime
+    from decimal import Decimal
+    from uuid import UUID
+
+    if isinstance(obj, (datetime, date)):
+        return obj.isoformat()
+    if isinstance(obj, Decimal):
+        return str(obj)
+    if isinstance(obj, UUID):
+        return str(obj)
+    raise TypeError(f'Object of type {type(obj).__name__} is not JSON serializable')
 
 
 # ---------------------------------------------------------------------------
@@ -63,6 +85,32 @@ class CacheBackend(ABC):
 
     @abstractmethod
     async def flush(self) -> None: ...
+
+    @abstractmethod
+    async def incr(self, key: str, ttl: int = 0) -> int:
+        """Atomically increment an integer counter; return the new value.
+
+        - Creates the key with value 1 when absent or expired.
+        - ``ttl`` is applied only on creation (rolling-window counters need
+          to opt out by passing ``ttl=0`` and managing expiry separately).
+        - Raises ``TypeError`` if the existing value is not an int.
+        """
+
+    @abstractmethod
+    async def atomic_update(
+        self,
+        key: str,
+        fn: Callable[[Any], Any],
+        ttl: int = 0,
+    ) -> Any:
+        """Read-modify-write a key under exclusive concurrency control.
+
+        ``fn(current)`` receives the current value (or ``None`` if absent or
+        expired) and returns the new value. May be sync or async. The Redis
+        backend uses optimistic concurrency (WATCH/MULTI/EXEC retry loop), so
+        ``fn`` MUST be idempotent — it can be called multiple times under
+        contention. The memory backend serializes via the global lock.
+        """
 
     async def verify(self) -> None:
         """Probe backend connectivity. Default: no-op (always reachable).
@@ -120,6 +168,70 @@ class MemoryCacheBackend(CacheBackend):
         async with self._lock:
             self._store.clear()
 
+    async def incr(self, key: str, ttl: int = 0) -> int:
+        async with self._lock:
+            now = time.time()
+            entry = self._store.get(key)
+
+            value = 0
+            existing_expires_at = 0.0
+            if entry is not None:
+                stored_value, expires_at = entry
+                if expires_at and now > expires_at:
+                    pass  # Treat expired entry as missing — counter restarts at 1.
+                else:
+                    if not isinstance(stored_value, int):
+                        raise TypeError(
+                            f"cache.incr: existing value at {key!r} is not an int "
+                            f"(got {type(stored_value).__name__})"
+                        )
+                    value = stored_value
+                    existing_expires_at = expires_at
+
+            value += 1
+
+            # TTL is applied only when the counter is born (existing TTL preserved).
+            new_expires_at = (
+                existing_expires_at
+                if existing_expires_at and existing_expires_at > now
+                else (now + ttl) if ttl > 0 else 0.0
+            )
+
+            self._store[key] = (value, new_expires_at)
+            self._store.move_to_end(key)
+            while len(self._store) > self._max_keys:
+                self._store.popitem(last=False)
+            return value
+
+    async def atomic_update(
+        self,
+        key: str,
+        fn: Callable[[Any], Any],
+        ttl: int = 0,
+    ) -> Any:
+        async with self._lock:
+            now = time.time()
+            entry = self._store.get(key)
+
+            current: Any = None
+            existing_expires_at = 0.0
+            if entry is not None:
+                value, expires_at = entry
+                if not (expires_at and now > expires_at):
+                    current = value
+                    existing_expires_at = expires_at
+
+            result = fn(current)
+            if inspect.iscoroutine(result):
+                result = await result
+
+            new_expires_at = (now + ttl) if ttl > 0 else existing_expires_at
+            self._store[key] = (result, new_expires_at)
+            self._store.move_to_end(key)
+            while len(self._store) > self._max_keys:
+                self._store.popitem(last=False)
+            return result
+
     def clear(self) -> None:
         """Synchronous clear for tests."""
         self._store.clear()
@@ -128,6 +240,18 @@ class MemoryCacheBackend(CacheBackend):
 # ---------------------------------------------------------------------------
 # Redis backend
 # ---------------------------------------------------------------------------
+
+# Atomic INCR + conditional EXPIRE. Redis runs Lua scripts on a single thread,
+# so the whole operation is observed atomically by other clients. EXPIRE only
+# fires on the FIRST increment (return value 1) so subsequent INCRs don't
+# refresh the TTL — counters represent a window that started at first hit.
+_INCR_LUA = """
+local v = redis.call('INCR', KEYS[1])
+if v == 1 and tonumber(ARGV[1]) > 0 then
+    redis.call('EXPIRE', KEYS[1], ARGV[1])
+end
+return v
+"""
 
 
 class RedisCacheBackend(CacheBackend):
@@ -163,25 +287,61 @@ class RedisCacheBackend(CacheBackend):
 
     async def set(self, key: str, value: Any, ttl: int = 0) -> None:
         rkey = f'{self._prefix}{key}'
-
-        def _json_default(obj: object) -> str:
-            from datetime import date, datetime
-            from decimal import Decimal
-            from uuid import UUID
-
-            if isinstance(obj, (datetime, date)):
-                return obj.isoformat()
-            if isinstance(obj, Decimal):
-                return str(obj)
-            if isinstance(obj, UUID):
-                return str(obj)
-            raise TypeError(f'Object of type {type(obj).__name__} is not JSON serializable')
-
         serialized = json.dumps(value, default=_json_default)
         if ttl > 0:
             await self._redis.setex(rkey, ttl, serialized)
         else:
             await self._redis.set(rkey, serialized)
+
+    async def incr(self, key: str, ttl: int = 0) -> int:
+        """INCR + EXPIRE wrapped in a Lua script so the whole operation is
+        atomic across workers — INCR alone is atomic, but the EXPIRE that
+        applies the TTL needs to ride along to avoid a TOCTOU window."""
+        rkey = f'{self._prefix}{key}'
+        result = await self._redis.eval(_INCR_LUA, 1, rkey, ttl)
+        return int(result)
+
+    async def atomic_update(
+        self,
+        key: str,
+        fn: Callable[[Any], Any],
+        ttl: int = 0,
+    ) -> Any:
+        from redis.exceptions import WatchError
+
+        rkey = f'{self._prefix}{key}'
+        async with self._redis.pipeline(transaction=True) as pipe:
+            while True:
+                try:
+                    await pipe.watch(rkey)
+                    raw = await pipe.get(rkey)
+
+                    if raw is None:
+                        current: Any = None
+                    else:
+                        try:
+                            current = json.loads(raw)
+                        except (json.JSONDecodeError, TypeError):
+                            current = raw.decode('utf-8') if isinstance(raw, bytes) else raw
+
+                    result = fn(current)
+                    if inspect.iscoroutine(result):
+                        result = await result
+
+                    serialized = json.dumps(result, default=_json_default)
+
+                    pipe.multi()
+                    if ttl > 0:
+                        pipe.setex(rkey, ttl, serialized)
+                    else:
+                        pipe.set(rkey, serialized)
+
+                    await pipe.execute()
+                    return result
+                except WatchError:
+                    # Another client wrote between WATCH and EXEC. Retry.
+                    # fn() will be called again — caller must keep it idempotent.
+                    continue
 
     async def delete(self, key: str) -> None:
         await self._redis.delete(f'{self._prefix}{key}')
@@ -251,6 +411,34 @@ async def cache_delete(key: str) -> None:
 
 async def cache_flush() -> None:
     await get_backend().flush()
+
+
+async def cache_incr(key: str, ttl: int = 0) -> int:
+    """Atomically increment a counter; return the new value.
+
+    Use for any counter that can be touched concurrently (rate-limit windows,
+    failed-login attempts, queue depth tracking, etc.). Plain ``cache_get +
+    cache_set`` is NOT a substitute — it has a TOCTOU window that lets
+    parallel callers all see the same baseline and clobber each other.
+    """
+    return await get_backend().incr(key, ttl)
+
+
+async def cache_atomic_update(
+    key: str,
+    fn: Callable[[Any], Any],
+    ttl: int = 0,
+) -> Any:
+    """Read-modify-write a key atomically.
+
+    ``fn(current)`` receives the current value (or ``None``) and returns the
+    new value; may be sync or async. Use whenever the new value depends on
+    the old one and another worker could race you. Under the Redis backend
+    this uses optimistic concurrency (WATCH/MULTI/EXEC retry), so ``fn``
+    must be idempotent — it can be invoked more than once if a competing
+    write lands first.
+    """
+    return await get_backend().atomic_update(key, fn, ttl)
 
 
 # ---------------------------------------------------------------------------

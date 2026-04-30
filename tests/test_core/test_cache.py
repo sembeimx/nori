@@ -1,13 +1,16 @@
 """Tests for core.cache."""
 
+import asyncio
 import time
 
 import pytest
 from core.cache import (
     MemoryCacheBackend,
+    cache_atomic_update,
     cache_delete,
     cache_flush,
     cache_get,
+    cache_incr,
     cache_response,
     cache_set,
     get_backend,
@@ -542,3 +545,207 @@ def test_memory_backend_clear_helper():
     backend._store['x'] = ('value', 0.0)
     backend.clear()
     assert len(backend._store) == 0
+
+
+# ---------------------------------------------------------------------------
+# Atomic primitives — incr (memory)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_memory_incr_starts_at_one():
+    backend = MemoryCacheBackend()
+    assert await backend.incr('counter') == 1
+
+
+@pytest.mark.asyncio
+async def test_memory_incr_increments_sequentially():
+    backend = MemoryCacheBackend()
+    assert await backend.incr('counter') == 1
+    assert await backend.incr('counter') == 2
+    assert await backend.incr('counter') == 3
+
+
+@pytest.mark.asyncio
+async def test_memory_incr_atomic_under_concurrency():
+    """100 concurrent INCRs must produce all values 1..100 with no duplicates.
+
+    Regression for the read-modify-write race that lets parallel calls
+    bypass account lockout and rate limits.
+    """
+    backend = MemoryCacheBackend()
+    results = await asyncio.gather(*[backend.incr('counter') for _ in range(100)])
+    assert sorted(results) == list(range(1, 101))
+    assert await backend.get('counter') == 100
+
+
+@pytest.mark.asyncio
+async def test_memory_incr_applies_ttl_on_first_only():
+    """TTL is set when the counter is born and not refreshed by later INCRs."""
+    backend = MemoryCacheBackend()
+    await backend.incr('c', ttl=60)
+    _, expires_first = backend._store['c']
+    assert expires_first > 0
+
+    # Advance the clock virtually — by passing through, second incr should
+    # NOT push the expiry forward.
+    await asyncio.sleep(0)  # let event loop settle
+    await backend.incr('c', ttl=60)
+    _, expires_second = backend._store['c']
+    assert expires_second == expires_first  # not refreshed
+
+
+@pytest.mark.asyncio
+async def test_memory_incr_restarts_after_ttl_expiry():
+    backend = MemoryCacheBackend()
+    await backend.incr('c', ttl=60)
+    backend._store['c'] = (5, time.time() - 10)  # force expired
+    assert await backend.incr('c') == 1
+
+
+@pytest.mark.asyncio
+async def test_memory_incr_rejects_non_int_existing():
+    backend = MemoryCacheBackend()
+    await backend.set('mistaken', 'string', ttl=0)
+    with pytest.raises(TypeError, match='not an int'):
+        await backend.incr('mistaken')
+
+
+# ---------------------------------------------------------------------------
+# Atomic primitives — atomic_update (memory)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_memory_atomic_update_initial_value_is_none():
+    backend = MemoryCacheBackend()
+    result = await backend.atomic_update(
+        'key', lambda current: 'first' if current is None else 'wrong'
+    )
+    assert result == 'first'
+    assert await backend.get('key') == 'first'
+
+
+@pytest.mark.asyncio
+async def test_memory_atomic_update_modifies_existing():
+    backend = MemoryCacheBackend()
+    await backend.set('counter', 5, ttl=60)
+    result = await backend.atomic_update('counter', lambda v: v + 1)
+    assert result == 6
+    assert await backend.get('counter') == 6
+
+
+@pytest.mark.asyncio
+async def test_memory_atomic_update_atomic_under_concurrency():
+    """50 concurrent atomic_update increments — all distinct return values 1..50."""
+    backend = MemoryCacheBackend()
+
+    def increment(current):
+        return (current or 0) + 1
+
+    results = await asyncio.gather(
+        *[backend.atomic_update('counter', increment) for _ in range(50)]
+    )
+    assert sorted(results) == list(range(1, 51))
+    assert await backend.get('counter') == 50
+
+
+@pytest.mark.asyncio
+async def test_memory_atomic_update_async_fn():
+    backend = MemoryCacheBackend()
+
+    async def async_fn(current):
+        return 'computed'
+
+    result = await backend.atomic_update('key', async_fn)
+    assert result == 'computed'
+
+
+# ---------------------------------------------------------------------------
+# Atomic primitives — convenience functions
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_cache_incr_convenience():
+    assert await cache_incr('test_counter') == 1
+    assert await cache_incr('test_counter') == 2
+
+
+@pytest.mark.asyncio
+async def test_cache_atomic_update_convenience():
+    result = await cache_atomic_update('test_key', lambda c: (c or 0) + 1)
+    assert result == 1
+    result = await cache_atomic_update('test_key', lambda c: c + 10)
+    assert result == 11
+
+
+# ---------------------------------------------------------------------------
+# Atomic primitives — Redis backend
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def fake_redis_with_lua():
+    """fakeredis instance, skipped if Lua support (lupa) is not installed."""
+    try:
+        import lupa  # noqa: F401
+    except ImportError:
+        pytest.skip('Redis incr tests require lupa for fakeredis Lua support')
+
+    import fakeredis.aioredis
+
+    return fakeredis.aioredis.FakeRedis()
+
+
+@pytest.mark.asyncio
+async def test_redis_incr_starts_at_one(fake_redis_with_lua):
+    from core.cache import RedisCacheBackend
+
+    with _patched_redis_backend(fake_redis_with_lua):
+        backend = RedisCacheBackend('redis://localhost:6379')
+
+    assert await backend.incr('counter') == 1
+    assert await backend.incr('counter') == 2
+    assert await backend.incr('counter') == 3
+
+
+@pytest.mark.asyncio
+async def test_redis_incr_applies_ttl_on_first_increment(fake_redis_with_lua):
+    """First INCR sets EXPIRE; subsequent INCRs don't refresh it."""
+    from core.cache import RedisCacheBackend
+
+    with _patched_redis_backend(fake_redis_with_lua):
+        backend = RedisCacheBackend('redis://localhost:6379')
+
+    await backend.incr('c', ttl=60)
+    ttl_after_first = await fake_redis_with_lua.ttl('cache:c')
+    assert 0 < ttl_after_first <= 60
+
+
+@pytest.mark.asyncio
+async def test_redis_atomic_update_initial_none(fake_redis_with_lua):
+    """atomic_update on a missing key passes None to the function."""
+    from core.cache import RedisCacheBackend
+
+    with _patched_redis_backend(fake_redis_with_lua):
+        backend = RedisCacheBackend('redis://localhost:6379')
+        result = await backend.atomic_update(
+            'key', lambda c: 'created' if c is None else 'wrong'
+        )
+
+    assert result == 'created'
+    assert await backend.get('key') == 'created'
+
+
+@pytest.mark.asyncio
+async def test_redis_atomic_update_modifies_existing(fake_redis_with_lua):
+    from core.cache import RedisCacheBackend
+
+    with _patched_redis_backend(fake_redis_with_lua):
+        backend = RedisCacheBackend('redis://localhost:6379')
+
+    await backend.set('counter', 5, ttl=60)
+    result = await backend.atomic_update('counter', lambda v: v + 1)
+    assert result == 6
+    assert await backend.get('counter') == 6
