@@ -52,13 +52,15 @@ def throttle(rate: str) -> Callable[..., Any]:
 
             backend = get_backend()
 
-            # Get valid timestamps within window
-            timestamps = await backend.get_timestamps(key, window)
+            # Atomic check-and-add — see core/http/throttle_backends.py.
+            # Splitting into get_timestamps + add_timestamp would race under
+            # concurrency, letting parallel callers all read the same baseline
+            # and bypass the limit.
+            allowed, count, oldest = await backend.check_and_add(key, now, window, max_requests)
 
-            reset = max(0, int(timestamps[0] + window - now)) if timestamps else window
-            remaining = max(0, max_requests - len(timestamps))
+            reset = max(0, int(oldest + window - now)) if oldest else window
 
-            if len(timestamps) >= max_requests:
+            if not allowed:
                 headers = {
                     'X-RateLimit-Limit': str(max_requests),
                     'X-RateLimit-Remaining': '0',
@@ -77,13 +79,10 @@ def throttle(rate: str) -> Callable[..., Any]:
                     headers=headers,
                 )
 
-            # Allow request
-            await backend.add_timestamp(key, now, window)
-
             response = await func(self, request, *args, **kwargs)
 
             response.headers['X-RateLimit-Limit'] = str(max_requests)
-            response.headers['X-RateLimit-Remaining'] = str(max(0, remaining - 1))
+            response.headers['X-RateLimit-Remaining'] = str(max(0, max_requests - count))
             response.headers['X-RateLimit-Reset'] = str(reset)
 
             return response

@@ -222,3 +222,96 @@ async def test_memory_backend_global_cleanup_after_threshold():
 
     # The expired key should have been swept by _global_cleanup_locked
     assert 'expired-key' not in backend._store
+
+
+# ---------------------------------------------------------------------------
+# check_and_add — atomic primitive used by the throttle decorator
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_memory_check_and_add_allows_first_request():
+    backend = MemoryBackend()
+    allowed, count, oldest = await backend.check_and_add('k', time.time(), 60, 10)
+    assert allowed is True
+    assert count == 1
+    assert oldest is None  # window was empty
+
+
+@pytest.mark.asyncio
+async def test_memory_check_and_add_refuses_when_at_limit():
+    backend = MemoryBackend()
+    now = time.time()
+    for _ in range(3):
+        await backend.check_and_add('k', now, 60, 3)
+
+    allowed, count, oldest = await backend.check_and_add('k', now, 60, 3)
+    assert allowed is False
+    assert count == 3
+    assert oldest is not None
+
+
+@pytest.mark.asyncio
+async def test_memory_check_and_add_concurrent_does_not_overshoot():
+    """Regression for the rate-limit bypass: 50 concurrent calls against a
+    limit of 5 must produce exactly 5 allowed and 45 refused. The pre-fix
+    decorator did get_timestamps + add_timestamp, so 50 callers all read
+    count=0 and added their entry — limit silently disabled."""
+    import asyncio
+
+    backend = MemoryBackend()
+    now = time.time()
+
+    results = await asyncio.gather(
+        *[backend.check_and_add('rate-key', now, 60, 5) for _ in range(50)]
+    )
+    allowed_count = sum(1 for allowed, _, _ in results if allowed)
+    assert allowed_count == 5, (
+        f'Expected exactly 5 allowed under contention; got {allowed_count}. '
+        f'check_and_add is not atomic.'
+    )
+
+
+@pytest.mark.asyncio
+async def test_redis_check_and_add_allows_first_request():
+    try:
+        import lupa  # noqa: F401
+    except ImportError:
+        pytest.skip('Redis check_and_add tests require lupa for fakeredis Lua support')
+
+    import fakeredis.aioredis
+    from core.http.throttle_backends import RedisBackend
+
+    fake = fakeredis.aioredis.FakeRedis()
+    with _patched_redis(fake):
+        backend = RedisBackend('redis://localhost:6379')
+
+    allowed, count, oldest = await backend.check_and_add('k', time.time(), 60, 10)
+    assert allowed is True
+    assert count == 1
+    assert oldest is None
+
+
+@pytest.mark.asyncio
+async def test_redis_check_and_add_refuses_when_at_limit():
+    try:
+        import lupa  # noqa: F401
+    except ImportError:
+        pytest.skip('Redis check_and_add tests require lupa for fakeredis Lua support')
+
+    import fakeredis.aioredis
+    from core.http.throttle_backends import RedisBackend
+
+    fake = fakeredis.aioredis.FakeRedis()
+    with _patched_redis(fake):
+        backend = RedisBackend('redis://localhost:6379')
+
+    base = time.time()
+    for i in range(3):
+        await backend.check_and_add('k', base + i * 0.001, 60, 3)
+
+    allowed, count, oldest = await backend.check_and_add('k', base + 0.01, 60, 3)
+    assert allowed is False
+    assert count == 3
+    assert oldest is not None
+    assert abs(oldest - base) < 0.01

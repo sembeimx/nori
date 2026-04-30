@@ -20,11 +20,45 @@ class ThrottleBackend(ABC):
 
     @abstractmethod
     async def get_timestamps(self, key: str, window: int) -> list[float]:
-        """Return timestamps within the window for the given key."""
+        """Return timestamps within the window for the given key.
+
+        Read-only — does not mutate state. Used for inspection in tests and
+        for the legacy non-atomic path. The throttle decorator itself goes
+        through ``check_and_add`` so the count and the record are observed
+        as a single transaction.
+        """
 
     @abstractmethod
     async def add_timestamp(self, key: str, now: float, window: int) -> None:
-        """Record a new request timestamp."""
+        """Record a new request timestamp.
+
+        Kept for backwards compatibility and direct test use. The throttle
+        decorator MUST use ``check_and_add`` instead — splitting count
+        and add into two calls is a TOCTOU race that lets concurrent
+        callers all read the same baseline and bypass the limit.
+        """
+
+    @abstractmethod
+    async def check_and_add(
+        self,
+        key: str,
+        now: float,
+        window: int,
+        max_requests: int,
+    ) -> tuple[bool, int, float | None]:
+        """Atomically count requests in the window and either record this one
+        or refuse it.
+
+        Returns ``(allowed, count_after_add_if_allowed_else_existing_count,
+        oldest_in_window)``. ``oldest_in_window`` is the smallest timestamp
+        currently in the window (used to compute ``X-RateLimit-Reset``); it
+        is ``None`` when the window is empty.
+
+        Memory backend serializes this with the global lock. Redis backend
+        wraps ZREMRANGEBYSCORE + ZCARD + ZADD in a single Lua EVAL — Redis
+        runs scripts on a single thread, so the entire decision is observed
+        atomically across workers.
+        """
 
     @abstractmethod
     async def cleanup(self, key: str, window: int) -> None:
@@ -67,6 +101,33 @@ class MemoryBackend(ThrottleBackend):
             if self._request_count % self._CLEANUP_EVERY == 0:
                 self._global_cleanup_locked(window)
 
+    async def check_and_add(
+        self,
+        key: str,
+        now: float,
+        window: int,
+        max_requests: int,
+    ) -> tuple[bool, int, float | None]:
+        async with self._lock:
+            cutoff = now - window
+            timestamps = [t for t in self._store.get(key, []) if t > cutoff]
+            oldest = timestamps[0] if timestamps else None
+
+            if len(timestamps) >= max_requests:
+                # Persist the cleaned list so we don't keep re-filtering expired entries.
+                self._store[key] = timestamps
+                return False, len(timestamps), oldest
+
+            timestamps.append(now)
+            self._store[key] = timestamps
+
+            # Lazy global cleanup
+            self._request_count += 1
+            if self._request_count % self._CLEANUP_EVERY == 0:
+                self._global_cleanup_locked(window)
+
+            return True, len(timestamps), oldest
+
     async def cleanup(self, key: str, window: int) -> None:
         async with self._lock:
             cutoff = time.time() - window
@@ -84,6 +145,38 @@ class MemoryBackend(ThrottleBackend):
         """Reset all stored data (for tests)."""
         self._store.clear()
         self._request_count = 0
+
+
+# Atomic check-and-add for Redis: prune expired, count, decide, conditionally
+# add. Lua scripts run on a single Redis thread, so the entire sequence is
+# observed atomically — no other client can see a partial state. Without
+# this the ZRANGEBYSCORE + ZADD pair has a TOCTOU window that lets
+# concurrent callers all read the same baseline and bypass the limit.
+_CHECK_AND_ADD_LUA = """
+local cutoff = tonumber(ARGV[1])
+local now_member = ARGV[2]
+local now_score = tonumber(ARGV[3])
+local max_requests = tonumber(ARGV[4])
+local ttl = tonumber(ARGV[5])
+
+redis.call('ZREMRANGEBYSCORE', KEYS[1], '-inf', cutoff)
+
+local count = redis.call('ZCARD', KEYS[1])
+
+local oldest_arr = redis.call('ZRANGE', KEYS[1], 0, 0, 'WITHSCORES')
+local oldest = ''
+if #oldest_arr >= 2 then
+    oldest = oldest_arr[2]
+end
+
+if count >= max_requests then
+    return {0, count, oldest}
+end
+
+redis.call('ZADD', KEYS[1], now_score, now_member)
+redis.call('EXPIRE', KEYS[1], ttl)
+return {1, count + 1, oldest}
+"""
 
 
 class RedisBackend(ThrottleBackend):
@@ -123,6 +216,37 @@ class RedisBackend(ThrottleBackend):
         pipe.zremrangebyscore(rkey, '-inf', now - window)
         pipe.expire(rkey, window + 60)
         await pipe.execute()
+
+    async def check_and_add(
+        self,
+        key: str,
+        now: float,
+        window: int,
+        max_requests: int,
+    ) -> tuple[bool, int, float | None]:
+        rkey = f'{self._prefix}{key}'
+        cutoff = now - window
+        ttl = window + 60
+        result = await self._redis.eval(
+            _CHECK_AND_ADD_LUA,
+            1,
+            rkey,
+            cutoff,
+            str(now),
+            now,
+            max_requests,
+            ttl,
+        )
+        allowed = bool(int(result[0]))
+        count = int(result[1])
+        oldest_raw = result[2]
+        oldest: float | None
+        if oldest_raw in (b'', '', None):
+            oldest = None
+        else:
+            s = oldest_raw.decode() if isinstance(oldest_raw, bytes) else oldest_raw
+            oldest = float(s)
+        return allowed, count, oldest
 
     async def cleanup(self, key: str, window: int) -> None:
         cutoff = time.time() - window
