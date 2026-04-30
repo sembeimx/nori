@@ -136,6 +136,47 @@ The returned dictionary has the following unified and leap-limit shielded struct
 
 Using Jinja2 templates and `range()` you can dynamically forge an aesthetic bottom Paginator over this dict structure.
 
+### Cursor (Keyset) Pagination
+
+For deep-scrolling feeds and large tables, `paginate()` becomes slow at high page numbers — the database has to scan and discard every row before the requested OFFSET. `paginate_cursor()` uses an indexed `WHERE` clause instead, so the cost is constant per page regardless of depth.
+
+```python
+from core.pagination import paginate_cursor
+
+async def feed(self, request):
+    cursor = request.query_params.get('cursor')
+    result = await paginate_cursor(
+        Article.all(),
+        cursor=cursor,           # None on the first page
+        per_page=20,
+    )
+
+    return JSONResponse({
+        'items': result['data'].to_list(),
+        'next_cursor': result['next_cursor'],  # null on the last page
+    })
+```
+
+Returned dict shape:
+
+```python
+{
+    'data': NoriCollection([Article, Article, ...]),
+    'per_page': 20,
+    'next_cursor': 'eyJ0Ijoi...',  # opaque token, or None when exhausted
+    'has_next': True,
+}
+```
+
+Trade-offs versus `paginate()`:
+
+- No `total` count, no last-page jump — those would defeat the index.
+- Forward-only scrolling. Bookmark a page by saving its cursor.
+- The `field` you cursor on must be **unique and indexed** (the primary key is the standard choice). Two rows sharing the same value at a page boundary cause skips or duplicates.
+- Override field and direction with `field='created_at', descending=True` for time-ordered feeds.
+
+Rule of thumb: use `paginate()` for admin tables (a few hundred to a few thousand rows, jump-to-page UX matters); use `paginate_cursor()` for feeds, infinite scroll, or any list that grows past tens of thousands of rows.
+
 ---
 
 ## When NOT to use `NoriCollection`
