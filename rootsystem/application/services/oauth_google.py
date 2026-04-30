@@ -48,6 +48,29 @@ _TOKEN_URL = 'https://oauth2.googleapis.com/token'  # noqa: S105 — public OAut
 _USERINFO_URL = 'https://openidconnect.googleapis.com/v1/userinfo'
 _DEFAULT_SCOPES = 'openid email profile'
 
+_client: httpx.AsyncClient | None = None
+
+
+def _get_client() -> httpx.AsyncClient:
+    """Return the module-level httpx client, creating it on first use.
+
+    A single persistent client pools TCP/TLS connections to
+    ``oauth2.googleapis.com`` and ``openidconnect.googleapis.com`` across
+    OAuth callbacks.
+    """
+    global _client
+    if _client is None:
+        _client = httpx.AsyncClient(timeout=30.0)
+    return _client
+
+
+async def shutdown() -> None:
+    """Close the shared httpx client. Call from your ASGI lifespan."""
+    global _client
+    if _client is not None:
+        await _client.aclose()
+        _client = None
+
 
 def get_auth_url(
     session: dict,
@@ -111,20 +134,20 @@ async def handle_callback(
 
     code_verifier = get_pkce_verifier(session)
 
-    async with httpx.AsyncClient() as client:
-        token_resp = await client.post(
-            _TOKEN_URL,
-            data={
-                'client_id': config.GOOGLE_CLIENT_ID,
-                'client_secret': config.GOOGLE_CLIENT_SECRET,
-                'code': code,
-                'redirect_uri': redirect_uri,
-                'grant_type': 'authorization_code',
-                'code_verifier': code_verifier,
-            },
-        )
-        token_resp.raise_for_status()
-        tokens = token_resp.json()
+    client = _get_client()
+    token_resp = await client.post(
+        _TOKEN_URL,
+        data={
+            'client_id': config.GOOGLE_CLIENT_ID,
+            'client_secret': config.GOOGLE_CLIENT_SECRET,
+            'code': code,
+            'redirect_uri': redirect_uri,
+            'grant_type': 'authorization_code',
+            'code_verifier': code_verifier,
+        },
+    )
+    token_resp.raise_for_status()
+    tokens = token_resp.json()
 
     return await get_user_profile(tokens['access_token'])
 
@@ -150,13 +173,13 @@ async def get_user_profile(access_token: str) -> dict:
     Raises:
         httpx.HTTPStatusError: If the request fails.
     """
-    async with httpx.AsyncClient() as client:
-        resp = await client.get(
-            _USERINFO_URL,
-            headers={'Authorization': f'Bearer {access_token}'},
-        )
-        resp.raise_for_status()
-        data = resp.json()
+    client = _get_client()
+    resp = await client.get(
+        _USERINFO_URL,
+        headers={'Authorization': f'Bearer {access_token}'},
+    )
+    resp.raise_for_status()
+    data = resp.json()
 
     email_verified = bool(data.get('email_verified', False))
     email = data.get('email', '') if email_verified else ''

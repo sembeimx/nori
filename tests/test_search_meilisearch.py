@@ -25,6 +25,16 @@ from services.search_meilisearch import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _reset_client():
+    """Reset the module-level httpx client between tests."""
+    import services.search_meilisearch as m_mod
+
+    m_mod._client = None
+    yield
+    m_mod._client = None
+
+
 def test_build_filter_string_empty():
     """Empty filters dict returns None (no filter applied)."""
     assert _build_filter_string({}) is None
@@ -144,8 +154,6 @@ def _make_async_client(json_payload):
     client = AsyncMock()
     client.post.return_value = response
     client.delete.return_value = response
-    client.__aenter__ = AsyncMock(return_value=client)
-    client.__aexit__ = AsyncMock(return_value=False)
     return client, response
 
 
@@ -155,7 +163,7 @@ async def test_search_posts_to_meilisearch_and_returns_hits():
 
     with (
         patch('services.search_meilisearch.config') as mock_config,
-        patch('services.search_meilisearch.httpx.AsyncClient', return_value=client),
+        patch('services.search_meilisearch._get_client', return_value=client),
     ):
         mock_config.get.return_value = 'http://localhost:7700'
         results = await _search('articles', 'async python', filters={}, limit=10, offset=0)
@@ -175,7 +183,7 @@ async def test_search_passes_filter_string_when_filters_present():
 
     with (
         patch('services.search_meilisearch.config') as mock_config,
-        patch('services.search_meilisearch.httpx.AsyncClient', return_value=client),
+        patch('services.search_meilisearch._get_client', return_value=client),
     ):
         mock_config.get.return_value = 'http://localhost:7700'
         await _search('articles', 'q', filters={'status': 'published'}, limit=20, offset=5)
@@ -191,7 +199,7 @@ async def test_search_returns_empty_list_when_no_hits_key():
 
     with (
         patch('services.search_meilisearch.config') as mock_config,
-        patch('services.search_meilisearch.httpx.AsyncClient', return_value=client),
+        patch('services.search_meilisearch._get_client', return_value=client),
     ):
         mock_config.get.return_value = 'http://localhost:7700'
         results = await _search('articles', 'q', filters={}, limit=10, offset=0)
@@ -210,7 +218,7 @@ async def test_index_document_posts_array_with_doc_id_field():
 
     with (
         patch('services.search_meilisearch.config') as mock_config,
-        patch('services.search_meilisearch.httpx.AsyncClient', return_value=client),
+        patch('services.search_meilisearch._get_client', return_value=client),
     ):
         mock_config.get.return_value = 'http://localhost:7700'
         await _index_document('articles', 42, {'title': 'Hello', 'body': 'World'})
@@ -232,7 +240,7 @@ async def test_index_document_overrides_id_in_document():
 
     with (
         patch('services.search_meilisearch.config') as mock_config,
-        patch('services.search_meilisearch.httpx.AsyncClient', return_value=client),
+        patch('services.search_meilisearch._get_client', return_value=client),
     ):
         mock_config.get.return_value = 'http://localhost:7700'
         await _index_document('articles', 99, {'id': 1, 'title': 'X'})
@@ -252,7 +260,7 @@ async def test_remove_document_deletes_by_id():
 
     with (
         patch('services.search_meilisearch.config') as mock_config,
-        patch('services.search_meilisearch.httpx.AsyncClient', return_value=client),
+        patch('services.search_meilisearch._get_client', return_value=client),
     ):
         mock_config.get.return_value = 'http://localhost:7700'
         await _remove_document('articles', 42)

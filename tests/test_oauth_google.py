@@ -20,6 +20,16 @@ def _google_settings(monkeypatch):
     monkeypatch.setattr(settings, 'GOOGLE_CLIENT_SECRET', 'test-client-secret')
 
 
+@pytest.fixture(autouse=True)
+def _reset_client():
+    """Reset the module-level httpx client between tests."""
+    import services.oauth_google as g_mod
+
+    g_mod._client = None
+    yield
+    g_mod._client = None
+
+
 def _make_session() -> dict:
     return {}
 
@@ -108,10 +118,8 @@ async def test_handle_callback_exchanges_code():
     mock_client = AsyncMock()
     mock_client.post.return_value = token_response
     mock_client.get.return_value = userinfo_response
-    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-    mock_client.__aexit__ = AsyncMock(return_value=False)
 
-    with patch('services.oauth_google.httpx.AsyncClient', return_value=mock_client):
+    with patch('services.oauth_google._get_client', return_value=mock_client):
         profile = await handle_callback(
             session,
             code='auth-code-xyz',
@@ -156,10 +164,8 @@ async def test_get_user_profile_returns_normalized_dict():
 
     mock_client = AsyncMock()
     mock_client.get.return_value = userinfo_response
-    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-    mock_client.__aexit__ = AsyncMock(return_value=False)
 
-    with patch('services.oauth_google.httpx.AsyncClient', return_value=mock_client):
+    with patch('services.oauth_google._get_client', return_value=mock_client):
         profile = await get_user_profile('some-token')
 
     assert profile == {
@@ -197,10 +203,8 @@ async def test_get_user_profile_clears_email_when_unverified():
 
     mock_client = AsyncMock()
     mock_client.get.return_value = userinfo_response
-    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-    mock_client.__aexit__ = AsyncMock(return_value=False)
 
-    with patch('services.oauth_google.httpx.AsyncClient', return_value=mock_client):
+    with patch('services.oauth_google._get_client', return_value=mock_client):
         profile = await get_user_profile('some-token')
 
     assert profile['email'] == ''
@@ -227,10 +231,8 @@ async def test_get_user_profile_clears_email_when_verified_field_missing():
 
     mock_client = AsyncMock()
     mock_client.get.return_value = userinfo_response
-    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-    mock_client.__aexit__ = AsyncMock(return_value=False)
 
-    with patch('services.oauth_google.httpx.AsyncClient', return_value=mock_client):
+    with patch('services.oauth_google._get_client', return_value=mock_client):
         profile = await get_user_profile('some-token')
 
     assert profile['email'] == ''

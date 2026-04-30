@@ -20,6 +20,16 @@ def _github_settings(monkeypatch):
     monkeypatch.setattr(settings, 'GITHUB_CLIENT_SECRET', 'gh-test-secret')
 
 
+@pytest.fixture(autouse=True)
+def _reset_client():
+    """Reset the module-level httpx client between tests."""
+    import services.oauth_github as gh_mod
+
+    gh_mod._client = None
+    yield
+    gh_mod._client = None
+
+
 def _make_session() -> dict:
     return {}
 
@@ -114,10 +124,8 @@ async def test_handle_callback_exchanges_code():
     mock_client = AsyncMock()
     mock_client.post.return_value = token_response
     mock_client.get.return_value = user_response
-    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-    mock_client.__aexit__ = AsyncMock(return_value=False)
 
-    with patch('services.oauth_github.httpx.AsyncClient', return_value=mock_client):
+    with patch('services.oauth_github._get_client', return_value=mock_client):
         profile = await handle_callback(
             session,
             code='gh-code',
@@ -156,10 +164,8 @@ async def test_get_user_profile_uses_public_email():
 
     mock_client = AsyncMock()
     mock_client.get.return_value = user_response
-    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-    mock_client.__aexit__ = AsyncMock(return_value=False)
 
-    with patch('services.oauth_github.httpx.AsyncClient', return_value=mock_client):
+    with patch('services.oauth_github._get_client', return_value=mock_client):
         profile = await get_user_profile('token')
 
     assert profile['email'] == 'alice@example.com'
@@ -192,10 +198,8 @@ async def test_get_user_profile_fetches_private_email():
 
     mock_client = AsyncMock()
     mock_client.get.side_effect = [user_response, emails_response]
-    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-    mock_client.__aexit__ = AsyncMock(return_value=False)
 
-    with patch('services.oauth_github.httpx.AsyncClient', return_value=mock_client):
+    with patch('services.oauth_github._get_client', return_value=mock_client):
         profile = await get_user_profile('token')
 
     assert profile['email'] == 'bob@real.com'
@@ -233,10 +237,8 @@ async def test_get_user_profile_no_primary_verified_email_leaves_email_blank():
 
     mock_client = AsyncMock()
     mock_client.get.side_effect = [user_response, emails_response]
-    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-    mock_client.__aexit__ = AsyncMock(return_value=False)
 
-    with patch('services.oauth_github.httpx.AsyncClient', return_value=mock_client):
+    with patch('services.oauth_github._get_client', return_value=mock_client):
         profile = await get_user_profile('token')
 
     assert profile['email'] == ''
@@ -263,10 +265,8 @@ async def test_get_user_profile_normalized_dict():
 
     mock_client = AsyncMock()
     mock_client.get.return_value = user_response
-    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-    mock_client.__aexit__ = AsyncMock(return_value=False)
 
-    with patch('services.oauth_github.httpx.AsyncClient', return_value=mock_client):
+    with patch('services.oauth_github._get_client', return_value=mock_client):
         profile = await get_user_profile('token')
 
     assert profile['id'] == '99'

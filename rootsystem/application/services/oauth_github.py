@@ -50,6 +50,28 @@ _USER_URL = 'https://api.github.com/user'
 _EMAILS_URL = 'https://api.github.com/user/emails'
 _DEFAULT_SCOPES = 'read:user,user:email'
 
+_client: httpx.AsyncClient | None = None
+
+
+def _get_client() -> httpx.AsyncClient:
+    """Return the module-level httpx client, creating it on first use.
+
+    A single persistent client pools TCP/TLS connections to
+    ``github.com`` and ``api.github.com`` across OAuth callbacks.
+    """
+    global _client
+    if _client is None:
+        _client = httpx.AsyncClient(timeout=30.0)
+    return _client
+
+
+async def shutdown() -> None:
+    """Close the shared httpx client. Call from your ASGI lifespan."""
+    global _client
+    if _client is not None:
+        await _client.aclose()
+        _client = None
+
 
 def get_auth_url(
     session: dict,
@@ -105,19 +127,19 @@ async def handle_callback(
     if not validate_state(session, state):
         raise ValueError('Invalid OAuth state parameter')
 
-    async with httpx.AsyncClient() as client:
-        token_resp = await client.post(
-            _TOKEN_URL,
-            data={
-                'client_id': config.GITHUB_CLIENT_ID,
-                'client_secret': config.GITHUB_CLIENT_SECRET,
-                'code': code,
-                'redirect_uri': redirect_uri,
-            },
-            headers={'Accept': 'application/json'},
-        )
-        token_resp.raise_for_status()
-        access_token = token_resp.json()['access_token']
+    client = _get_client()
+    token_resp = await client.post(
+        _TOKEN_URL,
+        data={
+            'client_id': config.GITHUB_CLIENT_ID,
+            'client_secret': config.GITHUB_CLIENT_SECRET,
+            'code': code,
+            'redirect_uri': redirect_uri,
+        },
+        headers={'Accept': 'application/json'},
+    )
+    token_resp.raise_for_status()
+    access_token = token_resp.json()['access_token']
 
     return await get_user_profile(access_token)
 
@@ -144,20 +166,20 @@ async def get_user_profile(access_token: str) -> dict:
         'Accept': 'application/json',
     }
 
-    async with httpx.AsyncClient() as client:
-        user_resp = await client.get(_USER_URL, headers=headers)
-        user_resp.raise_for_status()
-        user = user_resp.json()
+    client = _get_client()
+    user_resp = await client.get(_USER_URL, headers=headers)
+    user_resp.raise_for_status()
+    user = user_resp.json()
 
-        # Resolve email: use /user endpoint first, fall back to /user/emails
-        email = user.get('email') or ''
-        if not email:
-            emails_resp = await client.get(_EMAILS_URL, headers=headers)
-            emails_resp.raise_for_status()
-            for entry in emails_resp.json():
-                if entry.get('primary') and entry.get('verified'):
-                    email = entry['email']
-                    break
+    # Resolve email: use /user endpoint first, fall back to /user/emails
+    email = user.get('email') or ''
+    if not email:
+        emails_resp = await client.get(_EMAILS_URL, headers=headers)
+        emails_resp.raise_for_status()
+        for entry in emails_resp.json():
+            if entry.get('primary') and entry.get('verified'):
+                email = entry['email']
+                break
 
     return {
         'id': str(user.get('id', '')),

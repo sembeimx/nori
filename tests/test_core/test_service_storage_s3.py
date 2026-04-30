@@ -23,6 +23,16 @@ def _s3_settings(monkeypatch):
             monkeypatch.delattr(settings, attr)
 
 
+@pytest.fixture(autouse=True)
+def _reset_client():
+    """Reset the module-level httpx client between tests."""
+    import services.storage_s3 as s3_mod
+
+    s3_mod._client = None
+    yield
+    s3_mod._client = None
+
+
 # ---------------------------------------------------------------------------
 # register()
 # ---------------------------------------------------------------------------
@@ -89,10 +99,8 @@ async def test_store_s3_default_endpoint(monkeypatch):
 
     mock_client = AsyncMock()
     mock_client.put = AsyncMock(return_value=mock_response)
-    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-    mock_client.__aexit__ = AsyncMock(return_value=False)
 
-    with patch('services.storage_s3.httpx.AsyncClient', return_value=mock_client):
+    with patch('services.storage_s3._get_client', return_value=mock_client):
         key, url = await _store_s3('photo.jpg', b'image-data', 'uploads')
 
     assert key == 'uploads/photo.jpg'
@@ -116,10 +124,8 @@ async def test_store_s3_custom_endpoint(monkeypatch):
 
     mock_client = AsyncMock()
     mock_client.put = AsyncMock(return_value=mock_response)
-    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-    mock_client.__aexit__ = AsyncMock(return_value=False)
 
-    with patch('services.storage_s3.httpx.AsyncClient', return_value=mock_client):
+    with patch('services.storage_s3._get_client', return_value=mock_client):
         key, url = await _store_s3('doc.pdf', b'pdf-data', 'docs')
 
     assert key == 'docs/doc.pdf'
@@ -139,10 +145,8 @@ async def test_store_s3_url_prefix(monkeypatch):
 
     mock_client = AsyncMock()
     mock_client.put = AsyncMock(return_value=mock_response)
-    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-    mock_client.__aexit__ = AsyncMock(return_value=False)
 
-    with patch('services.storage_s3.httpx.AsyncClient', return_value=mock_client):
+    with patch('services.storage_s3._get_client', return_value=mock_client):
         key, url = await _store_s3('img.png', b'png-data', 'images')
 
     assert url == 'https://cdn.example.com/images/img.png'
@@ -156,10 +160,8 @@ async def test_store_s3_empty_upload_dir():
 
     mock_client = AsyncMock()
     mock_client.put = AsyncMock(return_value=mock_response)
-    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-    mock_client.__aexit__ = AsyncMock(return_value=False)
 
-    with patch('services.storage_s3.httpx.AsyncClient', return_value=mock_client):
+    with patch('services.storage_s3._get_client', return_value=mock_client):
         key, url = await _store_s3('file.txt', b'data', '')
 
     assert key == 'file.txt'
