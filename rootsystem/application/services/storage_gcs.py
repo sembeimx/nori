@@ -129,11 +129,16 @@ async def _get_access_token() -> str:
         if _token_cache['token'] and _token_cache['expires_at'] > now + 60:
             return _token_cache['token']
 
-        creds = _load_credentials()
-        jwt = _build_jwt(
-            client_email=creds['client_email'],
-            private_key_pem=creds['private_key'],
-            token_uri=creds['token_uri'],
+        # _load_credentials does sync file I/O; _build_jwt does CPU-bound
+        # RSA signing. Both block the event loop if called directly from an
+        # async context — offload to a worker thread so other request
+        # handlers keep running during a token refresh.
+        creds = await asyncio.to_thread(_load_credentials)
+        jwt = await asyncio.to_thread(
+            _build_jwt,
+            creds['client_email'],
+            creds['private_key'],
+            creds['token_uri'],
         )
 
         async with httpx.AsyncClient() as client:

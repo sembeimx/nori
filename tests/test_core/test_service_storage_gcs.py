@@ -343,6 +343,49 @@ async def test_get_access_token_double_checked_lock_avoids_duplicate_fetch(fake_
 
 
 @pytest.mark.asyncio
+async def test_get_access_token_offloads_signing_to_thread(fake_credentials, monkeypatch):
+    """RSA signing is CPU-bound. If it ran inline on the event loop, every
+    token refresh would stall every other request handler in the same
+    process. Both _load_credentials (sync file I/O) and _build_jwt (RSA)
+    must be offloaded via asyncio.to_thread."""
+    import asyncio
+
+    import settings
+
+    monkeypatch.setattr(settings, 'GCS_CREDENTIALS_JSON', json.dumps(fake_credentials), raising=False)
+    monkeypatch.setattr(gcs_mod, '_token_lock', asyncio.Lock())
+
+    token_response = MagicMock()
+    token_response.raise_for_status = MagicMock()
+    token_response.json = MagicMock(return_value={'access_token': 't', 'expires_in': 3600})
+
+    mock_client = AsyncMock()
+    mock_client.post = AsyncMock(return_value=token_response)
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=False)
+
+    offloaded: list = []
+    real_to_thread = asyncio.to_thread
+
+    async def tracking_to_thread(func, *args, **kwargs):
+        offloaded.append(func)
+        return await real_to_thread(func, *args, **kwargs)
+
+    with (
+        patch.object(gcs_mod.asyncio, 'to_thread', tracking_to_thread),
+        patch('services.storage_gcs.httpx.AsyncClient', return_value=mock_client),
+    ):
+        await _get_access_token()
+
+    assert gcs_mod._load_credentials in offloaded, (
+        '_load_credentials must run via asyncio.to_thread — sync file I/O blocks the event loop'
+    )
+    assert gcs_mod._build_jwt in offloaded, (
+        '_build_jwt must run via asyncio.to_thread — RSA signing blocks the event loop'
+    )
+
+
+@pytest.mark.asyncio
 async def test_get_access_token_posts_jwt_bearer_grant(fake_credentials, monkeypatch):
     import settings
 
