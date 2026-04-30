@@ -35,20 +35,36 @@ def get_client_ip(request: Request) -> str | None:
     """Extract the client IP, respecting X-Forwarded-For only from trusted proxies.
 
     Set ``TRUSTED_PROXIES`` in ``.env`` (comma-separated IPs) to trust
-    ``X-Forwarded-For`` headers from those addresses.  When the direct
+    ``X-Forwarded-For`` headers from those addresses. When the direct
     client IP is not in the trusted list, ``X-Forwarded-For`` is ignored
     to prevent IP spoofing.
+
+    The header is parsed **right-to-left**: each intermediary appends the
+    source it received from, so the rightmost entry is the closest
+    untrusted source. We walk back skipping trusted proxies; the first
+    untrusted IP is the real client.
+
+    Taking the leftmost entry would let any client inject an arbitrary
+    value (``X-Forwarded-For: 1.2.3.4``) and have it survive the proxy
+    chain — the proxy *appends* its real source to the right but does not
+    overwrite the spoofed prefix on the left.
     """
     direct_ip = request.client.host if request.client else None
     trusted = config.get('TRUSTED_PROXIES', [])
 
-    if trusted and direct_ip in trusted:
-        forwarded = request.headers.get('x-forwarded-for')
-        if forwarded:
-            ip = forwarded.split(',')[0].strip()
-            if ip:
-                return ip
+    if not trusted or direct_ip not in trusted:
+        return direct_ip
 
+    forwarded = request.headers.get('x-forwarded-for')
+    if not forwarded:
+        return direct_ip
+
+    chain = [ip.strip() for ip in forwarded.split(',') if ip.strip()]
+    for ip in reversed(chain):
+        if ip not in trusted:
+            return ip
+
+    # Every hop was a trusted proxy — fall back to the direct connection.
     return direct_ip
 
 

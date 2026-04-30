@@ -188,6 +188,8 @@ TRUSTED_PROXIES=127.0.0.1,10.0.0.1
 
 If `TRUSTED_PROXIES` is empty (default), `X-Forwarded-For` is ignored and the direct connection IP is used. This also affects the IP address recorded by the [audit logger](services.md#audit-logging-coreaudit).
 
+The header is parsed **right-to-left**, skipping known proxies until the first untrusted hop is found — that's the real client. Taking the leftmost value would let any attacker inject an arbitrary IP (`X-Forwarded-For: 1.2.3.4`) and have it survive the proxy chain, since proxies append their source on the right but do not overwrite the spoofed prefix on the left.
+
 ### Backends
 
 | Backend | Config | Best for |

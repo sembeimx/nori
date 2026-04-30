@@ -66,6 +66,59 @@ def test_get_client_ip_no_client():
     assert get_client_ip(req) is None
 
 
+def test_get_client_ip_rejects_spoofed_leftmost(monkeypatch):
+    """An attacker can inject any value as the leftmost X-Forwarded-For
+    entry; the proxy appends the real source to the right but does not
+    rewrite the spoofed prefix. Right-to-left walk discards the spoof.
+
+    Scenario: attacker at 5.5.5.5 sends ``X-Forwarded-For: 1.2.3.4`` to
+    the proxy at 10.0.0.1. The proxy appends 5.5.5.5 to the chain. The
+    function must return 5.5.5.5 (the real source), not 1.2.3.4.
+    """
+    import settings
+
+    monkeypatch.setattr(settings, 'TRUSTED_PROXIES', ['10.0.0.1'])
+    req = FakeRequest(ip='10.0.0.1', forwarded_for='1.2.3.4, 5.5.5.5')
+    assert get_client_ip(req) == '5.5.5.5'
+
+
+def test_get_client_ip_walks_multi_proxy_chain(monkeypatch):
+    """With a CDN → ALB → app chain, both proxies are in TRUSTED_PROXIES
+    and each appends its source. The first non-trusted entry from the
+    right is the real client even when an attacker prepends a spoof."""
+    import settings
+
+    monkeypatch.setattr(settings, 'TRUSTED_PROXIES', ['10.0.0.1', '1.1.1.1'])
+    # Attacker (5.5.5.5) injects 'spoof' → CDN appends 5.5.5.5 → ALB appends 1.1.1.1
+    req = FakeRequest(
+        ip='10.0.0.1',
+        forwarded_for='spoof, 5.5.5.5, 1.1.1.1',
+    )
+    assert get_client_ip(req) == '5.5.5.5'
+
+
+def test_get_client_ip_falls_back_when_chain_is_all_trusted(monkeypatch):
+    """If every entry in X-Forwarded-For is a trusted proxy (e.g. internal
+    health-check between proxies), no real client identity is available —
+    fall back to the direct connection IP rather than returning a proxy
+    address."""
+    import settings
+
+    monkeypatch.setattr(settings, 'TRUSTED_PROXIES', ['10.0.0.1', '1.1.1.1'])
+    req = FakeRequest(ip='10.0.0.1', forwarded_for='10.0.0.1, 1.1.1.1')
+    assert get_client_ip(req) == '10.0.0.1'
+
+
+def test_get_client_ip_strips_whitespace_in_chain(monkeypatch):
+    """Browsers and proxies emit varying whitespace around commas; the
+    parser must strip so the trusted-list lookup is exact."""
+    import settings
+
+    monkeypatch.setattr(settings, 'TRUSTED_PROXIES', ['10.0.0.1'])
+    req = FakeRequest(ip='10.0.0.1', forwarded_for='  203.0.113.5  ,   10.0.0.1  ')
+    assert get_client_ip(req) == '203.0.113.5'
+
+
 # -- audit() -----------------------------------------------------------------
 
 
