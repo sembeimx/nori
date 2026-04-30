@@ -72,7 +72,7 @@ class User(NoriModelMixin, Model):
 
 ### Background Logic
 - **`background(func, *args)`**: Volatile, in-process task.
-- **`push(func_path, *args)`**: Persistent, queued task (requires `python3 nori.py queue:work`).
+- **`push(func_path, *args)`**: Persistent, queued task (requires `python3 nori.py queue:work`). `func_path` must match a prefix in `QUEUE_ALLOWED_MODULES` (`settings.py`, defaults to `modules.`, `services.`, `app.`, `tasks.`) — paths outside the allow-list are rejected before import to block RCE via tampered queue payloads.
 
 ---
 
@@ -130,6 +130,7 @@ These are Nori-specific traps discovered the hard way. Read before changing the 
   - `rootsystem/application/settings.py` (defaults that affect lifecycle/ownership)
   - `rootsystem/application/core/cli.py` (CLI commands and flags described in `docs/cli.md`)
   - `rootsystem/application/core/auth/csrf.py`, `core/http/validation.py` (rule precedence described in docs)
+  - `rootsystem/application/core/queue_worker.py`, `core/queue.py` (queue payload allow-list contract + Redis atomic promotion described in `docs/background_tasks.md` and `docs/security.md`)
   - `_FRAMEWORK_DIRS` / `_FRAMEWORK_FILES` (file ownership described in `docs/architecture.md`)
 - **The checklist** before shipping a change to any file above:
   1. Grep `docs/**/*.md` for code snippets that mirror the file you changed (`rg 'middleware.insert\(' docs/`, `rg '\<path-affected\>' docs/`).
