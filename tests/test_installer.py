@@ -60,7 +60,7 @@ def fake_release(tmp_path):
 def stub_installer(installer, fake_release, tmp_path, monkeypatch):
     release, _ = fake_release
     monkeypatch.setattr(installer, 'resolve_release', lambda v: 'v1.17.0')
-    monkeypatch.setattr(installer, 'fetch_and_extract', lambda tag, tmp: release)
+    monkeypatch.setattr(installer, 'fetch_and_extract', lambda tag, tmp, expected_checksum=None: release)
     monkeypatch.setattr(installer, 'create_venv', lambda dest: None)
     monkeypatch.setattr(installer, 'install_deps', lambda dest: None)
     monkeypatch.chdir(tmp_path)
@@ -168,3 +168,108 @@ def test_manifest_is_consistent_with_source_tree():
     manifest = json.loads((REPO_ROOT / '.starter-manifest.json').read_text())
     missing = [p for p in manifest['paths'] if not (REPO_ROOT / p).exists()]
     assert not missing, f'Manifest references paths missing from source tree: {missing}'
+
+
+# ---------------------------------------------------------------------------
+# Checksum verification (fetch_and_extract)
+# ---------------------------------------------------------------------------
+
+
+def _build_real_zip(release_root: Path, into: Path) -> bytes:
+    """Zip a release_root tree into a real zip blob, mirroring what GitHub
+    serves at /archive/refs/tags/<tag>.zip — a single top-level dir with
+    the project tree inside."""
+    import io
+    import zipfile
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
+        prefix = into.name
+        for file in release_root.rglob('*'):
+            if file.is_file():
+                arcname = f'{prefix}/{file.relative_to(release_root)}'
+                zf.write(file, arcname)
+    return buf.getvalue()
+
+
+@pytest.fixture
+def fake_zip_bytes(fake_release):
+    """Pre-build the zip bytes once so tests can share them and the
+    expected SHA-256 is stable across the test."""
+    import hashlib
+
+    release, _ = fake_release
+    zip_bytes = _build_real_zip(release, Path('nori-v1.17.0'))
+    sha = hashlib.sha256(zip_bytes).hexdigest()
+    return zip_bytes, sha
+
+
+def test_fetch_and_extract_runs_without_checksum(installer, fake_zip_bytes, tmp_path, monkeypatch):
+    """Default behavior — no checksum given, install proceeds."""
+    zip_bytes, _ = fake_zip_bytes
+
+    def fake_download(url, dest):
+        Path(dest).write_bytes(zip_bytes)
+
+    monkeypatch.setattr(installer, 'download', fake_download)
+
+    result = installer.fetch_and_extract('v1.17.0', tmp_path)
+    assert result.exists()
+    assert (result / 'nori.py').exists()
+
+
+def test_fetch_and_extract_passes_with_matching_checksum(installer, fake_zip_bytes, tmp_path, monkeypatch):
+    zip_bytes, expected_sha = fake_zip_bytes
+
+    def fake_download(url, dest):
+        Path(dest).write_bytes(zip_bytes)
+
+    monkeypatch.setattr(installer, 'download', fake_download)
+
+    result = installer.fetch_and_extract('v1.17.0', tmp_path, expected_checksum=expected_sha)
+    assert result.exists()
+
+
+def test_fetch_and_extract_aborts_on_checksum_mismatch(installer, fake_zip_bytes, tmp_path, monkeypatch, capsys):
+    zip_bytes, _ = fake_zip_bytes
+
+    def fake_download(url, dest):
+        Path(dest).write_bytes(zip_bytes)
+
+    monkeypatch.setattr(installer, 'download', fake_download)
+
+    bogus = '0' * 64
+    with pytest.raises(SystemExit) as exc:
+        installer.fetch_and_extract('v1.17.0', tmp_path, expected_checksum=bogus)
+
+    assert exc.value.code == 1
+    err = capsys.readouterr().err
+    assert 'Checksum mismatch' in err
+    assert bogus in err
+
+
+def test_fetch_and_extract_normalizes_checksum_case(installer, fake_zip_bytes, tmp_path, monkeypatch):
+    """parse_args lowercases the user-supplied checksum, so we verify the
+    contract here: an uppercase hex value provided directly to
+    fetch_and_extract still matches if it was lowercased upstream — but
+    the function itself does not re-normalize, the caller is responsible.
+    Test the parse_args side instead."""
+    args = installer.parse_args(['my-project', '--checksum', 'ABCDEF'])
+    assert args['checksum'] == 'abcdef'
+
+
+def test_fetch_and_extract_prints_url_and_sha(installer, fake_zip_bytes, tmp_path, monkeypatch, capsys):
+    """Layer 1 transparency — URL and SHA are always printed during install
+    so users can record the SHA from a trusted run and pin it later."""
+    zip_bytes, expected_sha = fake_zip_bytes
+
+    def fake_download(url, dest):
+        Path(dest).write_bytes(zip_bytes)
+
+    monkeypatch.setattr(installer, 'download', fake_download)
+
+    installer.fetch_and_extract('v1.17.0', tmp_path)
+
+    out = capsys.readouterr().out
+    assert 'archive/refs/tags/v1.17.0.zip' in out
+    assert expected_sha in out

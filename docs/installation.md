@@ -48,12 +48,43 @@ Fresh projects default to **SQLite** (`db.sqlite3` at the project root) — no d
 | `--no-venv` | Skip creating `.venv` (implies `--no-install`) | You manage envs differently (Poetry, asdf, conda, container-only) |
 | `--no-install` | Create `.venv` but skip `pip install` | Air-gapped envs, or you want to inspect `requirements.txt` first |
 | `--version V` | Pin a specific release (e.g. `--version 1.10.0`) | Reproducible installs in CI or team handoffs — defaults to latest |
+| `--checksum H` | Verify the release zip's SHA-256 matches `H` before extracting; abort on mismatch | CI/CD pinning where you want hard guarantees the artifact has not changed since you last vetted it |
 
 Pinning a version is especially useful for CI:
 
 ```bash
 curl -fsSL https://nori.sembei.mx/install.py | python3 - my-project --version 1.10.0
 ```
+
+### Pinning the checksum (CI/CD)
+
+Every install prints the downloaded zip's SHA-256:
+
+```text
+  Downloading release...
+  URL:     https://github.com/sembeimx/nori/archive/refs/tags/v1.17.0.zip
+  SHA-256: 3a7b2c... (etc.)
+```
+
+Record that value from a trusted run, then pin it on subsequent installs:
+
+```bash
+curl -fsSL https://nori.sembei.mx/install.py | python3 - my-project \
+  --version 1.17.0 \
+  --checksum 3a7b2c...
+```
+
+If the artifact changes — tag mutation, mirror compromise, accidental re-tag — the install aborts before any file is written.
+
+### What `--checksum` defends against (and what it does not)
+
+`--checksum` is **opt-in defense in depth**, not a complete supply-chain solution. Be honest about what it covers:
+
+- **Defends against**: tag mutation by anyone with repo write access (the moved tag will produce a different zip), mirror or CDN compromise that swaps the artifact, accidental re-creation of a release with different contents.
+- **Does not defend against**: a fully compromised distribution path where the attacker controls *both* the artifact *and* the source you got the SHA from. If the attacker can serve a malicious `install.py` they can also serve a matching SHA — hardcoding checksums into `install.py` would be security theater for the same reason. The protection is real only when the SHA is established **out of band** from the artifact (e.g. you record it on first install, then pin it later from your own CI configuration).
+- **Already covered by other layers**: MitM on the download is blocked by HTTPS / TLS certificate verification, which `urllib` enforces by default.
+
+If you want a stronger guarantee than `--checksum` (signed releases, sigstore-style provenance), it has to come from outside the installer — either a separate trust root (a public key you obtained out of band) or a transparency log. Those are roadmap items, not part of the curl-piped flow.
 
 ---
 

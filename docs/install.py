@@ -6,15 +6,23 @@ Usage:
     curl -fsSL https://nori.sembei.mx/install.py | python3 - my-project --no-venv
     curl -fsSL https://nori.sembei.mx/install.py | python3 - my-project --no-install
     curl -fsSL https://nori.sembei.mx/install.py | python3 - my-project --version 1.10.0
+    curl -fsSL https://nori.sembei.mx/install.py | python3 - my-project --version 1.10.0 --checksum 3a7b...
 
 Flags:
     --no-venv      Skip creating .venv (implies --no-install).
     --no-install   Create .venv but skip pip install.
     --version V    Install a specific Nori version. Defaults to latest.
+    --checksum H   Verify the release zip's SHA-256 matches H before extracting.
+                   Aborts on mismatch. Recommended for CI/CD pinning.
+
+The release zip's SHA-256 is always printed during install — record it from
+a trusted run and pass it back via --checksum on subsequent installs to
+catch tag mutation, mirror compromise, or any silent change to the artifact.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -39,7 +47,13 @@ def die(msg: str, code: int = 1) -> None:
 
 
 def parse_args(argv: list[str]) -> dict:
-    args: dict = {'name': None, 'no_venv': False, 'no_install': False, 'version': None}
+    args: dict = {
+        'name': None,
+        'no_venv': False,
+        'no_install': False,
+        'version': None,
+        'checksum': None,
+    }
     i = 0
     while i < len(argv):
         a = argv[i]
@@ -53,6 +67,11 @@ def parse_args(argv: list[str]) -> dict:
             if i >= len(argv):
                 die('--version requires a value')
             args['version'] = argv[i].lstrip('v')
+        elif a == '--checksum':
+            i += 1
+            if i >= len(argv):
+                die('--checksum requires a SHA-256 hex value')
+            args['checksum'] = argv[i].strip().lower()
         elif a in ('-h', '--help'):
             print(__doc__)
             sys.exit(0)
@@ -118,13 +137,25 @@ def resolve_release(version: str | None) -> str:
     return release['tag_name']
 
 
-def fetch_and_extract(tag: str, tmp: Path) -> Path:
+def fetch_and_extract(tag: str, tmp: Path, expected_checksum: str | None = None) -> Path:
     zip_url = f'https://github.com/{GITHUB_REPO}/archive/refs/tags/{tag}.zip'
+    print(f'  URL:     {zip_url}')
     zip_path = tmp / 'release.zip'
     try:
         download(zip_url, zip_path)
     except (URLError, HTTPError) as e:
         die(f'Download failed — {e}')
+
+    actual_checksum = hashlib.sha256(zip_path.read_bytes()).hexdigest()
+    print(f'  SHA-256: {actual_checksum}')
+
+    if expected_checksum and expected_checksum != actual_checksum:
+        die(
+            f'Checksum mismatch — refusing to extract.\n'
+            f'    Expected: {expected_checksum}\n'
+            f'    Got:      {actual_checksum}'
+        )
+
     extract_dir = tmp / 'extracted'
     extract_dir.mkdir()
     with zipfile.ZipFile(zip_path) as zf:
@@ -225,7 +256,7 @@ def main(argv: list[str]) -> None:
     with tempfile.TemporaryDirectory() as tmp_str:
         tmp = Path(tmp_str)
         print('  Downloading release...')
-        release_root = fetch_and_extract(tag, tmp)
+        release_root = fetch_and_extract(tag, tmp, args.get('checksum'))
         manifest = load_manifest(release_root, tag)
 
         # Refuse only when manifest paths would clobber existing files.
