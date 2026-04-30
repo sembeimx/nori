@@ -165,6 +165,8 @@ def copy_starter(release_root: Path, dest: Path, manifest: dict) -> None:
 
 
 def write_user_readme(dest: Path, name: str) -> None:
+    if (dest / 'README.md').exists():
+        return
     content = f"""# {name}
 
 Built with [Nori](https://nori.sembei.mx).
@@ -183,6 +185,8 @@ Open http://localhost:8000.
 
 
 def init_git(dest: Path) -> None:
+    if (dest / '.git').exists():
+        return
     if not shutil.which('git'):
         print('  Skipping git init (git not on PATH)')
         return
@@ -213,8 +217,6 @@ def main(argv: list[str]) -> None:
     name: str = args['name']
 
     dest = Path.cwd() / name
-    if dest.exists():
-        die(f"Directory '{name}' already exists")
 
     print(f'Creating Nori project: {name}')
     tag = resolve_release(args['version'])
@@ -226,8 +228,18 @@ def main(argv: list[str]) -> None:
         release_root = fetch_and_extract(tag, tmp)
         manifest = load_manifest(release_root, tag)
 
+        # Refuse only when manifest paths would clobber existing files.
+        # Anything else at dest is outside Nori's declared territory.
+        conflicts = [p for p in manifest.get('paths', []) if (dest / p).exists()]
+        if conflicts:
+            die(
+                f"Cannot scaffold into '{name}' — these paths already exist:\n"
+                + '\n'.join(f'  - {p}' for p in conflicts)
+            )
+
+        dest_pre_existed = dest.exists()
         print('  Copying starter files...')
-        dest.mkdir()
+        dest.mkdir(exist_ok=True)
         try:
             copy_starter(release_root, dest, manifest)
             write_user_readme(dest, name)
@@ -241,7 +253,17 @@ def main(argv: list[str]) -> None:
                     print('  Installing dependencies (this can take a minute)...')
                     install_deps(dest)
         except Exception:
-            shutil.rmtree(dest, ignore_errors=True)
+            if dest_pre_existed:
+                # Only remove paths Nori claims via the manifest; leave the
+                # user's pre-existing files alone.
+                for p in manifest.get('paths', []):
+                    target = dest / p
+                    if target.is_dir():
+                        shutil.rmtree(target, ignore_errors=True)
+                    elif target.exists():
+                        target.unlink()
+            else:
+                shutil.rmtree(dest, ignore_errors=True)
             raise
 
     print()
