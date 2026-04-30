@@ -3,7 +3,14 @@
 import asyncio
 
 import pytest
-from core.audit import audit, get_client_ip
+
+# Importing ``_pending_tasks`` directly avoids the ``from core.audit
+# import audit`` shadowing in ``core/__init__.py`` — once that runs,
+# ``core.audit`` (attribute access) is the function, not the submodule,
+# so plain ``import core.audit as m`` does not give you the module.
+# Mutable globals imported by name share identity with the module-level
+# binding, which is what these tests need.
+from core.audit import _pending_tasks, audit, flush_pending, get_client_ip
 
 # -- Fakes -------------------------------------------------------------------
 
@@ -257,3 +264,105 @@ def test_audit_no_loop_warning(monkeypatch):
     # Should not raise exception
     task = audit(req, 'no_loop_test')
     assert task is None
+
+
+# -- flush_pending() — shutdown race regression -----------------------------
+
+
+@pytest.mark.asyncio
+async def test_audit_registers_pending_task_for_lifespan_flush():
+    """The fire-and-forget task spawned by audit() must be tracked in
+    ``_pending_tasks`` so the ASGI lifespan can await it before the DB
+    pool closes. Pre-1.24 the task was untracked — a SIGTERM arriving
+    just after a controller returned dropped the audit entry on the
+    floor (the task woke up after ``Tortoise.close_connections()`` ran,
+    the write failed, the catch-all ``except Exception`` swallowed
+    it).
+    """
+    req = FakeRequest(user_id=1)
+    task = audit(req, 'pending_track')
+    try:
+        assert task in _pending_tasks, (
+            'audit() did not register its task — flush_pending() cannot await it'
+        )
+    finally:
+        await task
+
+    # done_callback must clear the set once the write completes, so
+    # the bookkeeping cost is bounded by genuinely in-flight writes.
+    assert task not in _pending_tasks
+
+
+@pytest.mark.asyncio
+async def test_flush_pending_returns_immediately_when_empty():
+    """No-op fast path. The lifespan calls flush_pending() unconditionally,
+    so it must be cheap when no audit() ran during the request lifecycle."""
+    # Sanity: no leaks from previous tests
+    assert len(_pending_tasks) == 0
+    await flush_pending(timeout=0.01)
+
+
+@pytest.mark.asyncio
+async def test_flush_pending_awaits_in_flight_audit_writes():
+    """Simulate the shutdown sequence: schedule audit writes, then call
+    flush_pending() before the (mocked) DB tear-down. All scheduled
+    writes must complete before flush_pending returns.
+
+    Without the flush, this is exactly the race that drops audit
+    entries during graceful restart — the writes are scheduled,
+    Tortoise closes connections, the writes wake up against a dead
+    pool, the catch-all logs the failure and the entry is lost.
+    """
+    req = FakeRequest(user_id=1)
+    tasks = [audit(req, f'flush_seq_{i}') for i in range(5)]
+
+    await flush_pending(timeout=5.0)
+
+    for task in tasks:
+        assert task is not None
+        assert task.done(), 'flush_pending() returned with a task still pending'
+
+
+@pytest.mark.asyncio
+async def test_flush_pending_warns_and_continues_on_timeout(monkeypatch, caplog):
+    """A stuck audit write must NOT block shutdown indefinitely. After
+    ``timeout`` seconds, flush_pending logs a warning and returns so
+    the rest of the shutdown path (close_connections, etc.) can run.
+    Preferring a noisy partial flush over a hung process is a
+    deliberate trade — a 30-minute container restart that fails to
+    drain is much worse for the operator than a single dropped audit
+    entry.
+    """
+    import logging
+
+    async def _hang() -> None:
+        await asyncio.sleep(60)
+
+    # Inject a task that will never finish in the flush window.
+    loop = asyncio.get_running_loop()
+    stuck = loop.create_task(_hang())
+    _pending_tasks.add(stuck)
+    stuck.add_done_callback(_pending_tasks.discard)
+
+    monkeypatch.setattr(logging.getLogger('nori'), 'propagate', True)
+
+    try:
+        with caplog.at_level(logging.WARNING, logger='nori.audit'):
+            await flush_pending(timeout=0.05)
+
+        assert any('Timed out' in r.message for r in caplog.records), (
+            'flush_pending should warn when it times out — silent loss of '
+            'pending writes during shutdown is exactly the regression we are '
+            'guarding against'
+        )
+    finally:
+        # asyncio.gather(...) under wait_for cancels children on timeout;
+        # the cancellation propagates to ``stuck``, but only when control
+        # returns to the loop — give it a tick so the test does not leak
+        # a pending task into the next case.
+        if not stuck.done():
+            stuck.cancel()
+        try:
+            await stuck
+        except (asyncio.CancelledError, BaseException):
+            pass

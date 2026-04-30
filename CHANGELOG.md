@@ -4,6 +4,28 @@ All notable changes to Nori are documented here. Format follows [Keep a Changelo
 
 ---
 
+## [1.24.0] — 2026-04-30
+
+### Fixed
+
+- **Audit log loss during graceful shutdown (MED).** ``core/audit.py:audit`` scheduled the database write via ``loop.create_task`` and returned, with no tracking of the resulting task. A ``SIGTERM`` arriving in the millisecond gap between a controller returning and the task waking up would let the lifespan run ``Tortoise.close_connections()`` first; the audit write then fired against a closed pool, the ``except Exception`` in ``_write`` swallowed the failure, and the entry vanished. For high-frequency events this is annoying. For login, password change, role grant, delete, and payment events it's loss of forensic evidence. The fix tracks every in-flight audit task in a module-level set; the ASGI lifespan now calls a new ``flush_pending(timeout=5.0)`` from ``core.audit`` before tearing down DB connections, so the queue drains during graceful shutdown. A stuck write does not block shutdown forever — the timeout cancels still-pending writes and logs a warning, since a hung process is a worse outcome than a dropped audit entry.
+- **Production startup warning when ``TRUSTED_PROXIES`` is empty (MED — observability).** ``get_client_ip`` fails secure: when ``TRUSTED_PROXIES`` is empty (the default) it ignores ``X-Forwarded-For`` from any source and returns ``request.client.host``. That posture prevents IP spoofing — but behind a load balancer ``request.client.host`` is the proxy's internal address, so every audit log entry records ``10.0.0.1`` (or similar) instead of the real client. The new ``_warn_missing_trusted_proxies`` helper, invoked from the lifespan, logs a one-time warning when ``DEBUG=False`` and ``TRUSTED_PROXIES`` is empty so operators discover the misconfiguration before they need the audit trail. No behavior change at request time.
+
+### Tests
+
+903 → 912 passing. New regression tests:
+- ``test_audit_registers_pending_task_for_lifespan_flush`` — every ``audit()`` call must register its task so the flush can await it
+- ``test_flush_pending_returns_immediately_when_empty`` — no-op fast path when no audit ran
+- ``test_flush_pending_awaits_in_flight_audit_writes`` — the main shutdown sequence: pending writes drain before the function returns
+- ``test_flush_pending_warns_and_continues_on_timeout`` — a stuck write yields a warning, not a hung shutdown
+- ``test_trusted_proxies_warning_emits_in_production`` / ``…_silent_in_debug`` / ``…_silent_when_configured`` / ``…_silent_when_attribute_missing`` / ``…_silent_with_real_logger``
+
+### Notes — investigated but not changed
+
+- **Pagination cursor HMAC overhead** was flagged as "CPU fatigue on the read path." Profile shows ~3-5 μs per HMAC-SHA256 truncated to 16 bytes — 0.05 % of typical request latency. The signature exists for defense-in-depth: without it, any client can pass a hand-crafted cursor and induce arbitrary range scans against your indexed columns. Replacing HMAC with "something lighter" would be a foot-gun (HMAC IS the correct primitive for keyed MAC). Decision: keep as-is, retain the existing docstring rationale.
+
+---
+
 ## [1.23.0] — 2026-04-30
 
 ### Upgrade notes — read first

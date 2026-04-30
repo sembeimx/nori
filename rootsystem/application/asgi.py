@@ -37,6 +37,34 @@ _log = get_logger('asgi')
 # Lifecycle
 
 
+def _warn_missing_trusted_proxies(settings_module, logger) -> bool:
+    """Warn when ``TRUSTED_PROXIES`` is empty in a non-DEBUG deployment.
+
+    The framework fails secure: ``get_client_ip`` ignores
+    ``X-Forwarded-For`` from any source not in ``TRUSTED_PROXIES``, so
+    forging a client IP is impossible by default. The cost of that
+    posture is observability — behind a load balancer,
+    ``request.client.host`` is always the proxy's internal address, so
+    every audit log entry records ``10.0.0.1`` (or similar) instead of
+    the real client. A silent observability gap is worth one loud
+    startup warning so operators discover the misconfiguration before
+    they need the audit trail.
+
+    Returns ``True`` if a warning was emitted (used in tests).
+    """
+    if settings_module.DEBUG:
+        return False
+    if getattr(settings_module, 'TRUSTED_PROXIES', None):
+        return False
+    logger.warning(
+        'TRUSTED_PROXIES is empty in production. Behind a load balancer or '
+        "reverse proxy, audit logs and rate-limits will record the proxy's "
+        'internal IP for every request, not the real client. Set '
+        'TRUSTED_PROXIES=<proxy_ip> in your .env (comma-separated for multiple).'
+    )
+    return True
+
+
 @asynccontextmanager
 async def lifespan(app):
     # Validate settings on startup
@@ -56,6 +84,7 @@ async def lifespan(app):
                 "THROTTLE_BACKEND is 'memory' in production. Rate limits are not shared "
                 'across workers. Set THROTTLE_BACKEND=redis.'
             )
+        _warn_missing_trusted_proxies(settings, _log)
 
     # Fail-fast: verify network-backed backends are reachable. RuntimeError
     # here aborts startup so misconfigured deployments don't silently serve
@@ -85,6 +114,16 @@ async def lifespan(app):
         _log.info('Nori started [debug=%s, db=disabled]', settings.DEBUG)
     yield
     if settings.DB_ENABLED:
+        # Drain any in-flight ``audit()`` writes BEFORE the DB
+        # connection pool is closed. Otherwise a SIGTERM arriving
+        # immediately after a controller returns lets the audit task
+        # wake up after Tortoise has already closed connections — the
+        # write fails on a dead pool and the entry is lost. The flush
+        # has its own short timeout so a stuck write cannot hang
+        # shutdown forever.
+        from core.audit import flush_pending as _flush_audit
+
+        await _flush_audit(timeout=5.0)
         await Tortoise.close_connections()
 
 

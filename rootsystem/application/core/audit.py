@@ -28,7 +28,19 @@ from core.registry import get_model
 
 _log = get_logger('audit')
 
-__all__ = ['audit', 'get_client_ip']
+__all__ = ['audit', 'flush_pending', 'get_client_ip']
+
+# In-flight ``audit()`` writes are tracked here so the ASGI lifespan can
+# await them before tearing down DB connections. Without this, a SIGTERM
+# arriving right after a controller returns races the audit task — the
+# task wakes up after ``Tortoise.close_connections()`` ran, the write
+# fails on a closed connection, and the catch-all in ``_write`` swallows
+# the exception. The audit entry vanishes silently. ``flush_pending()``
+# closes that window during graceful shutdown.
+#
+# CPython's asyncio is single-threaded per event loop, so plain set
+# mutation is safe — no lock needed.
+_pending_tasks: set[asyncio.Task] = set()
 
 
 def get_client_ip(request: Request) -> str | None:
@@ -118,7 +130,48 @@ def audit(
 
     try:
         loop = asyncio.get_running_loop()
-        return loop.create_task(_write())
     except RuntimeError:
         _log.warning("No running event loop — audit entry for '%s' was not persisted", action)
         return None
+    task = loop.create_task(_write())
+    # Track the task so ``flush_pending()`` (called from the ASGI
+    # lifespan on shutdown) can await it before ``Tortoise.close_connections``
+    # runs. ``add_done_callback`` drops the entry as soon as the task
+    # completes, so the set never grows unboundedly during normal
+    # operation — it only holds the genuinely in-flight writes.
+    _pending_tasks.add(task)
+    task.add_done_callback(_pending_tasks.discard)
+    return task
+
+
+async def flush_pending(timeout: float = 5.0) -> None:
+    """Wait for all in-flight :func:`audit` writes to persist.
+
+    Call this from the ASGI lifespan ``yield`` block before tearing
+    down DB connections. Without it, fire-and-forget audit tasks
+    scheduled via ``loop.create_task`` race the shutdown — a SIGTERM
+    arriving milliseconds after a controller returns can drop the audit
+    entry on the floor, because the task wakes up after the DB
+    connection pool is closed and the write quietly fails.
+
+    A stuck write will not block shutdown forever — on timeout, the
+    still-pending tasks are cancelled and a warning is logged. The
+    framework prefers a noisy partial flush over a hung process.
+
+    Args:
+        timeout: Maximum seconds to wait for the queue to drain.
+    """
+    if not _pending_tasks:
+        return
+    pending = list(_pending_tasks)
+    try:
+        await asyncio.wait_for(
+            asyncio.gather(*pending, return_exceptions=True),
+            timeout,
+        )
+    except (TimeoutError, asyncio.TimeoutError):
+        _log.warning(
+            'Timed out (%.1fs) flushing %d pending audit task(s); shutdown continues.',
+            timeout,
+            len(pending),
+        )
