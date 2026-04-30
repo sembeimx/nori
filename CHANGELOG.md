@@ -4,6 +4,27 @@ All notable changes to Nori are documented here. Format follows [Keep a Changelo
 
 ---
 
+## [1.29.0] — 2026-04-30
+
+### Fixed
+
+- **``cache_incr`` Memory backend applied TTL to a pre-existing counter that had no TTL (MED).** Memory's branch ``existing_expires_at if existing_expires_at and existing_expires_at > now else (now + ttl) if ttl > 0 else 0.0`` failed to distinguish "no entry at all" from "entry exists with no TTL" — both cases land at ``existing_expires_at == 0.0``, which is falsy. So a long-lived counter created via ``cache_set('k', 5, ttl=0)`` (e.g. login_attempts persisting across windows, queue depth) and then touched by ``cache_incr('k', ttl=60)`` would (incorrectly) get the 60s TTL applied retroactively. Redis's Lua script does not have this bug — its ``EXPIRE`` branch only fires when ``INCR`` returns ``1`` (the counter genuinely born), and an existing counter always returns ``N+1``. Memory now tracks an explicit ``is_existing`` flag and preserves the counter's TTL state — including "no TTL" — once it pre-exists. The two backends produce identical observable behavior across all four entry states (missing, expired, present-with-TTL, present-without-TTL).
+
+### Improved
+
+- **``cache_response`` accepts ``vary_on=['Header-Name', ...]`` for content-variance keying.** The default cache key is built from URL path + query and is intentionally **agnostic to request headers** — ideal for anonymous public endpoints, but a footgun for any handler whose response varies by ``Accept-Language``, ``Accept-Encoding``, ``Accept``, or a custom format header. The first requester pinned their variant for every subsequent caller within the TTL window — a user with ``Accept-Language: es`` could receive whatever the first ``Accept-Language: en`` user populated. ``vary_on`` folds the named header values into the cache key (case-insensitive lookup, missing header contributes the empty string), so each variant gets its own slot. The default (``vary_on=None``) keeps the legacy key shape verbatim, so cached entries written by a pre-1.29 process remain reachable across an in-place upgrade. The docstring now spells out the role of ``vary_on`` alongside the existing ``key_fn`` guidance for per-user / per-tenant scoping. This is **not** "cache poisoning" in the OWASP sense (no attacker injects malicious content; the cached responses are legitimate) but it IS content-variance under-keying, which the fix closes.
+
+### Tests
+
+945 → 950 passing. New regression tests:
+- ``test_memory_incr_does_not_apply_ttl_to_existing_no_ttl_counter`` — pre-fix the Memory backend applied TTL retroactively to a counter that pre-existed without one; asserts the entry's ``expires_at`` stays ``0.0`` after the second ``incr`` call (matching Redis's Lua semantics)
+- ``test_cache_response_vary_on_segments_by_header_value`` — two requests with the same path and different ``Accept-Language`` resolve to distinct cache slots; the second handler call returns its own body (not the previously-cached variant)
+- ``test_cache_response_default_key_unchanged_without_vary_on`` — backward-compat: when ``vary_on`` is omitted, the cache key is exactly ``view:/products:page=1`` (legacy shape)
+- ``test_cache_response_vary_on_treats_missing_header_as_empty`` — pinned contract: absent header contributes empty string to the segment, present header gets a distinct slot
+- ``test_cache_response_vary_on_lookup_is_case_insensitive`` — declaring ``vary_on=['ACCEPT-LANGUAGE']`` and reading ``request.headers.get('accept-language')`` resolve to the same key
+
+---
+
 ## [1.28.0] — 2026-04-30
 
 ### Improved

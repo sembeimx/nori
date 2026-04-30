@@ -176,6 +176,16 @@ class MemoryCacheBackend(CacheBackend):
 
             value = 0
             existing_expires_at = 0.0
+            # Track whether the counter pre-existed (and was still valid)
+            # SEPARATELY from its expiry. The previous implementation
+            # conflated "no TTL" (``expires_at == 0.0``) with "no entry"
+            # because both code paths leave ``existing_expires_at`` at
+            # ``0.0`` — so a counter created with ``ttl=0`` and later
+            # touched with ``ttl > 0`` would (incorrectly) get a TTL
+            # applied retroactively. Redis's Lua only fires ``EXPIRE``
+            # when ``INCR`` returns 1 (counter genuinely born); Memory
+            # now uses the same gate.
+            is_existing = False
             if entry is not None:
                 stored_value, expires_at = entry
                 if expires_at and now > expires_at:
@@ -188,15 +198,18 @@ class MemoryCacheBackend(CacheBackend):
                         )
                     value = stored_value
                     existing_expires_at = expires_at
+                    is_existing = True
 
             value += 1
 
-            # TTL is applied only when the counter is born (existing TTL preserved).
-            new_expires_at = (
-                existing_expires_at
-                if existing_expires_at and existing_expires_at > now
-                else (now + ttl) if ttl > 0 else 0.0
-            )
+            # Match Redis Lua semantics: TTL is applied only when the
+            # counter is born (this call observed a missing/expired
+            # entry). If the counter pre-existed, its expiry state —
+            # whether it had a TTL or not — is preserved verbatim.
+            if is_existing:
+                new_expires_at = existing_expires_at
+            else:
+                new_expires_at = (now + ttl) if ttl > 0 else 0.0
 
             self._store[key] = (value, new_expires_at)
             self._store.move_to_end(key)
@@ -451,6 +464,7 @@ def cache_response(
     ttl: int = 60,
     key_prefix: str = 'view',
     key_fn: Callable[[Any], str] | None = None,
+    vary_on: list[str] | None = None,
 ) -> Callable:
     """Cache GET response bodies. Non-GET requests pass through.
 
@@ -471,6 +485,29 @@ def cache_response(
 
         @cache_response(ttl=60, key_fn=lambda r: f'u={r.session.get("user_id")}')
         async def my_dashboard(self, request): ...
+
+    Content variance via headers:
+
+    The default cache key is also **agnostic to request headers**. If
+    your handler returns different content depending on a header — most
+    commonly ``Accept-Language`` for i18n, but also ``Accept-Encoding``,
+    ``Accept`` for content negotiation, or any custom variance header —
+    the first requester pins their variant for every subsequent caller
+    within the TTL window. The first user with ``Accept-Language: en``
+    populates the cache; the next user with ``Accept-Language: es`` gets
+    the English response back.
+
+    Pass ``vary_on=['Header-Name', ...]`` to fold header values into the
+    cache key. Header lookups are case-insensitive (Starlette's
+    ``request.headers`` is case-insensitive) and a missing header
+    contributes the empty string for that segment::
+
+        @cache_response(ttl=60, vary_on=['Accept-Language'])
+        async def home(self, request): ...
+
+    This mirrors the role of the HTTP ``Vary`` response header for
+    downstream caches — the framework's local cache needs the same
+    information to avoid serving the wrong variant.
     """
 
     def decorator(func: Callable) -> Callable:
@@ -486,6 +523,18 @@ def cache_response(
                 cache_key = f'{key_prefix}:{request.url.path}:{request.url.query}'
             else:
                 cache_key = f'{key_prefix}:{key_fn(request)}:{request.url.path}:{request.url.query}'
+
+            # ``vary_on`` appends a deterministic, comma-joined segment
+            # built from the requested headers — a request without
+            # ``vary_on`` (or with the same header values) lands on the
+            # same key it always did, so cached entries from upgrades
+            # remain reachable. A request that varies in any of those
+            # header values gets a distinct key and a distinct slot.
+            if vary_on:
+                vary_segment = ','.join(
+                    f'{h.lower()}={request.headers.get(h, "")}' for h in vary_on
+                )
+                cache_key = f'{cache_key}:vary={vary_segment}'
             cached = await cache_get(cache_key)
             if cached is not None:
                 from starlette.responses import Response

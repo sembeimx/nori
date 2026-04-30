@@ -404,6 +404,182 @@ async def test_cache_response_legacy_body_field_still_renders():
 
 
 # ---------------------------------------------------------------------------
+# @cache_response(vary_on=...) — header-aware cache key
+# ---------------------------------------------------------------------------
+
+
+class _CaseInsensitiveHeaders:
+    """Minimal stand-in for Starlette's ``request.headers`` — supports
+    case-insensitive lookups via ``.get(name, default)`` exactly like
+    the real implementation. Tests use this so they don't need a full
+    Starlette request object.
+    """
+
+    def __init__(self, mapping=None):
+        self._m = {(k or '').lower(): v for k, v in (mapping or {}).items()}
+
+    def get(self, key, default=''):
+        return self._m.get((key or '').lower(), default)
+
+
+@pytest.mark.asyncio
+async def test_cache_response_vary_on_segments_by_header_value():
+    """Pre-1.29 the cache key omitted request headers entirely, so the
+    first requester pinned their language variant for every subsequent
+    caller within the TTL window — a user with ``Accept-Language: es``
+    would receive whatever variant the first ``Accept-Language: en``
+    user populated. ``vary_on=['Accept-Language']`` folds the header
+    value into the key so each language gets its own cache slot.
+    """
+    call_count = 0
+
+    class FakeURL:
+        path = '/home'
+        query = ''
+
+    class FakeRequest:
+        method = 'GET'
+        url = FakeURL()
+
+        def __init__(self, headers=None):
+            self.headers = _CaseInsensitiveHeaders(headers)
+
+    class Ctrl:
+        @cache_response(ttl=60, vary_on=['Accept-Language'])
+        async def home(self, request):
+            nonlocal call_count
+            call_count += 1
+            lang = request.headers.get('Accept-Language', '')
+            return JSONResponse({'lang': lang, 'n': call_count})
+
+    ctrl = Ctrl()
+    en = FakeRequest({'Accept-Language': 'en'})
+    es = FakeRequest({'Accept-Language': 'es'})
+
+    # First en — populates cache slot for English
+    await ctrl.home(en)
+    # Second en — cache hit, handler not re-invoked
+    await ctrl.home(en)
+    assert call_count == 1
+
+    # First es — distinct cache slot, handler MUST run again
+    resp_es = await ctrl.home(es)
+    assert call_count == 2
+    body = json.loads(resp_es.body.decode())
+    assert body['lang'] == 'es', (
+        "vary_on did not segment cache by header — Spanish request received "
+        "the previously-cached English variant"
+    )
+
+
+@pytest.mark.asyncio
+async def test_cache_response_default_key_unchanged_without_vary_on():
+    """Backward-compat regression: when ``vary_on`` is omitted, the
+    cache key shape is identical to the pre-1.29 form. Cached entries
+    written by a pre-1.29 process must remain reachable across an
+    in-place upgrade — they only expire on TTL.
+    """
+    call_count = 0
+
+    class FakeURL:
+        path = '/products'
+        query = 'page=1'
+
+    class FakeRequest:
+        method = 'GET'
+        url = FakeURL()
+
+    class Ctrl:
+        @cache_response(ttl=60)  # no vary_on
+        async def listing(self, request):
+            nonlocal call_count
+            call_count += 1
+            return JSONResponse({'n': call_count})
+
+    ctrl = Ctrl()
+    await ctrl.listing(FakeRequest())
+    await ctrl.listing(FakeRequest())
+    assert call_count == 1
+
+    backend = get_backend()
+    keys = list(backend._store.keys())
+    assert keys == ['view:/products:page=1'], (
+        f'cache key shape regressed (no vary_on path): got {keys!r}'
+    )
+
+
+@pytest.mark.asyncio
+async def test_cache_response_vary_on_treats_missing_header_as_empty():
+    """Contract: a missing variance header contributes the empty string
+    to the cache key segment. Two requests where the header is absent
+    map to the same cached entry; a request that DOES carry the header
+    gets a distinct slot.
+    """
+    call_count = 0
+
+    class FakeURL:
+        path = '/home'
+        query = ''
+
+    class FakeRequest:
+        method = 'GET'
+        url = FakeURL()
+
+        def __init__(self, headers=None):
+            self.headers = _CaseInsensitiveHeaders(headers)
+
+    class Ctrl:
+        @cache_response(ttl=60, vary_on=['X-Format'])
+        async def view(self, request):
+            nonlocal call_count
+            call_count += 1
+            return JSONResponse({'n': call_count})
+
+    ctrl = Ctrl()
+    await ctrl.view(FakeRequest())  # header absent → '' segment
+    await ctrl.view(FakeRequest())  # same → cache hit
+    assert call_count == 1
+
+    await ctrl.view(FakeRequest({'X-Format': 'json'}))  # distinct slot → miss
+    assert call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_cache_response_vary_on_lookup_is_case_insensitive():
+    """Header names in ``vary_on`` are matched case-insensitively, so
+    an operator who declares ``vary_on=['Accept-Language']`` and a
+    framework that lower-cases internally still hit the same key.
+    """
+    call_count = 0
+
+    class FakeURL:
+        path = '/home'
+        query = ''
+
+    class FakeRequest:
+        method = 'GET'
+        url = FakeURL()
+
+        def __init__(self, headers=None):
+            self.headers = _CaseInsensitiveHeaders(headers)
+
+    class Ctrl:
+        @cache_response(ttl=60, vary_on=['ACCEPT-LANGUAGE'])
+        async def home(self, request):
+            nonlocal call_count
+            call_count += 1
+            return JSONResponse({'n': call_count})
+
+    ctrl = Ctrl()
+    await ctrl.home(FakeRequest({'accept-language': 'en'}))
+    await ctrl.home(FakeRequest({'Accept-Language': 'en'}))
+    assert call_count == 1, (
+        'header lookup was case-sensitive — same logical header value '
+        'produced different cache keys'
+    )
+
+
+# ---------------------------------------------------------------------------
 # RedisCacheBackend unit tests (fakeredis)
 # ---------------------------------------------------------------------------
 #
@@ -736,6 +912,32 @@ async def test_memory_incr_rejects_non_int_existing():
     await backend.set('mistaken', 'string', ttl=0)
     with pytest.raises(TypeError, match='not an int'):
         await backend.incr('mistaken')
+
+
+@pytest.mark.asyncio
+async def test_memory_incr_does_not_apply_ttl_to_existing_no_ttl_counter():
+    """Counter pre-exists with no TTL (e.g. a long-lived
+    ``cache_set(key, value, ttl=0)`` counter), then a later
+    ``cache_incr(key, ttl=60)`` arrives. Pre-1.29 the Memory backend
+    would (incorrectly) apply the 60s TTL to the pre-existing entry —
+    its branch ``existing_expires_at and existing_expires_at > now``
+    failed because ``0.0`` is falsy, indistinguishably from "no entry
+    at all". Redis's Lua only fires ``EXPIRE`` when ``INCR`` returns 1
+    (i.e. the counter genuinely born), and an existing counter
+    returns ``N+1``. Memory must match Redis: a pre-existing counter
+    keeps its TTL state verbatim, even when that state is "no TTL".
+    """
+    backend = MemoryCacheBackend()
+    await backend.set('counter', 5, ttl=0)  # no TTL — counter persists indefinitely
+
+    new_value = await backend.incr('counter', ttl=60)
+    assert new_value == 6
+
+    _, expires_at = backend._store['counter']
+    assert expires_at == 0.0, (
+        f'incr applied a TTL retroactively to a counter that pre-existed '
+        f'without one (got expires_at={expires_at}); Redis would not'
+    )
 
 
 # ---------------------------------------------------------------------------
