@@ -19,6 +19,9 @@ venv/
 :memory:
 :memory:-*
 site/
+.coverage
+firebase-debug.log
+.gga
 .framework_backups/
 .claude/
 .gemini/
