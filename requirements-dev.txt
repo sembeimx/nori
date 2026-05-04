@@ -10,5 +10,5 @@ pip-audit>=2.10.0
 interrogate>=1.7
 filelock>=3.29.0
 hypothesis>=6.150
-fakeredis>=2.20
+fakeredis>=2.35.1
 lupa>=2.0
