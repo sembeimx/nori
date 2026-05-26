@@ -68,7 +68,25 @@ jobs:
           fi
           echo "extracted $(wc -l < release_notes.md) lines of release notes"
 
-      - name: Create GitHub Release
+      # SBOM is built inside this workflow (not by piggybacking sbom.yml's
+      # release: published trigger) because the GITHUB_TOKEN that gh release
+      # create runs under does not cascade workflow_run events — releases
+      # created from inside a workflow do NOT trigger downstream workflows.
+      # Generating the SBOM here keeps the asset attached on first try.
+      # See: https://docs.github.com/en/actions/security-guides/automatic-token-authentication#using-the-github_token-in-a-workflow
+      - name: Build SBOM (CycloneDX 1.6 from requirements.nori.txt)
+        run: |
+          set -euo pipefail
+          pip install cyclonedx-bom
+          python -m venv .sbom-venv
+          .sbom-venv/bin/pip install --upgrade pip
+          .sbom-venv/bin/pip install -r requirements.nori.txt
+          python -m cyclonedx_py environment .sbom-venv/bin/python \
+            --of json \
+            --output-reproducible \
+            -o sbom-framework.json
+
+      - name: Create GitHub Release with SBOM attached
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -77,4 +95,5 @@ jobs:
           gh release create "$TAG" \
             --title "$TAG" \
             --notes-file release_notes.md \
-            --verify-tag
+            --verify-tag \
+            sbom-framework.json
