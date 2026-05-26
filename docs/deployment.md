@@ -431,50 +431,36 @@ For sites above 5M visits/month, consider horizontal scaling (multiple servers b
 
 ## Documentation site
 
-Nori includes a [MkDocs Material](https://squidfunk.github.io/mkdocs-material/) configuration for generating a documentation website from the `docs/` directory.
+The official Nori docs at <https://nori.sembei.mx> are built from the `docs/` directory using [MkDocs Material](https://squidfunk.github.io/mkdocs-material/) and published automatically on every push to `main`.
 
-### Build and deploy
+### Pipeline (Firebase Hosting + GitHub Actions)
 
-```bash
-# Install (one-time)
-pip install mkdocs-material
+`.github/workflows/deploy-docs.yml` runs on any push to `main` that touches `docs/**` or `mkdocs.yml`. No manual deploy step is required. The workflow:
 
-# Build the static site
-mkdocs build --strict
+1. Installs `mkdocs-material` (pinned to `>=9.7.6` — bump deliberately).
+2. Runs `mkdocs build --strict` so nav / file / theme warnings fail CI rather than ship silently.
+3. Publishes the resulting `site/` directory to Firebase Hosting (project `sembei-websites`, target `nori-docs`, channel `live`).
 
-# Deploy to your server
-rsync -avz --delete site/ yourserver:/srv/websites/nori-docs/
-```
+`firebase.json` controls cache headers (`max-age=2592000` on static assets); `.firebaserc` ties the local project to `sembei-websites`. Both are tracked in the repo so CI and local behaviour stay in sync.
 
 ### Local preview
 
 ```bash
+pip install mkdocs-material
 mkdocs serve
 # Open http://localhost:8000
 ```
 
-### Apache configuration
-
-```apache
-<VirtualHost *:80>
-    ServerName nori.yourdomain.com
-    DocumentRoot /srv/websites/nori-docs
-
-    <Directory /srv/websites/nori-docs>
-        Options -Indexes +FollowSymLinks
-        AllowOverride None
-        Require all granted
-    </Directory>
-</VirtualHost>
-```
-
-Add SSL with Certbot: `sudo certbot --apache -d nori.yourdomain.com`
-
-### Manual deploy
-
-Build the docs locally and deploy via rsync (or any method of your choice):
+### Local build (mirrors CI)
 
 ```bash
-mkdocs build --clean
-rsync -avz --delete site/ yourserver:/path/to/docs/
+mkdocs build --strict
 ```
+
+Use this to validate doc changes before pushing — same `--strict` flag, same theme version when your venv matches the workflow pin.
+
+### Self-hosting on a different stack
+
+The build output is plain static HTML, so any static host serves it (Nginx, Apache, Caddy, S3+CloudFront, Cloudflare Pages, Netlify, etc.). Build with `mkdocs build` and serve the resulting `site/` directory — no MkDocs runtime needed at serve time.
+
+If you fork this docs setup for a different domain, edit `mkdocs.yml` (`site_url`, `site_name`) and supply your own publish workflow. The Firebase action in `deploy-docs.yml` is the only Nori-specific piece; everything else is upstream MkDocs.

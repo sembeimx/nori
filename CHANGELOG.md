@@ -2,6 +2,14 @@
 
 All notable changes to Nori are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+When a release is cut, rename `[Unreleased]` to `[X.Y.Z] — YYYY-MM-DD` and seed a fresh empty `[Unreleased]` block above it. The release script (`scripts/release.sh`, when in place) does this transformation automatically and extracts the renamed section as the GitHub Release body.
+
+---
+
+## [Unreleased]
+
+_Nothing accumulated yet — add entries here as they ship to `main` so the next release cut is just a rename + date stamp._
+
 ---
 
 ## [1.34.0] — 2026-04-30
