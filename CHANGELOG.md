@@ -8,6 +8,12 @@ When a release is cut, rename `[Unreleased]` to `[X.Y.Z] — YYYY-MM-DD` and see
 
 ## [Unreleased]
 
+_Nothing accumulated yet — add entries here as they ship to `main` so the next release cut is just a rename + date stamp._
+
+---
+
+## [1.35.0] — 2026-05-26
+
 This release closes the 2026-05-25 audit cycle and ships the bug-class catalogue + release automation that make future audits converge instead of rediscover. No breaking changes; every addition is opt-in or transparent.
 
 ### Added — security CI gate
