@@ -26,7 +26,14 @@ import base64
 import hashlib
 import hmac
 import secrets
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+from core.logger import get_logger
+
+if TYPE_CHECKING:
+    import httpx
+
+_log = get_logger('oauth')
 
 _STATE_SESSION_KEY = '_oauth_state'
 _PKCE_SESSION_KEY = '_oauth_pkce_verifier'
@@ -104,3 +111,39 @@ def get_pkce_verifier(session: dict[str, Any]) -> str | None:
     """
     verifier: str | None = session.pop(_PKCE_SESSION_KEY, None)
     return verifier
+
+
+def raise_for_status_logged(response: httpx.Response, provider: str, stage: str) -> None:
+    """Call ``response.raise_for_status()`` with a WARNING log on failure.
+
+    OAuth provider rejections (expired code, replayed code, network blips)
+    surface to the application as ``httpx.HTTPStatusError`` and become 500s
+    unless the controller catches them. Logging the status + a truncated body
+    BEFORE re-raising gives the operator the bare minimum to debug — without
+    leaking secrets that providers do not put in error bodies (codes, IDs).
+
+    Args:
+        response: The httpx response to validate.
+        provider: Short provider name for the log line (``'github'``, ``'google'``).
+        stage: Which step in the flow failed (``'token exchange'``, ``'user profile'``).
+
+    Raises:
+        httpx.HTTPStatusError: Always re-raised after logging — the caller still
+            owns the error path (return a 400/redirect/etc.).
+    """
+    try:
+        response.raise_for_status()
+    except Exception as exc:  # noqa: BLE001 — re-raised after logging
+        body = ''
+        try:
+            body = response.text[:200]
+        except Exception:  # noqa: BLE001, S110 — body might be binary/unreadable
+            pass
+        _log.warning(
+            'OAuth %s %s failed: HTTP %s — %s',
+            provider,
+            stage,
+            response.status_code,
+            body,
+        )
+        raise exc

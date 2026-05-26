@@ -41,7 +41,7 @@ from __future__ import annotations
 from urllib.parse import urlencode
 
 import httpx
-from core.auth.oauth import generate_state, validate_state
+from core.auth.oauth import generate_state, raise_for_status_logged, validate_state
 from core.conf import config
 
 _AUTHORIZE_URL = 'https://github.com/login/oauth/authorize'
@@ -144,7 +144,7 @@ async def handle_callback(
         },
         headers={'Accept': 'application/json'},
     )
-    token_resp.raise_for_status()
+    raise_for_status_logged(token_resp, 'github', 'token exchange')
     access_token = token_resp.json()['access_token']
 
     return await get_user_profile(access_token)
@@ -174,14 +174,14 @@ async def get_user_profile(access_token: str) -> dict:
 
     client = _get_client()
     user_resp = await client.get(_USER_URL, headers=headers)
-    user_resp.raise_for_status()
+    raise_for_status_logged(user_resp, 'github', 'user profile')
     user = user_resp.json()
 
     # Resolve email: use /user endpoint first, fall back to /user/emails
     email = user.get('email') or ''
     if not email:
         emails_resp = await client.get(_EMAILS_URL, headers=headers)
-        emails_resp.raise_for_status()
+        raise_for_status_logged(emails_resp, 'github', 'user emails')
         for entry in emails_resp.json():
             if entry.get('primary') and entry.get('verified'):
                 email = entry['email']

@@ -100,6 +100,55 @@ async def test_handle_callback_invalid_state():
 
 
 @pytest.mark.asyncio
+async def test_handle_callback_propagates_httpstatuserror_on_token_exchange_failure(caplog):
+    """When GitHub rejects the authorization code (expired, replayed,
+    revoked OAuth app), the token POST returns 4xx and raise_for_status
+    raises httpx.HTTPStatusError. handle_callback must propagate this to
+    the caller (the controller decides whether to show 'try again' or
+    log out), and a WARNING with the status must hit the operational log
+    so on-call can see WHY a redirect loop is happening. Audit 2026-05-25 #4.
+    """
+    import logging
+
+    import httpx
+    from core.auth.oauth import generate_state
+    from services.oauth_github import handle_callback
+
+    session = _make_session()
+    state = generate_state(session)
+
+    token_response = MagicMock()
+    token_response.status_code = 400
+    token_response.text = '{"error":"bad_verification_code"}'
+    token_response.raise_for_status = MagicMock(
+        side_effect=httpx.HTTPStatusError(
+            message='400 Bad Request',
+            request=MagicMock(),
+            response=token_response,
+        )
+    )
+    mock_client = AsyncMock()
+    mock_client.post.return_value = token_response
+
+    logging.getLogger('nori').propagate = True
+    with patch('services.oauth_github._get_client', return_value=mock_client):
+        with caplog.at_level(logging.WARNING, logger='nori.oauth'):
+            with pytest.raises(httpx.HTTPStatusError):
+                await handle_callback(
+                    session,
+                    code='gh-bad-code',
+                    redirect_uri='https://example.com/cb',
+                    state=state,
+                )
+
+    matching = [r for r in caplog.records if 'OAuth github token exchange failed' in r.getMessage()]
+    assert matching, 'expected a WARNING that names the provider and the token-exchange stage'
+    msg = matching[0].getMessage()
+    assert '400' in msg
+    assert 'bad_verification_code' in msg
+
+
+@pytest.mark.asyncio
 async def test_handle_callback_exchanges_code():
     from core.auth.oauth import generate_state
     from services.oauth_github import _TOKEN_URL, handle_callback
