@@ -137,3 +137,70 @@ rules:
           - pattern: Path("...")
     metadata:
       category: correctness
+
+  # ---------------------------------------------------------------------------
+  # Iteration 2 — httpx connection reuse in service drivers
+  # ---------------------------------------------------------------------------
+  # Each `httpx.AsyncClient()` constructor opens a fresh TCP+TLS handshake.
+  # Repeating the constructor per call stacks latency (TLS handshake adds
+  # ~100-200ms over WAN) and exhausts socket descriptors under load. Every
+  # existing services/* driver caches one `_client` at module level and
+  # registers a shutdown hook with `core.lifecycle` — see oauth_github.py
+  # for the canonical pattern. This rule guards forward against drivers
+  # that drop back to the `async with` constructor inside a hot path.
+  # See CLAUDE.md §6 — Connection reuse.
+  - id: nori-service-httpx-per-call-asyncclient
+    message: |
+      `async with httpx.AsyncClient(...)` constructed per call in a service
+      driver. Every constructor opens a fresh TCP+TLS connection — under
+      load this stacks latency and exhausts socket capacity. Hold a single
+      module-level _client and reuse it; register shutdown with
+      core.lifecycle.register_shutdown. See services/oauth_github.py for
+      the established pattern (_get_client + module-level _client cache).
+    severity: ERROR
+    languages: [python]
+    paths:
+      include:
+        - "**/rootsystem/application/services/"
+    patterns:
+      - pattern-either:
+          - pattern: |
+              async with httpx.AsyncClient(...) as $C:
+                  ...
+          - pattern: |
+              async with httpx.AsyncClient() as $C:
+                  ...
+    metadata:
+      category: performance
+
+  # ---------------------------------------------------------------------------
+  # Iteration 2 — synchronous open() inside async def in service drivers
+  # ---------------------------------------------------------------------------
+  # Disk I/O on the event loop freezes every other coroutine behind it. A
+  # slow disk or a network-mounted filesystem turns a single upload into
+  # a worker-wide stall. Wrap blocking calls in asyncio.to_thread or use
+  # aiofiles. The reads inside nested sync functions are fine — they will
+  # typically be invoked via asyncio.to_thread on the outside (see
+  # storage_gcs.py:_load_credentials for the pattern). See CLAUDE.md §6.
+  - id: nori-service-sync-open-in-async
+    message: |
+      open() called inside an async def in services/. Disk I/O on the
+      event loop freezes every other request behind it. Either:
+        - Wrap with asyncio.to_thread(lambda: open(...).read())
+        - Move into a nested sync helper invoked via asyncio.to_thread
+          (see storage_gcs.py:_load_credentials for the canonical pattern)
+      Once the helper is wrapped, silence this finding with:
+        # nosem: nori-service-sync-open-in-async  -- nested in sync helper invoked via to_thread
+      See CLAUDE.md §6 — Async I/O hygiene.
+    severity: WARNING
+    languages: [python]
+    paths:
+      include:
+        - "**/rootsystem/application/services/"
+    patterns:
+      - pattern-inside: |
+          async def $F(...):
+              ...
+      - pattern: open(...)
+    metadata:
+      category: performance

@@ -85,18 +85,30 @@ semgrep scan --config .semgrep/nori-rules.yml
 To validate that a custom rule fires correctly (positive + negative cases):
 
 ```bash
-semgrep scan --config .semgrep/nori-rules.yml --test
+semgrep --test --config .semgrep/nori-rules.yml .semgrep/tests/nori-rules.py
 ```
 
-(Requires `*.test.py` files under `.semgrep/tests/` — TODO for iteration 2.)
+The annotations are inline:
+
+- `# ruleid: name` — the next line MUST trigger that rule
+- `# ok: name` — the next line MUST NOT trigger that rule
+- `# nosem: name -- justification` — silence a finding (also honoured by `--test`)
+
+The test file is listed in `.semgrepignore` so the main scan does not flag the
+synthetic patterns as real findings.
 
 ## Roadmap
 
-- **Iteration 1 (current)**: 3 custom rules (TOCTOU cache, JWT subscript, CLI
+- **Iteration 1 (shipped)**: 3 custom rules (TOCTOU cache, JWT subscript, CLI
   CWD path). Workflow breaks CI on ERROR. WARNs are reported without breaking.
-- **Iteration 2**: add rules for httpx connection reuse, async I/O hygiene in
-  services/*, queue allow-list bypass. Rule test suite under `.semgrep/tests/`.
+- **Iteration 2 (shipped)**: 2 more custom rules — httpx per-call AsyncClient
+  in services/ (ERROR) and synchronous open() inside async def in services/
+  (WARNING). Test suite at `.semgrep/tests/nori-rules.py` with `# ruleid` /
+  `# ok` annotations, validated via `semgrep --test`.
 - **Iteration 3**: integrate into pre-commit (custom rules only — public
   rulesets are too slow for a local hook).
 - **Iteration 4**: add CodeQL as a second layer for real data-flow analysis
   (free on GitHub Actions for OSS).
+- **Iteration 5**: queue allow-list bypass detection. Hard to express statically
+  because the func_path argument to push() is often dynamic; would need a taint
+  rule or a manual review checklist instead.
