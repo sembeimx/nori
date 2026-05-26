@@ -163,7 +163,6 @@ def test_raise_for_status_logged_logs_and_reraises_on_4xx(caplog):
 
     import httpx
     import pytest as _pytest
-
     from core.auth.oauth import raise_for_status_logged
 
     response = MagicMock()
@@ -197,7 +196,6 @@ def test_raise_for_status_logged_truncates_long_body(caplog):
 
     import httpx
     import pytest as _pytest
-
     from core.auth.oauth import raise_for_status_logged
 
     response = MagicMock()

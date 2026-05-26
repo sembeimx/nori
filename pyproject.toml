@@ -13,6 +13,10 @@ extend-exclude = [
     ".venv",
     "venv",
     "__pycache__",
+    # Synthetic positive/negative trigger files for Semgrep custom rules.
+    # The cache_get / cache_set names are intentionally undefined (the
+    # patterns are what Semgrep matches on, not runnable code).
+    ".semgrep",
 ]
 
 [tool.ruff.lint]

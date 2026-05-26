@@ -827,7 +827,7 @@ async def test_require_any_role_denies_when_session_version_revoked(monkeypatch)
     resp = await MultiRoleController().moderate(req)
     assert resp.status_code == 401, (
         'require_any_role must deny when session_version is stale — even if '
-        "the role still matches one of the listed roles, the session is revoked"
+        'the role still matches one of the listed roles, the session is revoked'
     )
 
 

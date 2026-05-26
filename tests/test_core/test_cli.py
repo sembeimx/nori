@@ -531,9 +531,7 @@ def test_shell_pythonstartup_configures_and_imports_models_before_init():
     # Strip comments so the order assertions reflect executable statements
     # only — the script's own header comment legitimately mentions `import
     # models` and `configure(settings)`, which would confuse str.index().
-    script = '\n'.join(
-        line for line in captured['script'].splitlines() if not line.lstrip().startswith('#')
-    )
+    script = '\n'.join(line for line in captured['script'].splitlines() if not line.lstrip().startswith('#'))
 
     # (1) configure(settings) is present.
     assert 'configure(settings)' in script, 'shell must initialise Nori config'
