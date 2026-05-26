@@ -8,7 +8,56 @@ When a release is cut, rename `[Unreleased]` to `[X.Y.Z] — YYYY-MM-DD` and see
 
 ## [Unreleased]
 
-_Nothing accumulated yet — add entries here as they ship to `main` so the next release cut is just a rename + date stamp._
+This release closes the 2026-05-25 audit cycle and ships the bug-class catalogue + release automation that make future audits converge instead of rediscover. No breaking changes; every addition is opt-in or transparent.
+
+### Added — security CI gate
+
+- **Semgrep workflow** (`.github/workflows/semgrep.yml`) with `--severity ERROR` gate. Runs `p/python`, `p/security-audit`, `p/owasp-top-ten` on every push + PR to `main`, on top of ruff's existing flake8-bandit coverage. Complements ruff with cross-line pattern analysis that ruff cannot express.
+- **8 Nori-specific custom Semgrep rules** at `.semgrep/nori-rules.yml`, each mapped to a CWE and an entry in the new invariants catalogue: TOCTOU on cache (CWE-367, WARNING), unguarded JWT/OAuth optional claim subscript (ERROR, scoped to `core/auth/`), CWD-relative `Path()` in `core/cli.py` (ERROR), httpx `AsyncClient` constructed per call in `services/*` (ERROR), sync `open()` / `time.sleep()` / `import requests` / `subprocess.run` inside `async def` (ERROR/WARNING, scoped to `services/*` and `core/*` with `cli.py` excluded).
+- **Rule test suite** at `.semgrep/tests/nori-rules.py` with `# ruleid:` and `# ok:` annotations. Run with `semgrep --test --config .semgrep/nori-rules.yml .semgrep/tests/nori-rules.py`.
+
+### Added — bug-class catalogue (`INVARIANTS.md`)
+
+- Repo-root catalogue with **29 stable INV-### entries** consolidating AGENTS.md §6/§7 and CHANGELOG Round 3–7 findings. Each INV has CWE, severity, fix recipe, detector maturity (L1 manual / L2 scripted / L3 mechanised), coverage by area, instance history, regression-test pointers, related INVs.
+- Lives at the repo root (NOT under `docs/`) so MkDocs does not publish it — coverage gaps and detector maturity are an attack map and stay internal.
+- AGENTS.md §6 and §7 shortened by ~30 lines to one-line bullets that link by INV ID instead of duplicating prose.
+- Roadmap section ranks remaining L1/L2 → L3 graduation candidates. Audit-log section appends one row per audit pass with date, scope, new INVs, regressions of existing INVs — convergence metric measurable from day 1.
+
+### Added — atomic release tooling
+
+- **`scripts/release.py`** collapses the 8-step manual release sequence to one command: `scripts/release.py 1.36.0`. Pre-flight (semver shape, working tree clean, on main, up-to-date with origin, version.py distinct from target, CHANGELOG `[Unreleased]` non-empty, tag absent locally + on remote, local CI suite green) → atomic mutations (`version.py` bump, CHANGELOG `[Unreleased]` rename to `[X.Y.Z] — YYYY-MM-DD` + fresh `[Unreleased]` inserted) → commit + signed tag + push. Flags: `--dry-run`, `--skip-tests`, `--unsigned`, `--extract-changelog VERSION`. Pure stdlib; no new dependencies.
+- **`.github/workflows/release.yml`** fires on `v*` tag push, verifies the tag matches `version.py`, calls `release.py --extract-changelog` to seed the release body from CHANGELOG, runs `gh release create --verify-tag`. The existing `sbom.yml` then fires automatically on `release: published` and attaches the dependency manifest.
+- **26 tests** at `tests/test_release_script.py` covering the parser + mutator helpers (semver, version-file read/write, section extraction, transform, body extraction).
+- **CHANGELOG.md** gains an `[Unreleased]` section so the release cut is a rename + date stamp instead of writing the entry from scratch.
+
+### Security — 4 audit Criticals closed
+
+- **`docs/forms_validation.md` falsely claimed JSON requests are CSRF-exempt.** The CSRF middleware actually returns 403 for JSON without `X-CSRF-Token`. The doc now describes the real behaviour (header is the only accepted channel; JWT-protected endpoints are the actual exemption path). INV-004.
+- **`nori shell` was broken end-to-end since the command was added.** The PYTHONSTARTUP script missed `configure(settings)` (so any user code touching `config.X` at import time crashed with `RuntimeError: Nori config not initialised`), missed `import models` (so `_models` was always `{}` and zero classes were bound at the REPL prompt), and used `asyncio.get_event_loop()` (deprecated 3.10+, raises 3.14+). Repaired in `core/cli.py`; regression test `test_shell_pythonstartup_configures_and_imports_models_before_init` pins the ordering invariants. INV-026.
+- **`require_role` and `require_any_role` had no end-to-end test for session revocation.** Both decorators call `check_session_version` with the same shape as `login_required` (covered) and `require_permission` (covered), but if anyone broke the gate call in either decorator, revoked sessions would have stayed active until cookie expiry undetected. Added `test_require_role_denies_when_session_version_revoked` and `test_require_any_role_denies_when_session_version_revoked` to `test_acl.py`. INV-016.
+- **`handle_callback` in `oauth_github` and `oauth_google` propagated `httpx.HTTPStatusError` per their declared contract, but no test exercised the path and no log helped on-call.** A provider rejection (expired code, replayed code, PKCE mismatch) surfaced as a bare 500 with no context. New shared helper `raise_for_status_logged(response, provider, stage)` in `core.auth.oauth` emits a WARNING (provider, stage, status, truncated body) before re-raising. Both drivers route all `raise_for_status` calls through it. 3 unit tests on the helper + 1 integration test per driver. INV-007.
+
+### Changed — Dockerfile, CI infra, docs
+
+- **Dockerfile now runs as a non-root user** (`nori`, uid 1000) with `chown -R nori:nori /app`. Closes Semgrep `p/security-audit` `dockerfile.security.missing-user` (CWE-269 family). This was the first finding the new Semgrep workflow caught — fitting demonstration of value.
+- **`mkdocs-material` pinned to `>=9.7.6`** in the deploy workflow. `mkdocs build` now runs with `--strict` so nav / file / theme warnings fail CI instead of shipping silently.
+- **`mkdocs.yml` removed the `extra.version: mike` stanza.** mike was declared as the version provider but never installed or invoked anywhere — declarative fiction. The deployed site is a single-version flat build; the config now says so.
+- **`docs/deployment.md` Documentation site section rewritten** to reflect the real Firebase Hosting + GitHub Actions pipeline. Previously documented a VPS + rsync + Apache + Certbot path that has nothing to do with how the project actually deploys.
+- **2 dead anchors fixed**: `docs/code_quality.md:129` `cli.md#framework-check-config` → `cli.md#frameworkcheck-config` (the real slug drops the colon); `docs/dependencies.md:111` removed the `(see observability.md#upgrading-an-existing-site for the reason)` parenthetical — the target heading never existed.
+
+### Fixed
+
+- **`core/queue.py:18`** `_DRIVERS = {}` typed as `dict[str, Callable]`. Preexisting mypy `var-annotated` failure in `main` (caught by the new Semgrep PR's typecheck run on its first push). One-line fix.
+
+### Tests
+
+1014 → 1040 passing. New tests added: 26 for the release script parser + mutator, 5 for `raise_for_status_logged` + per-driver integration, 2 for the new session-revocation decorators, 1 for the shell startup invariants. Existing 8 Semgrep rule tests validated via `semgrep --test`.
+
+### Infrastructure / convention
+
+- `.atl/` added to `.gitignore` (orchestrator skill registry — not project artifact).
+- `scripts/` added to `interrogate` exclude list (utility programs, not framework API).
+- New `pyproject.toml` `ruff` per-file-ignores entry for `scripts/release.py` (S603/S607 — same shape as `core/cli.py` and `docs/install.py`).
 
 ---
 
