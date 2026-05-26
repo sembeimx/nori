@@ -95,6 +95,11 @@ max-complexity = 10
 # wrapper). Each layer's complexity comes from supporting many injectable
 # parameter shapes (request, form, json, query, path); flattening duplicates.
 "rootsystem/application/core/http/inject.py" = ["C901"]
+# scripts/release.py orchestrates git, ruff, mypy, pytest, and semgrep via
+# subprocess. The arguments are constructed from a closed set of literals
+# plus the version arg (validated against ^\d+\.\d+\.\d+$ before any
+# subprocess fires). Same exemption shape as core/cli.py.
+"scripts/release.py" = ["S603", "S607"]
 
 [tool.ruff.format]
 quote-style = "single"
