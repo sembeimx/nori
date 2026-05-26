@@ -496,6 +496,75 @@ def test_shell_swallows_keyboard_interrupt_and_cleans_startup_file():
         cli.shell()  # no raise
 
 
+def test_shell_pythonstartup_configures_and_imports_models_before_init():
+    """The shell PYTHONSTARTUP script must satisfy three invariants:
+
+    1. configure(settings) is called before any framework state is touched —
+       otherwise user code that reads config at import time crashes with
+       RuntimeError: Nori config not initialised (same class as the
+       routes_list / migrate_fresh fixes documented in CLAUDE.md §7).
+    2. `import models` runs BEFORE `from core.registry import _models`,
+       so register_model() side effects in models/__init__.py have populated
+       the registry. Otherwise _models is always {} and the REPL exposes
+       no user-defined class.
+    3. asyncio.get_event_loop() is not used — deprecated since 3.10 and
+       raises RuntimeError on 3.14+ when PYTHONSTARTUP runs before
+       `python -m asyncio` binds a loop.
+
+    Audit 2026-05-25 #2.
+    """
+    from unittest.mock import MagicMock
+
+    captured = {}
+
+    def fake_run(_args, **kwargs):
+        # Read the startup script before the shell()'s finally clause unlinks it.
+        startup_path = kwargs.get('env', {}).get('PYTHONSTARTUP')
+        if startup_path:
+            with open(startup_path) as f:
+                captured['script'] = f.read()
+        return MagicMock(returncode=0)
+
+    with patch('core.cli.subprocess.run', side_effect=fake_run):
+        cli.shell()
+
+    # Strip comments so the order assertions reflect executable statements
+    # only — the script's own header comment legitimately mentions `import
+    # models` and `configure(settings)`, which would confuse str.index().
+    script = '\n'.join(
+        line for line in captured['script'].splitlines() if not line.lstrip().startswith('#')
+    )
+
+    # (1) configure(settings) is present.
+    assert 'configure(settings)' in script, 'shell must initialise Nori config'
+
+    # (2) import models must run BEFORE from core.registry import _models.
+    assert 'import models' in script, (
+        'shell must import the user models package to populate _models via register_model() side effects'
+    )
+    models_idx = script.index('import models')
+    registry_idx = script.index('from core.registry import _models')
+    assert models_idx < registry_idx, (
+        '`import models` must run BEFORE `from core.registry import _models` — '
+        'otherwise _models is always {} and the REPL exposes no model classes'
+    )
+
+    # (3) configure(settings) must run BEFORE `import models`, because user
+    # model modules typically import framework code that reads config at
+    # import time (templates.env, jinja globals, etc.).
+    configure_idx = script.index('configure(settings)')
+    assert configure_idx < models_idx, (
+        'configure(settings) must run BEFORE `import models` — user model modules '
+        'may transitively import framework code that reads config at import time'
+    )
+
+    # (4) No deprecated asyncio.get_event_loop().
+    assert 'asyncio.get_event_loop()' not in script, (
+        'asyncio.get_event_loop() is deprecated since 3.10 and raises in 3.14+; '
+        'use asyncio.new_event_loop() + asyncio.set_event_loop() instead'
+    )
+
+
 # ---------------------------------------------------------------------------
 # _get_current_version
 # ---------------------------------------------------------------------------
