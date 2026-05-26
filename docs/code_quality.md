@@ -126,7 +126,7 @@ python3 nori.py framework:check-config
 python3 nori.py framework:check-config --version 1.15.2
 ```
 
-The output is a categorized diff (added upstream / changed / local-only) with full paths like `tool.coverage.report.fail_under`. Read-only — you decide what to port. See the [CLI reference](cli.md#framework-check-config) for the full command shape.
+The output is a categorized diff (added upstream / changed / local-only) with full paths like `tool.coverage.report.fail_under`. Read-only — you decide what to port. See the [CLI reference](cli.md#frameworkcheck-config) for the full command shape.
 
 ### Adding stricter rules
 

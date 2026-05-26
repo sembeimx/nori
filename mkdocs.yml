@@ -97,9 +97,11 @@ extra_css:
   - stylesheets/custom.css
 
 extra:
-  version:
-    provider: mike
-    default: stable
+  # mike (the multi-version docs plugin) was declared here historically
+  # but never installed or invoked anywhere in the pipeline — the deploy
+  # workflow runs a single `mkdocs build` and ships the flat site/ tree.
+  # Removed to keep the config honest. Re-add only when we genuinely
+  # publish multiple versions side-by-side and install mike in CI.
   social:
     - icon: fontawesome/brands/github
       link: https://github.com/sembeimx/nori
