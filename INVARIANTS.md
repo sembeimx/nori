@@ -100,14 +100,14 @@ Listed in order of historical discovery (oldest first). IDs are stable.
 - **Detector maturity**:
   - L1: yes
   - L2: `rg -n 'cache_get|cache_set' <file>` + visual review for partner calls
-  - L3: `.semgrep/nori-rules.yml::nori-toctou-cache-read-modify-write` (WARNING, since 2026-05)
+  - L3: `.semgrep/nori-rules.yml::nori-toctou-cache-read-modify-write` (WARNING, since 2026-05). Scans full repo except `core/cache.py` (implementation) and tests.
 - **Coverage by area**:
   - `core/auth/*`: swept Round 4 + L3 active
   - `core/http/throttle*`: swept Round 4 + L3 active
   - `core/queue*`: swept Round 4 + L3 active
   - `core/cache.py`: excluded from L3 (implementation site)
   - `core/auth/session_guard.py`: excluded from L3 (read-through accelerator pattern)
-  - `services/*`: **NOT explicitly swept** against this INV
+  - `services/*`: swept 2026-05-26 — zero `cache_get`/`cache_set` usages; trivially covered. L3 active going forward.
   - User code (`app/*`, `modules/*`): out of framework scope
 - **Instances**:
   - v1.18.0: `login_guard.record_failed_login` — `cache_get` + `cache_set` on attempts dict
@@ -131,15 +131,22 @@ Listed in order of historical discovery (oldest first). IDs are stable.
 - **Detector maturity**:
   - L1: yes
   - L2: `rg -n 'async def' --files-with-matches services/ | xargs rg -n 'open\(|time\.sleep|.*\.encrypt|.*\.sign'`
-  - L3: `.semgrep/nori-rules.yml::nori-service-sync-open-in-async` (WARNING, since 2026-05). Only covers `open()` in `services/*`; other sync calls (crypto, hashing, image decoding) are still L1/L2.
+  - L3 (multiple rules, since 2026-05):
+    - `nori-service-sync-open-in-async` (WARNING): `open()` in `services/*` async def
+    - `nori-sync-time-sleep-in-async` (ERROR): `time.sleep()` in `core/* + services/*` async def (excludes tests)
+    - `nori-sync-requests-import-in-services` (ERROR): `import requests` / `from requests import X` in `services/*` (httpx is the contract)
+    - `nori-sync-subprocess-in-async` (ERROR): `subprocess.run/check_output/check_call/Popen` in async def in `core/* + services/*` (excludes `core/cli.py` which is a sync entry script)
+  - Still L1/L2: sync crypto/hashing (`hashlib.pbkdf2_hmac`, `bcrypt.hashpw`), image decoding, `urllib.request.urlopen`. Difficult to mechanize without false positives because these calls are legitimate in non-async contexts; rely on per-PR review.
 - **Coverage by area**:
   - `services/storage_gcs.py`: swept Round 4 (RSA + cred load via to_thread)
-  - `services/*` (open() detection only): L3 since 2026-05
+  - `services/*` (open, time.sleep, requests import, subprocess in async): L3 since 2026-05-26
+  - `core/*` (time.sleep, subprocess in async): L3 since 2026-05-26
+  - `core/cli.py`: excluded from subprocess rule (sync entry script — subprocess.run is correct primitive)
   - `core/http/upload.py`: swept Round 3 (`asyncio.to_thread` for disk write)
   - `core/auth/security.py`: swept v1.22.0 (PBKDF2 async)
   - `core/tasks.py`: swept v1.27.0 (background dispatcher offloads sync)
   - `core/queue_worker.py`: swept v1.30.0 (execute_payload offloads sync)
-  - Other crypto callsites (JWT signing, etc.): **NOT explicitly swept**
+  - Other crypto callsites (JWT signing, etc.): **NOT explicitly swept** at L3
 - **Instances**:
   - v1.17.0: `core/http/upload.py` write_bytes on loop
   - v1.18.0: `services/storage_gcs.py` `_load_credentials` + `_build_jwt`
@@ -784,8 +791,8 @@ These are the highest-leverage Semgrep/test mechanizations remaining. Sorted by 
 
 | Priority | INV | Current | Target | Why |
 |----------|-----|---------|--------|-----|
-| HIGH | INV-002 | L3 partial (open() in services/ only) | L3 full | Extend rule to other sync calls (crypto, time.sleep, file walks) across `core/` and `services/` |
-| HIGH | INV-001 | L3 partial (services/* not swept) | L3 full | Sweep `services/*` for `cache_get`+`cache_set` partner patterns |
+| ~~HIGH~~ | ~~INV-002~~ | ~~L3 partial~~ | ✅ L3 full (open + time.sleep + requests + subprocess) | **Done 2026-05-26 — iter 3.** Crypto/hashing still L1/L2 (low FP value). |
+| ~~HIGH~~ | ~~INV-001~~ | ~~L3 partial (services/* not swept)~~ | ✅ L3 full | **Done 2026-05-26 — iter 3.** `services/*` swept manually; zero usages. Rule already scans the path. |
 | MED | INV-007 | L3 partial (subscript only, jti/sub/iss/aud/nbf) | L3 full | Add `cache_get` `_store` backend bypass detection |
 | MED | INV-027 | L3 partial (Path() in cli.py only) | L3 full | Extend to `os.path.join` and broaden to `core/`, `services/` |
 | MED | INV-020 | L1/L2 | L3 | Detect `asyncio.create_task` without `add_done_callback` |
@@ -806,3 +813,4 @@ When you complete an audit pass, append here:
 | Date | Scope | New INVs | Regressions of existing INVs | Notes |
 |------|-------|----------|------------------------------|-------|
 | 2026-05-25 | full sweep (code + docs + tests) | none (all 4 Criticals matched existing INVs: INV-004 docs side, INV-026 shell, INV-016 require_role/any_role test gap, INV-007 OAuth subscript propagation) | INV-015 (4 doc mismatches), INV-027 (cli.py:20 `_APP_DIR`) | Shipped Semgrep CI (PR #28) — 5 custom rules across INV-001, INV-002, INV-007, INV-021, INV-027 |
+| 2026-05-26 | iter 3 graduation: INV-002 + INV-001 to L3 full | none | none | Added 3 new Semgrep rules: `nori-sync-time-sleep-in-async`, `nori-sync-requests-import-in-services`, `nori-sync-subprocess-in-async`. `services/*` swept manually for INV-001 partner calls — zero usages. Full repo scan: 8 rules × 71 files = 0 findings. Convergence metric: 0 new classes, 0 regressions — pure mechanization work. |

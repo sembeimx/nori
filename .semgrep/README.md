@@ -105,10 +105,23 @@ synthetic patterns as real findings.
   in services/ (ERROR) and synchronous open() inside async def in services/
   (WARNING). Test suite at `.semgrep/tests/nori-rules.py` with `# ruleid` /
   `# ok` annotations, validated via `semgrep --test`.
-- **Iteration 3**: integrate into pre-commit (custom rules only — public
-  rulesets are too slow for a local hook).
-- **Iteration 4**: add CodeQL as a second layer for real data-flow analysis
+- **Iteration 3 (shipped 2026-05-26)**: graduate INV-002 (sync I/O in async)
+  to L3 full. Added 3 rules: `nori-sync-time-sleep-in-async` (ERROR, core/ +
+  services/), `nori-sync-requests-import-in-services` (ERROR, services/),
+  `nori-sync-subprocess-in-async` (ERROR, core/ + services/ except cli.py
+  which is a sync entry script). INV-001 (TOCTOU) `services/*` swept
+  manually — zero usages, trivially covered. Total: 8 custom rules.
+- **Iteration 4 (next)**: integrate Semgrep custom rules into pre-commit
+  hook (custom rules only — public rulesets are too slow for local).
+- **Iteration 5**: add CodeQL as a second layer for real data-flow analysis
   (free on GitHub Actions for OSS).
-- **Iteration 5**: queue allow-list bypass detection. Hard to express statically
-  because the func_path argument to push() is often dynamic; would need a taint
-  rule or a manual review checklist instead.
+- **Iteration 6**: queue allow-list bypass detection. Hard to express
+  statically because `push()`'s func_path is often dynamic; would need a
+  taint rule or a manual review checklist instead.
+
+Next graduation candidates (see INVARIANTS.md roadmap table):
+
+- INV-007 to L3 full — add `cache_get` `_store` backend bypass detection
+- INV-027 to L3 full — extend CWD-path rule to `os.path.join` + broaden scope
+- INV-020 to L3 — detect `asyncio.create_task` without `add_done_callback`
+- INV-013 to L3 (rule) — generalize zip-slip detector

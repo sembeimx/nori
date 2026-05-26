@@ -191,7 +191,7 @@ rules:
           (see storage_gcs.py:_load_credentials for the canonical pattern)
       Once the helper is wrapped, silence this finding with:
         # nosem: nori-service-sync-open-in-async  -- nested in sync helper invoked via to_thread
-      See CLAUDE.md §6 — Async I/O hygiene.
+      See INVARIANTS.md INV-002.
     severity: WARNING
     languages: [python]
     paths:
@@ -202,5 +202,90 @@ rules:
           async def $F(...):
               ...
       - pattern: open(...)
+    metadata:
+      category: performance
+
+  # ---------------------------------------------------------------------------
+  # Iteration 3 — extend INV-002 sync-I/O detection beyond open()
+  # ---------------------------------------------------------------------------
+  # Three more sync calls that classically freeze the event loop when invoked
+  # inside an async def. Scoped to services/ + core/ but with explicit excludes
+  # for sites where the sync invocation is legitimate (cli.py is a sync entry
+  # script, not an async handler).
+  - id: nori-sync-time-sleep-in-async
+    message: |
+      time.sleep() inside an async def freezes the event loop — every other
+      coroutine pauses with it. Use `await asyncio.sleep(seconds)` for delays,
+      or wrap genuine blocking work in `asyncio.to_thread(...)` if you really
+      need sync semantics.
+      See INVARIANTS.md INV-002.
+    severity: ERROR
+    languages: [python]
+    paths:
+      include:
+        - "**/rootsystem/application/services/"
+        - "**/rootsystem/application/core/"
+      exclude:
+        - "**/tests/**"
+    patterns:
+      - pattern-inside: |
+          async def $F(...):
+              ...
+      - pattern: time.sleep(...)
+    metadata:
+      category: performance
+      references:
+        - https://docs.python.org/3/library/asyncio-task.html#sleeping
+
+  - id: nori-sync-requests-import-in-services
+    message: |
+      `import requests` (or `from requests import ...`) in a service driver.
+      Nori service drivers MUST use httpx with a module-level AsyncClient
+      (INV-021). The `requests` library is sync-only — every call blocks the
+      event loop for the duration of the HTTP round-trip. Existing drivers
+      (mail_resend, storage_*, oauth_*, search_meilisearch) all use httpx;
+      see services/oauth_github.py for the canonical pattern.
+      See INVARIANTS.md INV-002 + INV-021.
+    severity: ERROR
+    languages: [python]
+    paths:
+      include:
+        - "**/rootsystem/application/services/"
+    patterns:
+      - pattern-either:
+          - pattern: import requests
+          - pattern: from requests import $X
+    metadata:
+      category: performance
+
+  - id: nori-sync-subprocess-in-async
+    message: |
+      subprocess.run/check_output/check_call inside an async def blocks the
+      event loop until the child process exits. For sync entry scripts
+      (cli.py) this is fine and the rule excludes them. For async handlers,
+      use `asyncio.create_subprocess_exec(...)` / `create_subprocess_shell(...)`
+      or wrap the sync call in `asyncio.to_thread(subprocess.run, ...)`.
+      See INVARIANTS.md INV-002.
+    severity: ERROR
+    languages: [python]
+    paths:
+      include:
+        - "**/rootsystem/application/services/"
+        - "**/rootsystem/application/core/"
+      exclude:
+        # cli.py is a sync CLI entry point — subprocess.run is the correct
+        # primitive for wrapping aerich/uvicorn/python -c scripts. The async
+        # invariant does not apply.
+        - "**/rootsystem/application/core/cli.py"
+        - "**/tests/**"
+    patterns:
+      - pattern-inside: |
+          async def $F(...):
+              ...
+      - pattern-either:
+          - pattern: subprocess.run(...)
+          - pattern: subprocess.check_output(...)
+          - pattern: subprocess.check_call(...)
+          - pattern: subprocess.Popen(...)
     metadata:
       category: performance

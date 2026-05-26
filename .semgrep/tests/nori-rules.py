@@ -149,3 +149,69 @@ async def safe_open_via_to_thread():
             return f.read()
 
     return await asyncio.to_thread(_load)
+
+
+# ===========================================================================
+# nori-sync-time-sleep-in-async
+# ===========================================================================
+
+import time
+
+
+async def bad_time_sleep():
+    # ruleid: nori-sync-time-sleep-in-async
+    time.sleep(1)
+
+
+async def safe_asyncio_sleep():
+    # ok: nori-sync-time-sleep-in-async
+    await asyncio.sleep(1)
+
+
+def sync_sleep_outside_async():
+    # ok: nori-sync-time-sleep-in-async
+    time.sleep(1)
+
+
+# ===========================================================================
+# nori-sync-requests-import-in-services
+# ===========================================================================
+
+# ruleid: nori-sync-requests-import-in-services
+import requests  # noqa: F401, E402  -- intentional positive case for Semgrep test
+
+
+def use_requests_at_module_scope():
+    # The import above already fires the rule; this just consumes the symbol.
+    return requests.get('https://example.com')
+
+
+# ok: nori-sync-requests-import-in-services
+import httpx  # noqa: F401, E402  -- httpx is the correct choice
+
+
+# ===========================================================================
+# nori-sync-subprocess-in-async
+# ===========================================================================
+
+import subprocess  # noqa: E402
+
+
+async def bad_subprocess_run_in_async():
+    # ruleid: nori-sync-subprocess-in-async
+    subprocess.run(['ls', '-la'], check=True)
+
+
+async def bad_subprocess_check_output_in_async():
+    # ruleid: nori-sync-subprocess-in-async
+    return subprocess.check_output(['echo', 'hi'])
+
+
+def sync_subprocess_outside_async():
+    # ok: nori-sync-subprocess-in-async
+    subprocess.run(['ls', '-la'], check=True)
+
+
+async def safe_subprocess_via_to_thread():
+    # ok: nori-sync-subprocess-in-async
+    return await asyncio.to_thread(subprocess.run, ['ls', '-la'], check=True)
