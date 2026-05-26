@@ -455,8 +455,9 @@ Listed in order of historical discovery (oldest first). IDs are stable.
 - **Coverage by area**: covered by per-PR discipline + per-release sweep
 - **Instances**:
   - v1.15.4: CORS at `insert(1, ...)` while docs documented `insert(2, ...)`
-  - 2026-05 audit: 4 mismatches (CSRF JSON exemption, body cap 10MB vs 1MiB, SECRET_KEY validation claim, exempt_paths type)
-- **Regression tests**: `test_middleware_order_with_cors_keeps_security_headers_outside_cors` pins the specific v1.15.4 invariant; no general lint
+  - 2026-05-25 audit: 4 mismatches (CSRF JSON exemption, body cap 10MB vs 1MiB, SECRET_KEY validation claim, exempt_paths type)
+  - 2026-05-26 git/release flow review: 4 more — `mkdocs.yml` declared `provider: mike` with mike never installed anywhere; `docs/deployment.md` "Documentation site" section described a VPS+rsync+Apache+Certbot pipeline while the actual deploy is Firebase Hosting + GitHub Actions; `docs/code_quality.md:129` linked to `cli.md#framework-check-config` while the real slug is `#frameworkcheck-config`; `docs/dependencies.md:111` linked to `observability.md#upgrading-an-existing-site` which never existed.
+- **Regression tests**: `test_middleware_order_with_cors_keeps_security_headers_outside_cors` pins the specific v1.15.4 invariant. `mkdocs build --strict` in CI (since 2026-05-26) catches the WARNING-level subset (unknown nav entries, theme overrides). Dead anchors remain at INFO level — caught only by manual sweep until a separate link-checker is added.
 - **Related**: every other INV (the docs side of every INV should match the code)
 
 ---
@@ -814,3 +815,4 @@ When you complete an audit pass, append here:
 |------|-------|----------|------------------------------|-------|
 | 2026-05-25 | full sweep (code + docs + tests) | none (all 4 Criticals matched existing INVs: INV-004 docs side, INV-026 shell, INV-016 require_role/any_role test gap, INV-007 OAuth subscript propagation) | INV-015 (4 doc mismatches), INV-027 (cli.py:20 `_APP_DIR`) | Shipped Semgrep CI (PR #28) — 5 custom rules across INV-001, INV-002, INV-007, INV-021, INV-027 |
 | 2026-05-26 | iter 3 graduation: INV-002 + INV-001 to L3 full | none | none | Added 3 new Semgrep rules: `nori-sync-time-sleep-in-async`, `nori-sync-requests-import-in-services`, `nori-sync-subprocess-in-async`. `services/*` swept manually for INV-001 partner calls — zero usages. Full repo scan: 8 rules × 71 files = 0 findings. Convergence metric: 0 new classes, 0 regressions — pure mechanization work. |
+| 2026-05-26 | git/release/docs flow review | none | INV-015 (4 new instances: mike fiction in `mkdocs.yml`, VPS+rsync fiction in `docs/deployment.md`, 2 dead anchors in code_quality.md + dependencies.md) | Cleanup PR: pinned `mkdocs-material>=9.7.6` in deploy workflow, added `--strict` to `mkdocs build`, removed unused `extra.version: mike` stanza, rewrote `docs/deployment.md` Documentation site section to describe the actual Firebase + GH Actions pipeline, fixed both dead anchors, added `[Unreleased]` section to CHANGELOG. Convergence metric: 0 new classes, 4 INV-015 regressions caught manually — confirms that L3 for INV-015 remains infeasible (would have needed a docs-vs-real-infra check that no static tool can do). |
