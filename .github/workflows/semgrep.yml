@@ -1,0 +1,46 @@
+name: Semgrep
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Semgrep complements ruff (which already covers flake8-bandit via `S` codes) with:
+#   - Cross-line pattern analysis (TOCTOU read-modify-write, unguarded payload[],
+#     etc.) that ruff cannot express.
+#   - Curated public rulesets (Python general + security baseline + OWASP).
+#   - Nori-custom rules for bug classes ALREADY discovered in previous audits —
+#     see .semgrep/nori-rules.yml and .semgrep/README.md.
+#
+# Severity policy: --severity ERROR. WARNs are reported in stdout for visibility
+# but do not break the build. Custom rules graduate to ERROR after stabilising
+# without false positives.
+
+jobs:
+  semgrep:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.10'
+          cache: pip
+
+      - run: pip install semgrep
+
+      - name: Semgrep — public rulesets + Nori custom rules
+        run: |
+          semgrep scan \
+            --config p/python \
+            --config p/security-audit \
+            --config p/owasp-top-ten \
+            --config .semgrep/ \
+            --severity ERROR \
+            --error \
+            --strict \
+            --metrics=off \
+            --disable-version-check
