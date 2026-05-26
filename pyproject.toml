@@ -160,6 +160,10 @@ exclude = [
     ".venv",
     "venv",
     "tests",
+    # scripts/ holds maintainer utility programs (release cutter, etc.).
+    # The user-facing contract is the script's argparse + module docstring;
+    # internal helpers are intentionally terse. They are not framework API.
+    "scripts",
 ]
 ignore-init-module = true       # __init__.py files are typically re-export shims
 ignore-init-method = true       # constructors are described by their class
