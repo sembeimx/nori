@@ -13,6 +13,10 @@ extend-exclude = [
     ".venv",
     "venv",
     "__pycache__",
+    # Synthetic positive/negative trigger files for Semgrep custom rules.
+    # The cache_get / cache_set names are intentionally undefined (the
+    # patterns are what Semgrep matches on, not runnable code).
+    ".semgrep",
 ]
 
 [tool.ruff.lint]
@@ -91,6 +95,11 @@ max-complexity = 10
 # wrapper). Each layer's complexity comes from supporting many injectable
 # parameter shapes (request, form, json, query, path); flattening duplicates.
 "rootsystem/application/core/http/inject.py" = ["C901"]
+# scripts/release.py orchestrates git, ruff, mypy, pytest, and semgrep via
+# subprocess. The arguments are constructed from a closed set of literals
+# plus the version arg (validated against ^\d+\.\d+\.\d+$ before any
+# subprocess fires). Same exemption shape as core/cli.py.
+"scripts/release.py" = ["S603", "S607"]
 
 [tool.ruff.format]
 quote-style = "single"
@@ -151,6 +160,10 @@ exclude = [
     ".venv",
     "venv",
     "tests",
+    # scripts/ holds maintainer utility programs (release cutter, etc.).
+    # The user-facing contract is the script's argparse + module docstring;
+    # internal helpers are intentionally terse. They are not framework API.
+    "scripts",
 ]
 ignore-init-module = true       # __init__.py files are typically re-export shims
 ignore-init-method = true       # constructors are described by their class

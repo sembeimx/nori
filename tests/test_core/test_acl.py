@@ -752,6 +752,86 @@ async def test_require_permission_denies_when_session_revoked(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_require_role_denies_when_session_version_revoked(monkeypatch):
+    """End-to-end: ``require_role`` calls ``check_session_version`` before
+    the role comparison. Without this test, breaking the decorator's gate
+    call would leave a revoked editor with full edit access until cookie
+    expiry — caught by no other test in the suite (audit 2026-05-25 #3)."""
+    from types import SimpleNamespace
+
+    import core.auth.session_guard as sg
+    from core.auth.decorators import require_role
+    from core.conf import config
+
+    monkeypatch.setattr(
+        config,
+        '_settings',
+        SimpleNamespace(SESSION_VERSION_CHECK=True),
+    )
+    sg._reset_circuit()
+
+    async def fake_cache_get(key):
+        return 99  # admin bumped the version
+
+    monkeypatch.setattr(sg, 'cache_get', fake_cache_get)
+    monkeypatch.setattr(sg, 'audit', lambda *a, **kw: None)
+
+    class RoleController:
+        @require_role('editor')
+        async def edit(self, request):
+            return JSONResponse({'ok': True})
+
+    req = FakeRequest(user_id=1, role='editor')
+    req.session['session_version'] = 5  # stale
+
+    resp = await RoleController().edit(req)
+    assert resp.status_code == 401, (
+        'require_role must deny when session_version is stale — even if the '
+        'role itself still matches, the session is revoked'
+    )
+
+
+@pytest.mark.asyncio
+async def test_require_any_role_denies_when_session_version_revoked(monkeypatch):
+    """End-to-end: ``require_any_role`` calls ``check_session_version`` before
+    the role-membership comparison. Without this test, breaking the gate
+    call would leave a revoked moderator with admin-or-moderator access
+    until cookie expiry (audit 2026-05-25 #3)."""
+    from types import SimpleNamespace
+
+    import core.auth.session_guard as sg
+    from core.auth.decorators import require_any_role
+    from core.conf import config
+
+    monkeypatch.setattr(
+        config,
+        '_settings',
+        SimpleNamespace(SESSION_VERSION_CHECK=True),
+    )
+    sg._reset_circuit()
+
+    async def fake_cache_get(key):
+        return 99  # admin bumped the version
+
+    monkeypatch.setattr(sg, 'cache_get', fake_cache_get)
+    monkeypatch.setattr(sg, 'audit', lambda *a, **kw: None)
+
+    class MultiRoleController:
+        @require_any_role('admin', 'moderator')
+        async def moderate(self, request):
+            return JSONResponse({'ok': True})
+
+    req = FakeRequest(user_id=1, role='moderator')
+    req.session['session_version'] = 5  # stale
+
+    resp = await MultiRoleController().moderate(req)
+    assert resp.status_code == 401, (
+        'require_any_role must deny when session_version is stale — even if '
+        'the role still matches one of the listed roles, the session is revoked'
+    )
+
+
+@pytest.mark.asyncio
 async def test_load_permissions_gate_query_error_falls_through(monkeypatch, caplog):
     """If ``User.get_or_none`` itself raises (transient DB error,
     custom Manager that doesn't expose the method), the gate must

@@ -108,7 +108,7 @@ pip resolves to `==0.37.2`. No conflict with the framework file.
 
 If your site was created on Nori ≤ 1.6, the upgrade to 1.7 takes care of the wiring:
 
-1. `python3 nori.py framework:update` — brings in `requirements.nori.txt` and replaces the framework directories. On sites coming from ≤ 1.6, the `-r` injection into your `requirements.txt` happens on the next run (see [observability.md](observability.md#upgrading-an-existing-site) for the reason). Run `framework:update --force` once to apply.
+1. `python3 nori.py framework:update` — brings in `requirements.nori.txt` and replaces the framework directories. On sites coming from ≤ 1.6, the `-r` injection into your `requirements.txt` happens on the next run. Run `framework:update --force` once to apply.
 2. From 1.7 onwards, patches apply automatically on the same update that ships them — the patch system reloads itself from the newly installed core before running.
 3. After patching, run `pip install -r requirements.txt` to refresh your environment.
 

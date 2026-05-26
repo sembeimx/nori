@@ -1,0 +1,12 @@
+# Synthetic positive/negative trigger cases for Nori custom rules.
+# Scanned only via `semgrep --test --config .semgrep/` (which honours the
+# inline `# ruleid:` / `# ok:` annotations); excluded from the main scan
+# so the rules do not flag the synthetic patterns as real findings.
+.semgrep/tests/
+
+# Virtual envs created by contributors locally — never scan.
+.venv/
+venv/
+
+# Tortoise migrations are aerich-generated SQL; not framework logic to audit.
+rootsystem/application/migrations/

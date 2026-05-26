@@ -15,7 +15,7 @@ from core.logger import get_logger
 from core.registry import get_model
 
 _log = get_logger('queue')
-_DRIVERS = {}
+_DRIVERS: dict[str, Callable] = {}
 
 # Strong references to in-flight memory-driver tasks. ``asyncio.create_task``
 # returns a Task that the event loop holds only by weak reference, so an

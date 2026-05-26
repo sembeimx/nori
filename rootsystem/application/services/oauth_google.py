@@ -40,7 +40,13 @@ from __future__ import annotations
 from urllib.parse import urlencode
 
 import httpx
-from core.auth.oauth import generate_pkce_verifier, generate_state, get_pkce_verifier, validate_state
+from core.auth.oauth import (
+    generate_pkce_verifier,
+    generate_state,
+    get_pkce_verifier,
+    raise_for_status_logged,
+    validate_state,
+)
 from core.conf import config
 
 _AUTHORIZE_URL = 'https://accounts.google.com/o/oauth2/v2/auth'
@@ -151,7 +157,7 @@ async def handle_callback(
             'code_verifier': code_verifier,
         },
     )
-    token_resp.raise_for_status()
+    raise_for_status_logged(token_resp, 'google', 'token exchange')
     tokens = token_resp.json()
 
     return await get_user_profile(tokens['access_token'])
@@ -183,7 +189,7 @@ async def get_user_profile(access_token: str) -> dict:
         _USERINFO_URL,
         headers={'Authorization': f'Bearer {access_token}'},
     )
-    resp.raise_for_status()
+    raise_for_status_logged(resp, 'google', 'user info')
     data = resp.json()
 
     email_verified = bool(data.get('email_verified', False))

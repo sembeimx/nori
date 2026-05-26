@@ -23,7 +23,9 @@ Every form that makes a `POST` request must include a CSRF token. Since `csrf_fi
 
 If the CSRF token is missing or invalid on a state-changing request (POST, PUT, DELETE, PATCH), the middleware returns `403 Forbidden`.
 
-> **JSON APIs are exempt**: Requests with `Content-Type: application/json` skip CSRF validation entirely. Browsers enforce CORS for cross-origin JSON requests, so the CSRF vector does not apply. API authentication should use JWT tokens instead (see [Authentication](authentication.md)).
+> **JSON requests**: Requests with `Content-Type: application/json` are **not exempt** — they must send the CSRF token in the `X-CSRF-Token` header. The middleware does not parse JSON bodies, so the `_csrf_token` form field path does not apply; the header is the only accepted channel. Sending JSON without the header returns `403 Forbidden`.
+>
+> **JWT-protected API endpoints** (using `@token_required` — see [Authentication](authentication.md)) are unaffected by CSRF, because the `Authorization: Bearer …` header is itself unforgeable from a cross-origin browser context.
 
 ## Pipe-Separated Declarative Validation (`validate`)
 

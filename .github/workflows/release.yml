@@ -1,0 +1,80 @@
+name: Release
+
+# Fires when scripts/release.py pushes a v* tag (or when a maintainer
+# pushes one by hand). The job:
+#   1. checks the tag matches rootsystem/application/core/version.py
+#   2. extracts the matching CHANGELOG section as the release body
+#   3. creates the GitHub Release
+#
+# sbom.yml then fires on release: published and attaches the SBOM, so
+# every published release carries its own dependency manifest without
+# any extra manual step.
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+# We need `contents: write` to create the release; nothing else.
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          # Full history so the tag commit is available for the version
+          # consistency check and so the CHANGELOG read sees the same
+          # file content the maintainer just pushed.
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Verify tag matches version.py
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF#refs/tags/}"
+          TAG_VERSION="${TAG#v}"
+          FILE_VERSION=$(python3 -c "
+          import re, pathlib
+          src = pathlib.Path('rootsystem/application/core/version.py').read_text()
+          m = re.search(r'''__version__\s*=\s*['\"]([^'\"]+)['\"]''', src)
+          print(m.group(1) if m else '')
+          ")
+          if [ -z "$FILE_VERSION" ]; then
+            echo "::error::could not parse __version__ from rootsystem/application/core/version.py"
+            exit 1
+          fi
+          if [ "$TAG_VERSION" != "$FILE_VERSION" ]; then
+            echo "::error::Tag $TAG (version $TAG_VERSION) does not match version.py ($FILE_VERSION)"
+            echo "::error::Use scripts/release.py to cut releases — it keeps the two in sync."
+            exit 1
+          fi
+          echo "version.py and tag agree on $TAG_VERSION"
+
+      - name: Extract CHANGELOG section for release body
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF#refs/tags/}"
+          VERSION="${TAG#v}"
+          python3 scripts/release.py --extract-changelog "$VERSION" > release_notes.md
+          if [ ! -s release_notes.md ]; then
+            echo "::error::extracted CHANGELOG body is empty for $VERSION"
+            exit 1
+          fi
+          echo "extracted $(wc -l < release_notes.md) lines of release notes"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF#refs/tags/}"
+          gh release create "$TAG" \
+            --title "$TAG" \
+            --notes-file release_notes.md \
+            --verify-tag

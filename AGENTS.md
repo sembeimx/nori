@@ -77,79 +77,49 @@ class User(NoriModelMixin, Model):
 ---
 
 ## 6. Security Mandates
+
+These are quick reference reminders. The full catalog of bug classes (with CWE links, fix recipes, detector maturity, and coverage by area) lives in [INVARIANTS.md](./INVARIANTS.md) — read that file before shipping any security-relevant change.
+
 - **POST only**: All state-changing actions (Logout, Delete, Update) MUST be `POST`.
 - **Audit Logging**: Use `audit(request, action, model_name, record_id)` for sensitive operations.
-- **Serialization**: Always use `.to_dict()` to leverage `protected_fields` safety.
-- **Cache atomicity**: Any read-modify-write against the cache backend (counters, rate-limit windows, login guards, lockouts, dedup keys) MUST use `cache_incr` or `cache_atomic_update`. Plain `cache_get + cache_set` for an update is a TOCTOU bug — under concurrency, parallel callers all see the same baseline and clobber each other. The v1.18.0 audit found three of these, every one bypassing a security control.
-- **Async I/O hygiene**: Service drivers (`services/*`) MUST offload synchronous disk I/O and heavy CPU (cryptographic signing, hashing, image decoding) via `asyncio.to_thread`. Running those operations directly on the async loop freezes every other request behind them — a single slow upload or RSA token refresh stalls the whole worker.
-- **Connection reuse**: Service drivers that use `httpx` MUST hold one persistent `httpx.AsyncClient` at module level, not per-call. Each `httpx.AsyncClient()` constructor opens a new TCP/TLS connection — repeating that on every request stacks latency and exhausts socket capacity under load.
-- **Optional spec fields**: JWT/OAuth claim access MUST treat optional fields as `None` by default (`payload.get('jti')`, not `payload['jti']`). Third-party tokens won't always include them, and a `KeyError` in a logout or callback handler is a denial-of-service path.
+- **Serialization**: Always use `.to_dict()` to leverage `protected_fields` safety. See [INV-008](./INVARIANTS.md#inv-008-serializers-must-respect-protected_fields).
+- **Cache atomicity**: Use `cache_incr` or `cache_atomic_update` — never `cache_get + cache_set` for read-modify-write. See [INV-001](./INVARIANTS.md#inv-001-cache-read-modify-write-must-be-atomic-toctou).
+- **Async I/O hygiene**: Wrap sync disk I/O and heavy CPU in `asyncio.to_thread`. See [INV-002](./INVARIANTS.md#inv-002-sync-work-must-not-block-the-asyncio-event-loop).
+- **Connection reuse**: One module-level `httpx.AsyncClient` per service driver. See [INV-021](./INVARIANTS.md#inv-021-httpx-clients-must-be-reused-per-service-driver).
+- **Optional spec fields**: `payload.get('jti')`, never `payload['jti']`. See [INV-007](./INVARIANTS.md#inv-007-jwtoauth-optional-claims-must-be-accessed-defensively).
+- **Queue payloads**: `func_path` must pass `QUEUE_ALLOWED_MODULES` allow-list. See [INV-003](./INVARIANTS.md#inv-003-queue-worker-func_path-must-pass-allow-list-check-rce-defense).
+- **Session revocation**: All session-aware decorators (`login_required`, `require_role`, `require_any_role`, `require_permission`) check `session_version` against the live counter. See [INV-016](./INVARIANTS.md#inv-016-session-revocation-must-work-end-to-end-active-user-gate--version-counter).
 
 ---
 
 ## 7. Operational Pitfalls (for framework changes)
 
-These are Nori-specific traps discovered the hard way. Read before changing the listed areas.
+Code-side bug classes (TOCTOU, sync I/O, CWD-relative paths, docs↔code coherence, etc.) are in [INVARIANTS.md](./INVARIANTS.md). This section covers infra and deploy traps that do not fit the catalog shape.
 
 ### Hosting and docs deploys
 - `nori.sembei.mx` runs on **Firebase Hosting**, not a VPS. Deploy is automatic via `.github/workflows/deploy-docs.yml` on every push to `main` that touches `docs/**` or `mkdocs.yml`. No manual `firebase deploy` is needed.
 - The version badge in the docs sidebar is **client-side JavaScript** — the GitHub repo widget queries the API at page load. When it looks stale after a release, the fix is browser cache (hard reload, or unregister the service worker). Re-running the deploy workflow will NOT update it.
 - Verify the actual host with `dig +short nori.sembei.mx` before assuming. Memory of past deploys can be stale.
+- MkDocs publishes any `.md` file inside `docs/` even if not listed in `nav:` — direct URL works. Internal-only docs (such as [INVARIANTS.md](./INVARIANTS.md)) MUST live outside `docs/` to stay private.
 
 ### Releases and the installer
 - `gh release create` → `releases/latest` API has a ~30-second indexing lag. The installer (`docs/install.py`) hits `releases/latest` by default, so the first install within ~1 minute of a release may pull the previous version. For testing right after release, pass `--version VX.Y.Z` to skip the latest endpoint.
 - Always verify a release end-to-end with the installer (real `curl ... | python3 -`) before considering it shipped.
+- Installer integrity contract: see [INV-025](./INVARIANTS.md#inv-025-installer-must-verify-checksum-of-downloaded-archive).
 
 ### CLI subprocess scripts (`core/cli.py`)
-- When a CLI command spawns a Python subprocess that imports user code (`routes`, `modules`, `models`), the script MUST start with:
-  ```python
-  import sys
-  sys.path.insert(0, '.')
-  import settings
-  from core.conf import configure
-  configure(settings)
-  ```
-  before importing anything that may touch `config.X`, `templates.env`, or any lazy framework state. Otherwise the command crashes with `RuntimeError: Nori config not initialised` on projects whose user code touches config at module-import time. See `migrate_init`, `migrate_upgrade`, `routes_list` for the established pattern.
+- See [INV-026](./INVARIANTS.md#inv-026-cli-subprocess-scripts-must-call-configuresettings-before-importing-user-code) for the `configure(settings)` bootstrap requirement.
+- See [INV-027](./INVARIANTS.md#inv-027-file-and-module-path-resolution-must-be-cwd-independent) for CWD-independent path resolution.
 - For aerich subprocesses, use `env=_quiet_env()` to suppress the `Module "X" has no models` RuntimeWarning. The same warning is filtered in-process via `core/__init__.py`.
 
-### Path resolution must be CWD-independent
-- `nori.py` adds `rootsystem/application` to `sys.path` but does NOT `chdir` into it. Code that resolves files/modules must NOT use `pathlib.Path('something')` (CWD-relative). Anchor to the module file:
-  ```python
-  pathlib.Path(__file__).resolve().parent.parent / 'something'
-  ```
-- When a function changes its path resolution or discovery contract, grep ALL test files for fixtures using `monkeypatch.chdir` or `monkeypatch.setattr` against the affected module BEFORE shipping. CI catches this but a 30-second grep avoids the red CI + follow-up commit.
+### Repo-state lints
+- See [INV-028](./INVARIANTS.md#inv-028-repo-state-itself-can-be-a-bug-ship-time-invariants).
 
-### Repo-state lints catch ship-time bugs that unit tests miss
-- Some bugs are not in code but in committed files (the v1.8.0 → v1.10.2 incident: leftover `.gitkeep` files that silently broke `migrate:init` for two releases). Unit tests of the affected function passed because the test environment didn't have the bad files. The right test layer is a static repo-state assertion. See `test_repo_does_not_ship_migrations_dir` for the pattern.
-- When fixing "the repo shouldn't ship X" bugs, add a regression test that asserts the file/dir doesn't exist in the source tree.
+### Configurable settings defaults
+- See [INV-029](./INVARIANTS.md#inv-029-new-settings-must-default-via-configgetkey-default).
 
-### Configurable URLs / settings have defaults via `config.get(key, default)`
-- New user-overridable settings (like `LOGIN_URL`, `FORBIDDEN_URL`, `PERMISSIONS_TTL`) use `config.get('SETTING', default_value)` rather than `config.SETTING`. This keeps existing projects working when they haven't set the new key, while letting projects override via `settings.py`. Always provide a default that matches the previous hardcoded behavior — backward compatibility is non-negotiable.
-
-### Concurrency hazards: TOCTOU in cache-backed counters
-
-- **The bug class**: a function does `await cache_get(key)` → modify in Python → `await cache_set(key, new_value)`. Under concurrency this fails — two callers both read the same baseline, both compute the same `+1`, both write the same `+1`. The counter never advances. Any security gate built on top (lockouts, rate limits, dedup checks) is silently disabled. Audit Round 4 surfaced this in three independent places: `core/auth/login_guard.py`, `core/http/throttle_backends.py`, and `core/queue_worker.py` (Redis delayed-job promotion, fixed earlier).
-- **The fix**: `cache_incr` for scalar counters; `cache_atomic_update(key, fn, ttl)` for any other read-modify-write. Both live in `core/cache.py` and are documented in `docs/caching.md`. Memory backend serializes via the global lock; Redis uses Lua (`incr`) or WATCH/MULTI/EXEC retry (`atomic_update`).
-- **The check**: before shipping code that touches `cache_get` or `cache_set`, look for the partner call in the same logical operation. `rg -n 'cache_get|cache_set' <file>` plus visual review — if both appear and one informs the other, the right answer is `cache_atomic_update`, not "wrap them in a lock".
-- **NOT for distributed locks**: these primitives replace read-modify-write loops, not advisory locks across services. If you need cross-service mutual exclusion ("only one worker runs the daily report"), that's a different problem.
-
-### Docs↔code coherence: the class of bug ruff/mypy cannot catch
-
-- **The bug class**: a comment, docstring, or docs page describes behavior X (order, lifecycle, ownership, ordering of effects), the code does Y, and both compile cleanly. ruff, mypy, and high coverage all pass — only manual review surfaces it. The v1.15.4 incident is the canonical example: `asgi.py` had `middleware.insert(1, CORSMiddleware)` while the file's own comment AND `docs/architecture.md` AND `docs/middleware.md` all documented the order that would require `insert(2, ...)`. CORS preflight responses silently shipped without security headers in every project that enabled CORS.
-- **High-leverage targets** — touching any of these requires reviewing docs and code together in the same change:
-  - `rootsystem/application/asgi.py` (middleware order, lifespan)
-  - `rootsystem/application/settings.py` (defaults that affect lifecycle/ownership)
-  - `rootsystem/application/core/cli.py` (CLI commands and flags described in `docs/cli.md`)
-  - `rootsystem/application/core/auth/csrf.py`, `core/http/validation.py` (rule precedence described in docs)
-  - `rootsystem/application/core/queue_worker.py`, `core/queue.py` (queue payload allow-list contract + Redis atomic promotion described in `docs/background_tasks.md` and `docs/security.md`)
-  - `_FRAMEWORK_DIRS` / `_FRAMEWORK_FILES` (file ownership described in `docs/architecture.md`)
-- **The checklist** before shipping a change to any file above:
-  1. Grep `docs/**/*.md` for code snippets that mirror the file you changed (`rg 'middleware.insert\(' docs/`, `rg '\<path-affected\>' docs/`).
-  2. Read the surrounding prose, not just the snippet — the snippet may be right but the description above it stale, or vice versa.
-  3. If a comment in the file describes order/lifecycle, verify the code below the comment still does that.
-  4. When in doubt, run an exploration agent with the explicit prompt "find docs-vs-code mismatches related to <area>". Cheap, fast, finds the same bug a custom CI check would — without the maintenance cost.
-- **Do NOT add a custom regex CI check after the first incident.** One data point doesn't justify a per-pattern linter that will go stale, fire false positives, and eventually be muted. Wait for repetition before automating; the manual review + agent-assisted audit handles single occurrences cheaper.
-- **The fix is bidirectional**: when you find a mismatch, the docs are not always wrong. v1.15.4's docs declared the correct intent — the code was the bug. Always determine which side is canonical before "fixing" the divergence.
+### Docs↔code coherence
+- See [INV-015](./INVARIANTS.md#inv-015-docs-and-code-must-stay-coherent-manual-review-on-high-leverage-files) for the high-leverage file list and the per-PR review checklist.
 
 ---
-*For deep-dives into specific modules (WebSockets, Mail, Search, etc.), refer to the [docs/](docs/) directory.*
+*For deep-dives into specific modules (WebSockets, Mail, Search, etc.), refer to the [docs/](docs/) directory. For the bug-class catalog, see [INVARIANTS.md](./INVARIANTS.md).*

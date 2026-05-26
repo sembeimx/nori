@@ -71,14 +71,30 @@ def shell() -> None:
         import sys
         sys.path.insert(0, '.')
 
+        # Order matters here, do NOT reshuffle:
+        # 1. settings must load before configure() so config.X is bindable.
+        # 2. configure() must run before any framework module that touches
+        #    config at import time (jinja, templates, registered drivers).
+        # 3. `import models` is what triggers register_model() inside
+        #    models/__init__.py — without it, _models is always {} and
+        #    no user-defined class is bound at the prompt.
+        # 4. Only then is Tortoise.init safe to call.
         import settings
-        from tortoise import Tortoise
+        from core.conf import configure
+        configure(settings)
+
+        import models  # noqa: F401  -- side-effect import: populates _models
         from core.registry import _models
+        from tortoise import Tortoise
 
         # Boot Tortoise synchronously before the REPL prompt appears.
-        asyncio.get_event_loop().run_until_complete(
-            Tortoise.init(config=settings.TORTOISE_ORM)
-        )
+        # new_event_loop + set_event_loop avoids the asyncio.get_event_loop
+        # DeprecationWarning on 3.10/3.12 and the RuntimeError on 3.14+
+        # that fires when PYTHONSTARTUP runs before python -m asyncio
+        # binds a loop of its own.
+        _loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(_loop)
+        _loop.run_until_complete(Tortoise.init(config=settings.TORTOISE_ORM))
 
         # Bind every registered model as a top-level name.
         globals().update(_models)

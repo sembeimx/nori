@@ -1,0 +1,291 @@
+# Nori-specific Semgrep rules.
+#
+# Each rule detects a CLASS of bug already discovered in the framework.
+# When you find a new class in an audit, add it here with:
+#   - id in kebab-case prefixed with "nori-"
+#   - message that includes: what is wrong, why it matters, how to fix,
+#     where it is documented
+#   - severity ERROR (breaks CI) or WARNING (reports without breaking)
+#   - link to the CWE when applicable
+#
+# To silence a false positive: add `# nosem: <rule-id>  -- <justification>`
+# on the finding line. The justification is mandatory.
+#
+# Severity convention:
+#   ERROR   — breaks CI. Use when the detector is precise (few false positives).
+#   WARNING — reported in logs without breaking. Use for patterns with FP
+#             potential until the rule has been hardened against real usage.
+
+rules:
+
+  # ---------------------------------------------------------------------------
+  # CWE-367: Time-of-check Time-of-use (TOCTOU)
+  # ---------------------------------------------------------------------------
+  # Audit Round 4 (v1.18.0) found 3 instances of this pattern across
+  # login_guard.py, throttle_backends.py, and queue_worker.py — all of them
+  # silently broken security gates under concurrency.
+  #
+  # The established fix is cache_incr (counters) or cache_atomic_update
+  # (arbitrary read-modify-write). See docs/caching.md.
+  #
+  # Expected false positives (silence with # nosem):
+  #   - core/cache.py — this IS the implementation of the helpers.
+  #   - session_guard.py — cache is a read-through accelerator; DB is authoritative.
+  - id: nori-toctou-cache-read-modify-write
+    message: |
+      Possible TOCTOU: cache_get followed by cache_set in the same flow.
+      Under concurrency, two callers read the same baseline and clobber each
+      other on write. Use cache_incr (counters) or cache_atomic_update
+      (arbitrary read-modify-write). See CLAUDE.md §6 + docs/caching.md.
+      CWE-367.
+    severity: WARNING
+    languages: [python]
+    paths:
+      exclude:
+        - "**/rootsystem/application/core/cache.py"
+        - "**/tests/**"
+    patterns:
+      - pattern: |
+          $X = await cache_get($KEY, ...)
+          ...
+          await cache_set($KEY, ...)
+    metadata:
+      cwe: "CWE-367: Concurrent Execution using Shared Resource with Improper Synchronization ('Race Condition')"
+      category: security
+      references:
+        - https://cwe.mitre.org/data/definitions/367.html
+
+  # ---------------------------------------------------------------------------
+  # JWT/OAuth payload subscript instead of .get()
+  # ---------------------------------------------------------------------------
+  # Third-party tokens do not always include the spec's "optional" claims
+  # (jti, sub, iss, aud). A KeyError in an auth handler bubbles up as a 500
+  # and a broken session = DoS path. See CLAUDE.md §6.
+  #
+  # Restricted to core/auth/* where "payload" is typically a JWT dict.
+  # Excludes assignments (we are creating the token, not reading it) and reads
+  # guarded by `if claim in payload`.
+  - id: nori-jwt-payload-required-claim
+    message: |
+      Payload accessed with []. If the claim is missing, KeyError → DoS path.
+      Use payload.get('claim') and handle the None explicitly.
+      See CLAUDE.md §6 — Optional spec fields.
+    severity: ERROR
+    languages: [python]
+    paths:
+      include:
+        - "**/rootsystem/application/core/auth/"
+    patterns:
+      - pattern-either:
+          - pattern: $P['jti']
+          - pattern: $P['sub']
+          - pattern: $P['iss']
+          - pattern: $P['aud']
+          - pattern: $P['nbf']
+      # Exclude LHS of assignment (we are creating the token, not reading it).
+      # Each claim is listed explicitly — $K as a metavariable does not unify
+      # with specific string literals in Semgrep's matcher. pattern-not-inside
+      # (not pattern-not) is required because the positive pattern matches a
+      # subexpression nested inside the assignment statement.
+      - pattern-not-inside: $P['jti'] = $V
+      - pattern-not-inside: $P['sub'] = $V
+      - pattern-not-inside: $P['iss'] = $V
+      - pattern-not-inside: $P['aud'] = $V
+      - pattern-not-inside: $P['nbf'] = $V
+      # Exclude reads guarded by `if claim in payload` or `if claim not in payload`.
+      - pattern-not-inside: |
+          if $K in $P:
+              ...
+      - pattern-not-inside: |
+          if $K not in $P:
+              ...
+      - pattern-not-inside: |
+          if $K in $P and ...:
+              ...
+      - pattern-not-inside: |
+          if ... and $K in $P:
+              ...
+    metadata:
+      category: security
+      references:
+        - https://datatracker.ietf.org/doc/html/rfc7519#section-4.1
+
+  # ---------------------------------------------------------------------------
+  # CWD-relative Path() in core/cli.py
+  # ---------------------------------------------------------------------------
+  # nori.py does NOT chdir before invoking commands. Path('foo') resolves
+  # relative to the caller's CWD, so `python3 /srv/app/nori.py migrate:upgrade`
+  # from /tmp breaks with FileNotFoundError. Anchor to __file__.
+  # See CLAUDE.md §7 — Path resolution must be CWD-independent.
+  #
+  # Forward-looking guardrail: no matches today (cli.py uses os.path.join
+  # in _APP_DIR, an adjacent case — flagged in the manual audit report).
+  - id: nori-cli-cwd-relative-path
+    message: |
+      Path() with a string literal in core/cli.py is CWD-relative and breaks
+      when the command is invoked from a directory other than the project root.
+      Use: pathlib.Path(__file__).resolve().parent.parent / 'foo'
+      See CLAUDE.md §7.
+    severity: ERROR
+    languages: [python]
+    paths:
+      include:
+        - "**/rootsystem/application/core/cli.py"
+    patterns:
+      - pattern-either:
+          - pattern: pathlib.Path("...")
+          - pattern: Path("...")
+    metadata:
+      category: correctness
+
+  # ---------------------------------------------------------------------------
+  # Iteration 2 — httpx connection reuse in service drivers
+  # ---------------------------------------------------------------------------
+  # Each `httpx.AsyncClient()` constructor opens a fresh TCP+TLS handshake.
+  # Repeating the constructor per call stacks latency (TLS handshake adds
+  # ~100-200ms over WAN) and exhausts socket descriptors under load. Every
+  # existing services/* driver caches one `_client` at module level and
+  # registers a shutdown hook with `core.lifecycle` — see oauth_github.py
+  # for the canonical pattern. This rule guards forward against drivers
+  # that drop back to the `async with` constructor inside a hot path.
+  # See CLAUDE.md §6 — Connection reuse.
+  - id: nori-service-httpx-per-call-asyncclient
+    message: |
+      `async with httpx.AsyncClient(...)` constructed per call in a service
+      driver. Every constructor opens a fresh TCP+TLS connection — under
+      load this stacks latency and exhausts socket capacity. Hold a single
+      module-level _client and reuse it; register shutdown with
+      core.lifecycle.register_shutdown. See services/oauth_github.py for
+      the established pattern (_get_client + module-level _client cache).
+    severity: ERROR
+    languages: [python]
+    paths:
+      include:
+        - "**/rootsystem/application/services/"
+    patterns:
+      - pattern-either:
+          - pattern: |
+              async with httpx.AsyncClient(...) as $C:
+                  ...
+          - pattern: |
+              async with httpx.AsyncClient() as $C:
+                  ...
+    metadata:
+      category: performance
+
+  # ---------------------------------------------------------------------------
+  # Iteration 2 — synchronous open() inside async def in service drivers
+  # ---------------------------------------------------------------------------
+  # Disk I/O on the event loop freezes every other coroutine behind it. A
+  # slow disk or a network-mounted filesystem turns a single upload into
+  # a worker-wide stall. Wrap blocking calls in asyncio.to_thread or use
+  # aiofiles. The reads inside nested sync functions are fine — they will
+  # typically be invoked via asyncio.to_thread on the outside (see
+  # storage_gcs.py:_load_credentials for the pattern). See CLAUDE.md §6.
+  - id: nori-service-sync-open-in-async
+    message: |
+      open() called inside an async def in services/. Disk I/O on the
+      event loop freezes every other request behind it. Either:
+        - Wrap with asyncio.to_thread(lambda: open(...).read())
+        - Move into a nested sync helper invoked via asyncio.to_thread
+          (see storage_gcs.py:_load_credentials for the canonical pattern)
+      Once the helper is wrapped, silence this finding with:
+        # nosem: nori-service-sync-open-in-async  -- nested in sync helper invoked via to_thread
+      See INVARIANTS.md INV-002.
+    severity: WARNING
+    languages: [python]
+    paths:
+      include:
+        - "**/rootsystem/application/services/"
+    patterns:
+      - pattern-inside: |
+          async def $F(...):
+              ...
+      - pattern: open(...)
+    metadata:
+      category: performance
+
+  # ---------------------------------------------------------------------------
+  # Iteration 3 — extend INV-002 sync-I/O detection beyond open()
+  # ---------------------------------------------------------------------------
+  # Three more sync calls that classically freeze the event loop when invoked
+  # inside an async def. Scoped to services/ + core/ but with explicit excludes
+  # for sites where the sync invocation is legitimate (cli.py is a sync entry
+  # script, not an async handler).
+  - id: nori-sync-time-sleep-in-async
+    message: |
+      time.sleep() inside an async def freezes the event loop — every other
+      coroutine pauses with it. Use `await asyncio.sleep(seconds)` for delays,
+      or wrap genuine blocking work in `asyncio.to_thread(...)` if you really
+      need sync semantics.
+      See INVARIANTS.md INV-002.
+    severity: ERROR
+    languages: [python]
+    paths:
+      include:
+        - "**/rootsystem/application/services/"
+        - "**/rootsystem/application/core/"
+      exclude:
+        - "**/tests/**"
+    patterns:
+      - pattern-inside: |
+          async def $F(...):
+              ...
+      - pattern: time.sleep(...)
+    metadata:
+      category: performance
+      references:
+        - https://docs.python.org/3/library/asyncio-task.html#sleeping
+
+  - id: nori-sync-requests-import-in-services
+    message: |
+      `import requests` (or `from requests import ...`) in a service driver.
+      Nori service drivers MUST use httpx with a module-level AsyncClient
+      (INV-021). The `requests` library is sync-only — every call blocks the
+      event loop for the duration of the HTTP round-trip. Existing drivers
+      (mail_resend, storage_*, oauth_*, search_meilisearch) all use httpx;
+      see services/oauth_github.py for the canonical pattern.
+      See INVARIANTS.md INV-002 + INV-021.
+    severity: ERROR
+    languages: [python]
+    paths:
+      include:
+        - "**/rootsystem/application/services/"
+    patterns:
+      - pattern-either:
+          - pattern: import requests
+          - pattern: from requests import $X
+    metadata:
+      category: performance
+
+  - id: nori-sync-subprocess-in-async
+    message: |
+      subprocess.run/check_output/check_call inside an async def blocks the
+      event loop until the child process exits. For sync entry scripts
+      (cli.py) this is fine and the rule excludes them. For async handlers,
+      use `asyncio.create_subprocess_exec(...)` / `create_subprocess_shell(...)`
+      or wrap the sync call in `asyncio.to_thread(subprocess.run, ...)`.
+      See INVARIANTS.md INV-002.
+    severity: ERROR
+    languages: [python]
+    paths:
+      include:
+        - "**/rootsystem/application/services/"
+        - "**/rootsystem/application/core/"
+      exclude:
+        # cli.py is a sync CLI entry point — subprocess.run is the correct
+        # primitive for wrapping aerich/uvicorn/python -c scripts. The async
+        # invariant does not apply.
+        - "**/rootsystem/application/core/cli.py"
+        - "**/tests/**"
+    patterns:
+      - pattern-inside: |
+          async def $F(...):
+              ...
+      - pattern-either:
+          - pattern: subprocess.run(...)
+          - pattern: subprocess.check_output(...)
+          - pattern: subprocess.check_call(...)
+          - pattern: subprocess.Popen(...)
+    metadata:
+      category: performance

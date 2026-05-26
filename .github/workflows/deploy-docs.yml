@@ -19,11 +19,19 @@ jobs:
         with:
           python-version: '3.12'
 
+      # Pin floor so the deployed site does not drift to a future
+      # mkdocs-material that introduces theme changes or strict-mode
+      # rules we have not vetted. Bump deliberately when needed —
+      # the workflow is the only place we install this dependency.
       - name: Install MkDocs
-        run: pip install mkdocs-material
+        run: pip install 'mkdocs-material>=9.7.6'
 
+      # --strict promotes mkdocs warnings (unknown nav entries, missing
+      # files referenced by md_in_html, theme override issues) into hard
+      # failures. Dead-link / dead-anchor diagnostics stay at INFO and
+      # are caught by a separate sweep — see INVARIANTS.md INV-015.
       - name: Build docs
-        run: mkdocs build
+        run: mkdocs build --strict
 
       # FirebaseExtended/action-hosting-deploy still runs on Node 20 as of
       # 2026-04-21. Track https://github.com/FirebaseExtended/action-hosting-deploy/issues/448
