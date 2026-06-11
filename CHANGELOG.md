@@ -12,6 +12,42 @@ _Nothing accumulated yet — add entries here as they ship to `main` so the next
 
 ---
 
+## [2.0.0] — (pending release)
+
+This release replaces the session-bound CSRF synchronizer token with an OWASP signed double-submit cookie, closes the cached-form 403 regression (issue #29), and aligns the form body cap with documented behavior.
+
+### Breaking
+
+- **`csrf_field` and `csrf_token` signatures changed**: both helpers now accept a Starlette `Request` object instead of a session dict. Find-and-replace in templates:
+  `csrf_field(request.session)` → `csrf_field(request)`
+  `csrf_token(request.session)` → `csrf_token(request)`
+  See [docs/upgrade-2.0.md](docs/upgrade-2.0.md) for the one-line migration command.
+- **Session-bound CSRF removed**: `session['_csrf_token']` is no longer set or read. Existing session entries expire naturally; no cleanup needed.
+
+### Added
+
+- **Signed double-submit cookie CSRF** (`core/auth/csrf.py`): cookie value = `{nonce}.{sig}` (HMAC-SHA256 over `SECRET_KEY`). Validation requires both (1) cookie integrity check and (2) double-submit match. Bare-nonce cookies are rejected (writer-attacker defense). Per-visitor cookie, never cached.
+- **BREACH masking**: `csrf_field` applies a per-render XOR mask over the cookie value. The server unmasks before comparing. Both masked (server-rendered) and raw (shim/header) submissions are accepted.
+- **JS shim** (`rootsystem/static/js/csrf.js`): before every form submit and fetch/XHR, reads the visitor's own CSRF cookie and writes it into `_csrf_token` / `X-CSRF-Token`. Fixes cached-form pages without client-side crypto.
+- **`base.html` shim include**: the starter layout includes `csrf.js` automatically.
+- **Six `CSRF_COOKIE_*` settings** with safe defaults via `config.get` (INV-029): `CSRF_COOKIE_NAME`, `CSRF_COOKIE_SECURE`, `CSRF_COOKIE_SAMESITE`, `CSRF_COOKIE_HTTPONLY`, `CSRF_COOKIE_PATH`, `CSRF_COOKIE_MAX_AGE`.
+- **`csrf_cookie_name()` Jinja global**: renders `window.NORI_CSRF_COOKIE_NAME` into the page so the shim tracks `__Host-` name changes without editing `csrf.js`.
+- **`INV-030`** in `INVARIANTS.md`: new invariant — CSRF cookie must be a signed structure; `cache_response` must never cache `Set-Cookie`. Includes L3 regression tests.
+- **v2.0.0 upgrade guide** at `docs/upgrade-2.0.md`.
+
+### Fixed
+
+- **Form body cap** aligned to **10 MB** (was 1 MiB in code; docs said 10 MB). INV-015 instance closed.
+- **Non-ASCII unmask DoS guard**: `_validate_submission` encodes candidate and cookie to bytes before `compare_digest`, preventing a `TypeError` crash on attacker-crafted masked tokens.
+- **`INV-004` fix recipe updated** in `INVARIANTS.md`: body cap default changed from 1 MiB to 10 MB; signed-cookie context added.
+- **`INV-016` cross-reference added**: "Related" line now points to INV-030 (CSRF ⟂ auth boundary).
+
+### Tests
+
+1062 passing (versus pre-change baseline). 40+ new tests covering the full signed double-submit suite: cookie issuance, HMAC validation, BREACH masking, dual-accept (raw + masked), cached-page shim simulation, writer-attacker defense, `cache_response` Set-Cookie regression pin.
+
+---
+
 ## [1.35.0] — 2026-05-26
 
 This release closes the 2026-05-25 audit cycle and ships the bug-class catalogue + release automation that make future audits converge instead of rediscover. No breaking changes; every addition is opt-in or transparent.
