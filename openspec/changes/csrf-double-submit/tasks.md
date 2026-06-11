@@ -132,7 +132,9 @@ Write these RED tests (each must FAIL now, GREEN after Phase 2.1 implementation)
 
 ### 2.4 — Add JS shim: `rootsystem/static/js/csrf.js`
 
-- [x] Reads document.cookie for CSRF_COOKIE_NAME (hard-coded 'csrftoken')
+- [x] Reads document.cookie for CSRF_COOKIE_NAME
+  (judgment-day round 1: no longer hard-coded — reads window.NORI_CSRF_COOKIE_NAME
+   rendered by base.html from config, falling back to 'csrftoken')
 - [x] DOMContentLoaded: patches forms on submit
 - [x] Patches fetch() for same-origin unsafe requests
 - [x] Patches XMLHttpRequest.prototype.open/send
@@ -285,8 +287,10 @@ Write these RED tests (each must FAIL now, GREEN after Phase 2.1 implementation)
 
 - [ ] Ensure all module-level docstrings reflect the new body-buffering contract
   (update the module docstring to remove the "1 MiB" mention, reflect "10 MB")
-- [ ] Ensure `_looks_masked` is deterministic and has a clear comment explaining the
+- [x] Ensure `_looks_masked` is deterministic and has a clear comment explaining the
   sentinel (length/charset of the mask envelope vs. `{hex}.{hex}`)
+  (judgment-day round 1: corrected the comment — no dot-position check; raw len 129
+   is never ≡ 0 mod 4 so it can't be a base64 envelope, making the sets disjoint)
 - [ ] Remove any dead code or leftover session-related logic
 
 ### 6.2 — Final full test run

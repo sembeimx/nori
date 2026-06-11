@@ -32,7 +32,10 @@
 
     <!-- Nori CSRF shim: before submit, copies this visitor's own CSRF cookie value into the
          hidden _csrf_token field and sets X-CSRF-Token on fetch/XHR, so forms on cached pages
-         submit successfully even though the cached HTML carries a stranger's stale token. -->
+         submit successfully even though the cached HTML carries a stranger's stale token.
+         The cookie NAME (config, not a per-visitor secret) is rendered here so the shim tracks
+         a custom CSRF_COOKIE_NAME (e.g. __Host-csrftoken) without editing csrf.js. Cache-safe. -->
+    <script>window.NORI_CSRF_COOKIE_NAME = {{ csrf_cookie_name()|tojson }};</script>
     <script src="/static/js/csrf.js" defer></script>
 </body>
 

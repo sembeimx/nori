@@ -72,6 +72,7 @@ import hmac
 import secrets
 from hashlib import sha256
 from html import escape as _html_escape
+from typing import MutableMapping, Protocol, runtime_checkable
 from urllib.parse import parse_qs
 
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
@@ -109,10 +110,42 @@ def _cookie_name() -> str:
     return config.get('CSRF_COOKIE_NAME', 'csrftoken')
 
 
+# One-time guard so the __Host-/insecure misconfiguration warning fires once per
+# process, not on every cookie issuance (design §5 — loud, not spammy).
+_host_prefix_warned = False
+
+
+def _warn_host_prefix_insecure_once() -> None:
+    """Emit a one-time ``log.warning`` when ``CSRF_COOKIE_NAME`` uses the ``__Host-``
+    prefix while the configured ``CSRF_COOKIE_SECURE`` is ``False``.
+
+    The middleware still force-secures the cookie (a ``__Host-`` cookie requires
+    ``Secure`` or the browser rejects it); this warning is *in addition* to that,
+    so the misconfiguration is loud rather than silently corrected (design §5,
+    Decision 4).
+    """
+    global _host_prefix_warned
+    if _host_prefix_warned:
+        return
+    if not _cookie_name().startswith('__Host-'):
+        return
+    # Read the operator's RAW intent (default True), NOT the forced value.
+    configured_secure = bool(config.get('CSRF_COOKIE_SECURE', not config.get('DEBUG', False)))
+    if configured_secure:
+        return
+    _host_prefix_warned = True
+    log.warning(
+        'CSRF_COOKIE_NAME uses the __Host- prefix but CSRF_COOKIE_SECURE is False. '
+        'A __Host- cookie REQUIRES Secure; the middleware is force-securing the cookie, '
+        'but you should set CSRF_COOKIE_SECURE=True (and serve over HTTPS) to match.'
+    )
+
+
 def _cookie_secure() -> bool:
     name = _cookie_name()
     if name.startswith('__Host-'):
-        return True  # __Host- requires Secure
+        _warn_host_prefix_insecure_once()
+        return True  # __Host- requires Secure (forced; warning emitted above)
     return bool(config.get('CSRF_COOKIE_SECURE', not config.get('DEBUG', False)))
 
 
@@ -173,14 +206,20 @@ def _cookie_signature_valid(cookie_val: str) -> bool:
 #     where mask = os.urandom(_MASK_LEN) cycled over len(raw_bytes)
 # Base64-encode the whole envelope to get a URL-safe printable string.
 #
-# _looks_masked discriminator:
-#     Raw cookie form:   exactly 129 chars, charset [0-9a-f.] only,
-#                        single dot at position 64.
-#     Masked form:       base64 charset [A-Za-z0-9+/=], length > 129.
-#     The two forms CANNOT collide because:
-#       - a 129-char string in [0-9a-f.] cannot be valid base64 of a
-#         161-byte sequence (which would produce 216 chars with padding).
-#       - a 216-char base64 string cannot contain only [0-9a-f.].
+# _looks_masked discriminator (what the code ACTUALLY checks):
+#     Raw cookie form:   exactly _RAW_COOKIE_LEN (129) chars AND every char in
+#                        [0-9a-fA-F.]  (64 hex + '.' + 64 hex). No dot-POSITION
+#                        check is performed — length + charset alone are decisive.
+#     Masked form:       a base64 envelope of (_MASK_LEN + len(raw)) bytes, whose
+#                        length is therefore always ≡ 0 (mod 4) after padding and,
+#                        for the 129-char raw cookie, is 216 chars (> 129).
+#     The two forms are DISJOINT because:
+#       - A 129-char string is not ≡ 0 (mod 4) (129 = 4*32 + 1), so it can never
+#         be a (padded) base64 envelope length — the masked branch can't produce it.
+#       - The masked base64 of a 161-byte envelope is 216 chars and carries
+#         upper-case letters and/or +/= absent from the raw [0-9a-fA-F.] charset.
+#     Hence a value matching the raw length+charset is unambiguously raw, and
+#     anything else is treated as masked.
 # ---------------------------------------------------------------------------
 
 _RAW_COOKIE_CHARSET = frozenset('0123456789abcdefABCDEF.')
@@ -232,10 +271,12 @@ def _looks_masked(val: str) -> bool:
     """
     if not val:
         return False
-    # Raw cookie: exactly _RAW_COOKIE_LEN chars, all in [0-9a-fA-F.], single dot
+    # Raw cookie: exactly _RAW_COOKIE_LEN chars AND every char in [0-9a-fA-F.].
+    # (No dot-position check — length + charset alone make raw and masked disjoint,
+    #  since 129 is not ≡ 0 mod 4 and so is never a valid base64 envelope length.)
     if len(val) == _RAW_COOKIE_LEN and all(c in _RAW_COOKIE_CHARSET for c in val):
         return False
-    # Anything longer or with base64-only chars is treated as masked
+    # Anything else (longer, or carrying base64-only chars) is treated as masked.
     return True
 
 
@@ -400,7 +441,7 @@ class CsrfMiddleware:
 # ---------------------------------------------------------------------------
 
 
-def _parse_cookies(headers: list) -> dict[str, str]:
+def _parse_cookies(headers: list[tuple[bytes, bytes]]) -> dict[str, str]:
     """Parse the ``Cookie`` header from ASGI headers list into a dict."""
     cookies: dict[str, str] = {}
     for key, value in headers:
@@ -520,7 +561,21 @@ async def _send_413(send: Send) -> None:
 # ---------------------------------------------------------------------------
 
 
-def csrf_field(request: object) -> str:
+@runtime_checkable
+class _CsrfRequest(Protocol):
+    """Structural type for the objects ``csrf_field`` / ``csrf_token`` accept.
+
+    A Starlette ``starlette.requests.Request`` satisfies this Protocol, as does
+    any duck-typed object exposing the same two attributes. Using a Protocol
+    (rather than ``object``) makes the helpers' contract explicit per CLAUDE.md's
+    mandatory type-hint rule without importing Starlette at runtime.
+    """
+
+    cookies: dict[str, str]
+    scope: MutableMapping[str, object]
+
+
+def csrf_field(request: _CsrfRequest) -> str:
     """Return an HTML hidden input with a BREACH-masked CSRF token.
 
     Accepts a Starlette ``Request`` object (or any object with
@@ -545,7 +600,7 @@ def csrf_field(request: object) -> str:
     return f'<input type="hidden" name="_csrf_token" value="{escaped}">'
 
 
-def csrf_token(request: object) -> str:
+def csrf_token(request: _CsrfRequest) -> str:
     """Return the raw ``{nonce}.{sig}`` cookie value (not masked, not HMAC-only).
 
     Accepts a Starlette ``Request`` object (or any object with
@@ -560,3 +615,17 @@ def csrf_token(request: object) -> str:
     cookies: dict = getattr(request, 'cookies', {}) or {}
     scope: dict = getattr(request, 'scope', {}) or {}
     return cookies.get(name) or scope.get('csrf_pending_cookie', '')
+
+
+def csrf_cookie_name() -> str:
+    """Return the configured CSRF cookie name (``config.get('CSRF_COOKIE_NAME', ...)``).
+
+    Exposed as a Jinja global so ``base.html`` can render the cookie name into the
+    page (``window.NORI_CSRF_COOKIE_NAME``) for the JS shim. The cookie NAME is
+    configuration, not a per-visitor secret, so rendering it is cache-safe and lets
+    the shim track an operator's ``__Host-csrftoken`` choice (Decision 4) without
+    editing ``csrf.js``.
+
+    REQ-CSRF-012, REQ-CSRF-013, design §5.
+    """
+    return _cookie_name()

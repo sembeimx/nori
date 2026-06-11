@@ -136,3 +136,49 @@ def test_csrf_token_returns_pending_cookie_on_first_visit():
 
     result = csrf_token(_FakeRequest())
     assert result == cookie_val
+
+
+# ---------------------------------------------------------------------------
+# REQ-CSRF-012, design §5 — custom CSRF_COOKIE_NAME reaches base.html so the
+# JS shim reads it from window.NORI_CSRF_COOKIE_NAME (no hard-coded name).
+# ---------------------------------------------------------------------------
+
+
+def test_csrf_cookie_name_global_is_registered():
+    """csrf_cookie_name is exposed as a Jinja global for base.html to render."""
+    assert 'csrf_cookie_name' in templates.env.globals
+    assert callable(templates.env.globals['csrf_cookie_name'])
+
+
+def test_custom_csrf_cookie_name_reaches_rendered_base_html(monkeypatch):
+    """A custom CSRF_COOKIE_NAME (e.g. __Host-csrftoken) is rendered into base.html's
+    window.NORI_CSRF_COOKIE_NAME global, BEFORE the csrf.js include.
+
+    Pins Finding 2: the shim no longer hard-codes 'csrftoken' — base.html renders the
+    configured name so the shim tracks the operator's __Host-csrftoken choice.
+    """
+    from core.auth import csrf as csrf_module
+
+    monkeypatch.setattr(csrf_module, '_cookie_name', lambda: '__Host-csrftoken')
+
+    template = templates.env.get_template('base.html')
+    rendered = template.render(request=type('R', (), {'session': {}})())
+
+    # The configured name appears in the rendered global assignment.
+    assert '__Host-csrftoken' in rendered
+    assert 'window.NORI_CSRF_COOKIE_NAME' in rendered
+
+    # The global is rendered BEFORE the csrf.js include so it is set when the shim runs.
+    global_pos = rendered.index('window.NORI_CSRF_COOKIE_NAME')
+    include_pos = rendered.index('<script src="/static/js/csrf.js"')
+    assert global_pos < include_pos, (
+        'window.NORI_CSRF_COOKIE_NAME must be rendered before the csrf.js include'
+    )
+
+
+def test_default_csrf_cookie_name_reaches_rendered_base_html():
+    """With no override, base.html renders the default 'csrftoken' name."""
+    template = templates.env.get_template('base.html')
+    rendered = template.render(request=type('R', (), {'session': {}})())
+    assert '"csrftoken"' in rendered
+    assert 'window.NORI_CSRF_COOKIE_NAME' in rendered

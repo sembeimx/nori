@@ -661,6 +661,75 @@ async def test_host_prefix_forces_secure_path_no_domain(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_host_prefix_insecure_logs_warning_once(monkeypatch):
+    """__Host- cookie name + CSRF_COOKIE_SECURE False -> exactly one log.warning.
+
+    Design §5, Decision 4: the misconfiguration must be LOUD. The middleware still
+    force-secures the cookie (in addition to the warning, not instead). The warning
+    fires once per process via the _host_prefix_warned guard.
+    """
+    import logging
+
+    from core.auth import csrf as csrf_module
+
+    # __Host- name with the operator explicitly (mis)configuring SECURE False.
+    # config is a slotted singleton, so swap the whole config reference for a stub.
+    _overrides = {
+        'CSRF_COOKIE_NAME': '__Host-csrftoken',
+        'CSRF_COOKIE_SECURE': False,
+    }
+
+    class _StubConfig:
+        SECRET_KEY = __import__('settings').SECRET_KEY
+
+        def get(self, key, default=None):
+            return _overrides.get(key, default)
+
+    monkeypatch.setattr(csrf_module, 'config', _StubConfig())
+    # Reset the one-time guard so this test observes the first emission.
+    monkeypatch.setattr(csrf_module, '_host_prefix_warned', False)
+
+    # The 'nori' parent logger sets propagate=False, so caplog (rooted at the root
+    # logger) never sees these child records. Attach our own capturing handler
+    # directly to the 'nori.csrf' logger instead.
+    captured_records: list[logging.LogRecord] = []
+
+    class _ListHandler(logging.Handler):
+        def emit(self, record):
+            captured_records.append(record)
+
+    csrf_logger = logging.getLogger('nori.csrf')
+    handler = _ListHandler(level=logging.WARNING)
+    csrf_logger.addHandler(handler)
+
+    async def _issue_cookie():
+        scope = _scope('GET')
+        cap = _Captured()
+        mw = CsrfMiddleware(_passthrough_app)
+        await mw(scope, await _make_receive(), cap.send)
+        return cap
+
+    try:
+        # Two issuances — the warning must fire on the FIRST only.
+        cap1 = await _issue_cookie()
+        cap2 = await _issue_cookie()
+    finally:
+        csrf_logger.removeHandler(handler)
+
+    host_warnings = [
+        r for r in captured_records
+        if r.levelno == logging.WARNING and '__Host-' in r.getMessage() and 'CSRF_COOKIE_SECURE' in r.getMessage()
+    ]
+    assert len(host_warnings) == 1, (
+        f'__Host-/insecure warning must fire exactly once; fired {len(host_warnings)} times'
+    )
+
+    # The cookie is STILL force-secured (warning is in addition, not instead).
+    issued = [c for c in cap1.set_cookie_headers() if '__Host-csrftoken=' in c]
+    assert issued and 'Secure' in issued[0], 'cookie must be force-secured despite the warning'
+
+
+@pytest.mark.asyncio
 async def test_samesite_default_is_lax():
     """No CSRF_COOKIE_SAMESITE setting -> cookie SameSite=Lax.
 

@@ -15,17 +15,22 @@
  *   (1) Verify sig = HMAC-SHA256(SECRET_KEY, nonce) — detects forged cookies.
  *   (2) Compare submitted value to cookie value — double-submit match.
  *
- * IMPORTANT: If you set CSRF_COOKIE_NAME to something other than 'csrftoken',
- * update the COOKIE_NAME constant below to match.
+ * Cookie name: the shim reads CSRF_COOKIE_NAME from window.NORI_CSRF_COOKIE_NAME,
+ * which base.html renders from config BEFORE this script loads. This keeps the
+ * shim correct when an operator follows the design's __Host-csrftoken
+ * recommendation (Decision 4) without editing this file. The cookie NAME is
+ * configuration, not a per-visitor secret, so rendering it into the page is
+ * cache-safe. Falls back to 'csrftoken' if the global is absent.
  *
- * REQ-CSRF-012, design §6.
+ * REQ-CSRF-012, design §5/§6.
  */
 
 (function () {
     'use strict';
 
-    // Name of the CSRF cookie. Must match CSRF_COOKIE_NAME in settings.py.
-    var COOKIE_NAME = 'csrftoken';
+    // Name of the CSRF cookie. Sourced from the server-rendered global so it
+    // tracks CSRF_COOKIE_NAME in settings.py; defaults to 'csrftoken'.
+    var COOKIE_NAME = (typeof window !== 'undefined' && window.NORI_CSRF_COOKIE_NAME) || 'csrftoken';
 
     /**
      * Read a cookie value by name from document.cookie.
