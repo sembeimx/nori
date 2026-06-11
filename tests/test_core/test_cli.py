@@ -323,6 +323,39 @@ def test_load_user_commands_resolves_relative_to_module_not_cwd(monkeypatch, tmp
 
 
 # ---------------------------------------------------------------------------
+# _APP_DIR must be CWD-independent (INV-027)
+# ---------------------------------------------------------------------------
+
+
+def test_app_dir_is_absolute_and_cwd_independent(monkeypatch, tmp_path):
+    """cli._APP_DIR must be an absolute path anchored to the cli module file,
+    not resolved relative to the process CWD.
+
+    Previously _APP_DIR = os.path.join('rootsystem', 'application') was a
+    CWD-relative string that broke every cwd=_APP_DIR subprocess call when
+    the CLI ran from any directory other than the repo root.
+
+    This test changes CWD to an unrelated temp dir and asserts that _APP_DIR
+    is still absolute and still ends with 'rootsystem/application'.
+    """
+    original = cli._APP_DIR
+    monkeypatch.chdir(tmp_path)
+    # After chdir, _APP_DIR must remain the same absolute path (it was resolved
+    # at import time from __file__) and must be absolute.
+    assert pathlib.Path(cli._APP_DIR).is_absolute(), (
+        f'cli._APP_DIR must be an absolute path (INV-027), got: {cli._APP_DIR!r}'
+    )
+    import os as _os
+    assert cli._APP_DIR.endswith(_os.path.join('rootsystem', 'application')), (
+        f'cli._APP_DIR must end with rootsystem/application, got: {cli._APP_DIR!r}'
+    )
+    # Value must not change when CWD changes (proves it is not CWD-relative)
+    assert cli._APP_DIR == original, (
+        'cli._APP_DIR changed when CWD changed — it is still CWD-relative'
+    )
+
+
+# ---------------------------------------------------------------------------
 # routes:list — must boot Nori config before importing routes
 # ---------------------------------------------------------------------------
 
@@ -1049,7 +1082,15 @@ def _release_dirs():
 
 @pytest.fixture
 def update_env(tmp_path, monkeypatch):
-    """Set up a fake project layout under tmp_path matching the real shape."""
+    """Set up a fake project layout under tmp_path matching the real shape.
+
+    Now that _APP_DIR is anchored to __file__ (CWD-independent, INV-027), the
+    fixture must explicitly monkeypatch all derived module-level constants that
+    the framework_update command reads at call time. The old fixture only did
+    monkeypatch.chdir(tmp_path) and relied on the previously CWD-relative
+    _APP_DIR = 'rootsystem/application' to resolve into tmp_path — that relied
+    on the bug.
+    """
     app_dir = tmp_path / 'rootsystem' / 'application'
     core_dir = app_dir / 'core'
     framework_models_dir = app_dir / 'models' / 'framework'
@@ -1057,6 +1098,20 @@ def update_env(tmp_path, monkeypatch):
     framework_models_dir.mkdir(parents=True)
     (core_dir / 'version.py').write_text("__version__ = '1.0.0'\n")
     (tmp_path / 'requirements.nori.txt').write_text('# old\n')
+
+    # Redirect all _APP_DIR-derived constants into the tmp tree.
+    backup_dir = str(tmp_path / 'rootsystem' / '.framework_backups')
+    monkeypatch.setattr(cli, '_APP_DIR', str(app_dir))
+    monkeypatch.setattr(cli, '_CORE_DIR', str(core_dir))
+    monkeypatch.setattr(cli, '_FRAMEWORK_MODELS_DIR', str(framework_models_dir))
+    monkeypatch.setattr(cli, '_BACKUP_DIR', backup_dir)
+    monkeypatch.setattr(cli, '_FRAMEWORK_DIRS', {
+        'rootsystem/application/core/': str(core_dir),
+        'rootsystem/application/models/framework/': str(framework_models_dir),
+    })
+    # requirements.nori.txt remains CWD-relative (it lives at the project root
+    # next to nori.py). The monkeypatch.chdir below ensures that relative
+    # lookup resolves to tmp_path/requirements.nori.txt during the test.
     monkeypatch.chdir(tmp_path)
     return {
         'tmp_path': tmp_path,

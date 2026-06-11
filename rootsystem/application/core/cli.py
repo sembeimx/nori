@@ -17,7 +17,10 @@ from datetime import datetime
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-_APP_DIR = os.path.join('rootsystem', 'application')
+# Anchor to the module file so the path is CWD-independent (INV-027).
+# cli.py lives at rootsystem/application/core/cli.py, so parent.parent resolves
+# to rootsystem/application regardless of the process working directory.
+_APP_DIR = str(pathlib.Path(__file__).resolve().parent.parent)
 
 # ---------------------------------------------------------------------------
 # Dev server
