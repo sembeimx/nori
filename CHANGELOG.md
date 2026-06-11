@@ -8,7 +8,20 @@ When a release is cut, rename `[Unreleased]` to `[X.Y.Z] — YYYY-MM-DD` and see
 
 ## [Unreleased]
 
-_Nothing accumulated yet — add entries here as they ship to `main` so the next release cut is just a rename + date stamp._
+Hardening and correctness fixes closing the remaining Audit Highs from the 2026-05-25 cycle. No breaking changes — all instances of catalogued INVARIANTS bug classes (0 new classes).
+
+### Security
+
+- **HSTS is no longer emitted in `DEBUG`**: `SecurityHeadersMiddleware` was wired with the default `hsts=True`, so `Strict-Transport-Security` was sent even on local HTTP — pinning `localhost` to HTTPS in the browser's HSTS cache. Now gated on `not DEBUG`.
+- **`SECRET_KEY` placeholder rejected in production (INV-015)**: `validate_settings()` now refuses to start when `SECRET_KEY` is still the `.env.example` placeholder `change-me-in-production`. `docs/deployment.md` previously claimed a check against `'change-me'` that did not exist and named the wrong placeholder — both corrected.
+
+### Fixed
+
+- **CLI and `framework:update` work from any working directory (INV-027)**: `_APP_DIR` and its sibling `_BACKUP_DIR` in `core/cli.py` were CWD-relative literals — running from any directory other than the repo root broke subprocess `cwd=` calls and wrote safety backups to the wrong tree (aborting the update if that directory was unwritable). Both are now anchored to the module file.
+
+### Docs
+
+- **`INVARIANTS.md`**: INV-027 marked resolved for `_APP_DIR`/`_BACKUP_DIR` with dedicated regression tests; 2026-06-11 audit-log row recording the Audit Highs closure (0 new bug classes).
 
 ---
 
