@@ -10,7 +10,7 @@ Every form that makes a `POST` request must include a CSRF token. Since `csrf_fi
 
 ```html
 <form method="POST">
-    {{ csrf_field(request.session)|safe }}
+    {{ csrf_field(request)|safe }}
 
     <label>User</label>
     <input type="text" name="usr">
@@ -19,7 +19,7 @@ Every form that makes a `POST` request must include a CSRF token. Since `csrf_fi
 </form>
 ```
 
-`csrf_field(request.session)` returns a `<input type="hidden" name="_csrf_token" value="...">` tag. The `|safe` filter is required to render the raw HTML.
+`csrf_field(request)` returns a `<input type="hidden" name="_csrf_token" value="...">` tag. The `|safe` filter is required to render the raw HTML.
 
 If the CSRF token is missing or invalid on a state-changing request (POST, PUT, DELETE, PATCH), the middleware returns `403 Forbidden`.
 
@@ -193,7 +193,7 @@ Inside Jinja2, since you have fed the template back with a dictionary `{field: [
 
 ```html
 <form method="POST">
-    {{ csrf_field(request.session)|safe }}
+    {{ csrf_field(request)|safe }}
 
     <input name="email" value="{{ usr_email|default('') }}" />
     {% if errors.email %}
