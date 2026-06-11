@@ -111,8 +111,15 @@ def _scope_with_cookie(
     }
 
 
-def _signed_cookie(secret: str = 'test-secret', nonce: str | None = None) -> tuple[str, str]:
-    """Return (nonce, cookie_value) where cookie_value = '{nonce}.{sig}'."""
+def _signed_cookie(secret: str | None = None, nonce: str | None = None) -> tuple[str, str]:
+    """Return (nonce, cookie_value) where cookie_value = '{nonce}.{sig}'.
+
+    Uses the actual SECRET_KEY from settings so cookies validate correctly
+    under the live CsrfMiddleware instance.
+    """
+    if secret is None:
+        import settings
+        secret = settings.SECRET_KEY
     if nonce is None:
         nonce = Security.generate_csrf_token()
     sig = hmac.new(secret.encode(), nonce.encode(), 'sha256').hexdigest()
@@ -377,7 +384,13 @@ async def test_form_body_cap_is_configurable(monkeypatch):
 
     monkeypatch.setattr(csrf_module, '_form_body_cap', lambda: 256)
     body = b'a' * 1024  # over the lowered cap
-    scope = _scope('POST', content_type='application/x-www-form-urlencoded')
+    _nonce, cookie_val = _signed_cookie()
+    scope = _scope_with_cookie(
+        'POST',
+        'csrftoken',
+        cookie_val,
+        headers=[(b'content-type', b'application/x-www-form-urlencoded')],
+    )
     cap = _Captured()
     mw = CsrfMiddleware(_passthrough_app)
     await mw(scope, await _make_receive(body), cap.send)
@@ -624,16 +637,14 @@ async def test_host_prefix_forces_secure_path_no_domain(monkeypatch):
 
     REQ-CSRF-001, Decision 4.
     """
-    from core.conf import config
+    from core.auth import csrf as csrf_module
 
-    monkeypatch.setattr(config, 'get', lambda key, default=None: {
-        'CSRF_COOKIE_NAME': '__Host-csrftoken',
-        'CSRF_COOKIE_SECURE': True,
-        'CSRF_COOKIE_SAMESITE': 'Lax',
-        'CSRF_COOKIE_HTTPONLY': False,
-        'CSRF_COOKIE_PATH': '/',
-        'CSRF_COOKIE_MAX_AGE': None,
-    }.get(key, default))
+    monkeypatch.setattr(csrf_module, '_cookie_name', lambda: '__Host-csrftoken')
+    monkeypatch.setattr(csrf_module, '_cookie_secure', lambda: True)
+    monkeypatch.setattr(csrf_module, '_cookie_samesite', lambda: 'Lax')
+    monkeypatch.setattr(csrf_module, '_cookie_httponly', lambda: False)
+    monkeypatch.setattr(csrf_module, '_cookie_path', lambda: '/')
+    monkeypatch.setattr(csrf_module, '_cookie_max_age', lambda: None)
 
     scope = _scope('GET')
     cap = _Captured()

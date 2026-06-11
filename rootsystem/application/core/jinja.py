@@ -5,7 +5,7 @@ from __future__ import annotations
 from jinja2 import select_autoescape
 from starlette.templating import Jinja2Templates
 
-from core.auth.csrf import csrf_field
+from core.auth.csrf import csrf_field, csrf_token
 from core.conf import config
 from core.http.flash import get_flashed_messages
 from core.http.old import old
@@ -29,6 +29,7 @@ def _get_templates() -> Jinja2Templates:
         if config.get('DEBUG', False):
             _templates.env.auto_reload = True
         _templates.env.globals['csrf_field'] = csrf_field
+        _templates.env.globals['csrf_token'] = csrf_token
         _templates.env.globals['get_flashed_messages'] = get_flashed_messages
         _templates.env.globals['old'] = old
     return _templates
