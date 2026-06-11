@@ -70,7 +70,7 @@ Middleware order is not arbitrary. Each position is deliberate:
 - **RequestId first**: every log line — including middleware errors — gets a trace ID.
 - **SecurityHeaders early**: all responses get security headers, even on middleware failures.
 - **CORS before Session**: preflight `OPTIONS` requests must be handled before session cookie processing.
-- **Session before CSRF**: session is populated before CSRF runs, so auth decorators downstream can read session data after CSRF validation passes.
+- **Session before CSRF**: session is populated before CSRF runs, so auth decorators downstream can read session data after CSRF validation passes. (CSRF itself is now stateless and does not read the session.)
 - **CSRF last**: processes the request body after all other middleware have had their turn.
 
 ---
@@ -169,7 +169,7 @@ Creates and validates signed session cookies using `SECRET_KEY`. Populates `requ
 | `secret_key` | `str` | `settings.SECRET_KEY` | Key for signing session cookies |
 | `https_only` | `bool` | `not settings.DEBUG` | Only send cookie over HTTPS |
 
-Sessions are required by CSRF protection, authentication decorators (`@login_required`, `@role_required`), and flash messages. In production (`DEBUG=False`), the cookie is marked `Secure` so it is never sent over plain HTTP.
+Sessions are required by authentication decorators (`@login_required`, `@role_required`), flash messages, and OAuth state. CSRF is stateless as of v2.0.0 and no longer depends on the session. In production (`DEBUG=False`), the cookie is marked `Secure` so it is never sent over plain HTTP.
 
 ---
 
