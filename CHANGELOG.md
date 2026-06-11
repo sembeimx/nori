@@ -8,6 +8,12 @@ When a release is cut, rename `[Unreleased]` to `[X.Y.Z] — YYYY-MM-DD` and see
 
 ## [Unreleased]
 
+_Nothing accumulated yet — add entries here as they ship to `main` so the next release cut is just a rename + date stamp._
+
+---
+
+## [2.0.1] — 2026-06-11
+
 Hardening and correctness fixes closing the remaining Audit Highs from the 2026-05-25 cycle. No breaking changes — all instances of catalogued INVARIANTS bug classes (0 new classes).
 
 ### Security
