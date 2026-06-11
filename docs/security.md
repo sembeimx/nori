@@ -79,41 +79,73 @@ Then route it: `Route('/csp-violations', csp.report, methods=['POST'])`. Make su
 
 ## CSRF Protection
 
-`CsrfMiddleware` validates CSRF tokens on all state-changing HTTP methods (POST, PUT, DELETE, PATCH).
+`CsrfMiddleware` validates CSRF tokens on all state-changing HTTP methods (POST, PUT, DELETE, PATCH). Since v2.0.0, Nori uses an OWASP **signed double-submit cookie** — a stateless, cache-safe scheme that requires no session reads for CSRF purposes.
 
-### How it works
+### How it works (v2.0.0 — signed double-submit cookie)
 
-1. On the first request, the middleware auto-generates a CSRF token and stores it in `request.session['_csrf_token']`.
-2. On state-changing requests, it checks for the token in:
-   - `X-CSRF-Token` header (for AJAX/fetch requests)
-   - `_csrf_token` form field (for HTML forms)
-3. Comparison uses constant-time HMAC (`hmac.compare_digest`) to prevent timing attacks.
-4. Mismatch returns **403 Forbidden**.
-5. Oversized body (> 10 MB) returns **413 Request Entity Too Large** (DoS protection).
+**Cookie issuance.** On every request where the visitor does not yet have a valid CSRF cookie, the middleware generates a signed cookie value and issues it via a `send`-wrapper that appends a `Set-Cookie` header to the live response. The cookie is **per visitor** and **never cached** (caching it would be a site-wide CSRF bypass — see INV-030).
+
+The cookie value is a **signed structure** `{nonce}.{sig}`:
+- `nonce = secrets.token_hex(32)` — 64 hex characters, cryptographically random.
+- `sig = HMAC-SHA256(SECRET_KEY, nonce)` hexdigest — 64 hex characters.
+
+**Validation (two checks, both constant-time).** On state-changing requests:
+
+1. **Cookie integrity check**: split the cookie at the last `.`, recompute `HMAC(SECRET_KEY, nonce)`, and `compare_digest` against the cookie's `sig`. A forged cookie (written by an attacker who does not know `SECRET_KEY`) fails here — this is the defense against cookie-writer attackers.
+2. **Double-submit match**: compare the (unmasked) submitted token to the full cookie value. Both raw and BREACH-masked submissions are accepted — the middleware unmasks before comparing if the submitted value looks like a masked envelope.
+
+A forged or unsigned cookie is rejected at check (1), before check (2) runs.
+
+**BREACH masking.** `csrf_field(request)` applies a per-render XOR mask over the cookie value before emitting the hidden `_csrf_token` field. Each page render produces a different ciphertext for the same cookie value, preventing compression-oracle (BREACH) attacks when the response is gzip-compressed by a front proxy. The JS shim and the `X-CSRF-Token` header path always submit the raw (unmasked) cookie value.
+
+**JS shim.** `rootsystem/static/js/csrf.js` (included automatically via `base.html`) runs before every form submit and fetch/XHR request. It reads the visitor's own CSRF cookie from `document.cookie` and overwrites the `_csrf_token` hidden field with the raw cookie value, correcting any stale cached field from a previous visitor. This is what makes cached form pages work correctly — the shim supplies the **live** visitor's own cookie, which passes both validation checks. Pages that are never served from cache work without the shim (the server renders the correct masked value directly).
+
+**Body cap.** Urlencoded form bodies are buffered up to `CSRF_FORM_MAX_BODY_SIZE` (default **10 MB**). Bodies exceeding the cap return **413 Payload Too Large**. Multipart form data is never buffered — clients submitting file uploads must send the token via `X-CSRF-Token` header.
+
+### Cookie attributes
+
+All attributes are configurable via `settings.py` (read with `config.get` — INV-029):
+
+| Setting | Default | Notes |
+|---------|---------|-------|
+| `CSRF_COOKIE_NAME` | `'csrftoken'` | Use `'__Host-csrftoken'` for single-host HTTPS (see below) |
+| `CSRF_COOKIE_SECURE` | `not DEBUG` | `True` in production; forced `True` for `__Host-` names |
+| `CSRF_COOKIE_SAMESITE` | `'Lax'` | `'Strict'` is opt-in for same-site-only forms |
+| `CSRF_COOKIE_HTTPONLY` | `False` | **Must stay `False`** — the JS shim reads `document.cookie` |
+| `CSRF_COOKIE_PATH` | `'/'` | Forced `'/'` for `__Host-` names |
+| `CSRF_COOKIE_MAX_AGE` | `None` | Session cookie by default; set to integer seconds if needed |
+
+**`__Host-` prefix recommendation.** For single-host HTTPS deployments, set `CSRF_COOKIE_NAME="__Host-csrftoken"`. The browser will enforce `Secure`, `Path=/`, and no `Domain` attribute on the cookie, closing the subdomain cookie-injection vector. Do not use `__Host-` on multi-subdomain deployments or plain HTTP — the browser will reject the cookie silently.
+
+### CSRF ⟂ session revocation (important boundary)
+
+The CSRF cookie is **stateless** and cannot be invalidated server-side. A user whose session has been revoked (INV-016) still holds a valid CSRF cookie. This is **by design and acceptable**: CSRF proves "did this request come from our origin?" while session revocation proves "is this user still authorized?". These are orthogonal concerns.
+
+Auth decorators (`@login_required`, `@require_role`, etc.) check `session_version` against the live counter and block the request **before any handler runs**, regardless of whether the CSRF token is valid. A revoked-session user is blocked at the authorization layer. Do not file "CSRF cookie outlives session revocation" as a finding — see INV-030 for the full rationale.
 
 ### Exempt from CSRF
 
 - **Safe methods**: GET, HEAD, OPTIONS, TRACE
-- **Custom paths**: Configurable exempt paths
+- **Custom paths**: configure `exempt_paths` on `CsrfMiddleware`
 
 ### JSON clients
 
-JSON requests are **not exempt**. The `Content-Type: application/json` header alone is not a safe CSRF defense — it relies on CORS being configured correctly, which is not a guarantee Nori can enforce. JSON clients (SPAs, fetch, axios) must send the token via the `X-CSRF-Token` header on every state-changing request.
+JSON requests are **not exempt**. JSON clients (SPAs, fetch, axios) must send the CSRF cookie value via the `X-CSRF-Token` header. The body is not parsed for JSON requests — the header is the only accepted channel.
 
-### Usage in Templates
+### Usage in templates
 
-`csrf_field` and `csrf_token` are registered as Jinja2 globals — you can call them directly in any template without passing them from the controller:
+`csrf_field` and `csrf_token` are registered as Jinja2 globals — call them directly in any template:
 
 ```html
 <form method="POST" action="/articles">
-    {{ csrf_field(request.session)|safe }}
+    {{ csrf_field(request)|safe }}
     <input type="text" name="title" />
     <button type="submit">Create</button>
 </form>
 ```
 
-- `csrf_field(request.session)` returns a full `<input type="hidden" ...>` tag — use `|safe` to render the HTML.
-- `csrf_token(request.session)` returns the raw token string (useful for AJAX headers).
+- `csrf_field(request)` returns a full `<input type="hidden" name="_csrf_token" value="...">` tag (BREACH-masked). Use `|safe` to render the HTML.
+- `csrf_token(request)` returns the raw `{nonce}.{sig}` cookie value (for AJAX `X-CSRF-Token` headers).
 
 For AJAX requests:
 
@@ -121,12 +153,14 @@ For AJAX requests:
 fetch('/articles', {
     method: 'POST',
     headers: {
-        'X-CSRF-Token': '{{ csrf_token(request.session) }}',
+        'X-CSRF-Token': '{{ csrf_token(request) }}',
         'Content-Type': 'application/json',
     },
     body: JSON.stringify({ title: 'Hello' }),
 });
 ```
+
+The JS shim sets `X-CSRF-Token` automatically on every fetch/XHR request, so the template snippet above is only needed if you are building requests outside the shim's reach.
 
 ---
 
@@ -544,7 +578,7 @@ When building with Nori, ensure:
 - [ ] `DEBUG=false` in production (disables debug error pages)
 - [ ] `CORS_ORIGINS` only lists trusted domains (or is empty for same-site)
 - [ ] State-changing actions use POST/PUT/DELETE, never GET
-- [ ] All forms include `{{ csrf_field(request.session) }}`
+- [ ] All forms include `{{ csrf_field(request)|safe }}`
 - [ ] Models with sensitive fields define `protected_fields`
 - [ ] File upload `allowed_types` is restrictive (don't allow `*`)
 - [ ] Rate limiting is applied to authentication and expensive endpoints

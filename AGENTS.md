@@ -29,7 +29,7 @@ When adding a new feature or module, follow these steps IN ORDER:
 3. **Migrate**: `python3 nori.py migrate:make desc` -> `python3 nori.py migrate:upgrade`.
 4. **Controller**: Create class in `modules/name.py`. Use `@inject()` and `validate()`.
 5. **Routes**: Define explicit `Route` or `Mount` in `routes.py` with a unique `name`.
-6. **Templates**: Create Jinja2 views. Use `{{ csrf_field(request.session)|safe }}` for POST forms.
+6. **Templates**: Create Jinja2 views. Use `{{ csrf_field(request)|safe }}` for POST forms.
 7. **Verify**: Run `pytest tests/` and ensure the new logic is covered.
 
 ---
@@ -89,6 +89,7 @@ These are quick reference reminders. The full catalog of bug classes (with CWE l
 - **Optional spec fields**: `payload.get('jti')`, never `payload['jti']`. See [INV-007](./INVARIANTS.md#inv-007-jwtoauth-optional-claims-must-be-accessed-defensively).
 - **Queue payloads**: `func_path` must pass `QUEUE_ALLOWED_MODULES` allow-list. See [INV-003](./INVARIANTS.md#inv-003-queue-worker-func_path-must-pass-allow-list-check-rce-defense).
 - **Session revocation**: All session-aware decorators (`login_required`, `require_role`, `require_any_role`, `require_permission`) check `session_version` against the live counter. See [INV-016](./INVARIANTS.md#inv-016-session-revocation-must-work-end-to-end-active-user-gate--version-counter).
+- **CSRF cookie**: Must be a signed structure `{nonce}.{sig}` (HMAC-SHA256). Bare-nonce double-submit is rejected. `cache_response` must never cache `Set-Cookie`. See [INV-030](./INVARIANTS.md#inv-030-csrf-cookie-must-be-a-signed-structure-set-cookie-must-never-be-cached).
 
 ---
 

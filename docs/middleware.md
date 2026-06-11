@@ -70,7 +70,7 @@ Middleware order is not arbitrary. Each position is deliberate:
 - **RequestId first**: every log line — including middleware errors — gets a trace ID.
 - **SecurityHeaders early**: all responses get security headers, even on middleware failures.
 - **CORS before Session**: preflight `OPTIONS` requests must be handled before session cookie processing.
-- **Session before CSRF**: the CSRF middleware reads `scope['session']` to get/set the token, so the session must be populated first.
+- **Session before CSRF**: session is populated before CSRF runs, so auth decorators downstream can read session data after CSRF validation passes.
 - **CSRF last**: processes the request body after all other middleware have had their turn.
 
 ---
@@ -177,7 +177,7 @@ Sessions are required by CSRF protection, authentication decorators (`@login_req
 
 **Module**: `core.auth.csrf`
 
-Validates CSRF tokens on all state-changing HTTP methods (POST, PUT, DELETE, PATCH). Full details in [Security](security.md#csrf-protection).
+Validates CSRF tokens on all state-changing HTTP methods (POST, PUT, DELETE, PATCH) using an OWASP **signed double-submit cookie** (v2.0.0). The middleware is stateless — it does not read or write the session for CSRF purposes. Full details in [Security](security.md#csrf-protection).
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
@@ -185,11 +185,14 @@ Validates CSRF tokens on all state-changing HTTP methods (POST, PUT, DELETE, PAT
 
 **Key behaviors**:
 
-- **Token generation**: auto-generates a token into `session['_csrf_token']` on the first request.
-- **Token lookup**: checks `X-CSRF-Token` header first, then `_csrf_token` form field (URL-encoded and multipart). JSON requests must use the header — body parsing is form-only.
+- **Cookie issuance**: on every request without a valid CSRF cookie, a fresh `{nonce}.{sig}` cookie is issued via a `send`-wrapper that appends `Set-Cookie` to the live response. The cookie is **per visitor** and never cached (INV-030).
+- **Validation (two checks)**:
+  1. Cookie integrity — recompute `HMAC-SHA256(SECRET_KEY, nonce)` over the cookie's nonce and constant-time-compare to the cookie's `sig`. Forged cookies die here.
+  2. Double-submit match — constant-time-compare the (unmasked) submitted value to the full cookie value. Both raw (shim/header path) and BREACH-masked (server-rendered form field) submissions are accepted.
+- **Token submission paths**: `X-CSRF-Token` header is checked first (body not read); then `_csrf_token` in a urlencoded form body; JSON and multipart requests must use the header.
 - **Safe methods**: GET, HEAD, OPTIONS, TRACE are always exempt.
-- **Body size limit**: rejects bodies larger than 10 MB with 413 (DoS protection).
-- **Constant-time comparison**: uses `hmac.compare_digest` to prevent timing attacks.
+- **Body size limit**: urlencoded form bodies are buffered up to `CSRF_FORM_MAX_BODY_SIZE` (default **10 MB**); exceeded bodies return 413. Multipart bodies are never buffered — use `X-CSRF-Token` header for file-upload requests.
+- **Constant-time comparison**: both HMAC verification and double-submit match use `hmac.compare_digest`.
 
 **Exempt specific paths** (e.g., a webhook endpoint):
 
@@ -200,12 +203,14 @@ Middleware(CsrfMiddleware, exempt_paths={'/webhooks/stripe', '/webhooks/github'}
 **Template helpers** (registered as Jinja2 globals):
 
 ```html
-<!-- Full hidden input -->
-{{ csrf_field(request.session)|safe }}
+<!-- Full hidden input (BREACH-masked per render) -->
+{{ csrf_field(request)|safe }}
 
-<!-- Raw token for AJAX -->
-{{ csrf_token(request.session) }}
+<!-- Raw cookie value for AJAX X-CSRF-Token header -->
+{{ csrf_token(request) }}
 ```
+
+The JS shim (`static/js/csrf.js`, included by `base.html`) automatically sets `X-CSRF-Token` on every fetch/XHR and overwrites stale `_csrf_token` fields on cached pages before submit. Sites not extending `base.html` must include the shim on any page served from `cache_response` that submits forms.
 
 ---
 
