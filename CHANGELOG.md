@@ -8,12 +8,6 @@ When a release is cut, rename `[Unreleased]` to `[X.Y.Z] — YYYY-MM-DD` and see
 
 ## [Unreleased]
 
-_Nothing accumulated yet — add entries here as they ship to `main` so the next release cut is just a rename + date stamp._
-
----
-
-## [2.0.0] — (pending release)
-
 This release replaces the session-bound CSRF synchronizer token with an OWASP signed double-submit cookie, closes the cached-form 403 regression (issue #29), and aligns the form body cap with documented behavior.
 
 ### Breaking
