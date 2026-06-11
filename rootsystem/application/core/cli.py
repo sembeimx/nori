@@ -17,7 +17,10 @@ from datetime import datetime
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-_APP_DIR = os.path.join('rootsystem', 'application')
+# Anchor to the module file so the path is CWD-independent (INV-027).
+# cli.py lives at rootsystem/application/core/cli.py, so parent.parent resolves
+# to rootsystem/application regardless of the process working directory.
+_APP_DIR = str(pathlib.Path(__file__).resolve().parent.parent)
 
 # ---------------------------------------------------------------------------
 # Dev server
@@ -482,7 +485,7 @@ _GITHUB_REPO = 'sembeimx/nori'
 _GITHUB_API = 'https://api.github.com'
 _CORE_DIR = os.path.join(_APP_DIR, 'core')
 _FRAMEWORK_MODELS_DIR = os.path.join(_APP_DIR, 'models', 'framework')
-_BACKUP_DIR = os.path.join('rootsystem', '.framework_backups')
+_BACKUP_DIR = str(pathlib.Path(_APP_DIR).parent / '.framework_backups')
 
 _REQUIREMENTS_NORI_FILE = 'requirements.nori.txt'
 

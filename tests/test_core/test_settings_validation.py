@@ -155,3 +155,40 @@ def test_validate_settings_jwt_valid_length_production():
         # Should not raise — all checks pass
         errors = settings.validate_settings()
         assert not any('too short' in e for e in errors)
+
+
+def test_validate_settings_rejects_env_example_placeholder_in_production():
+    """In production, SECRET_KEY == 'change-me-in-production' must raise RuntimeError.
+
+    docs/deployment.md claims the app refuses to start with the default
+    placeholder, but no check existed and the docs named the wrong placeholder
+    ('change-me' instead of 'change-me-in-production' from .env.example).
+    This test encodes the fixed behavior.
+    """
+    import settings
+
+    placeholder = 'change-me-in-production'
+    long_jwt = 'a' * 33  # long enough to avoid JWT length error
+    with (
+        patch.object(settings, 'DEBUG', False),
+        patch.object(settings, 'DB_ENGINE', 'sqlite'),
+        patch.object(settings, 'SECRET_KEY', placeholder),
+        patch.object(settings, 'JWT_SECRET', long_jwt),
+    ):
+        with pytest.raises(RuntimeError, match='change-me-in-production'):
+            settings.validate_settings()
+
+
+def test_validate_settings_allows_env_example_placeholder_in_debug():
+    """In DEBUG mode the placeholder SECRET_KEY is allowed (local dev convenience)."""
+    import settings
+
+    placeholder = 'change-me-in-production'
+    with (
+        patch.object(settings, 'DEBUG', True),
+        patch.object(settings, 'DB_ENGINE', 'sqlite'),
+        patch.object(settings, 'SECRET_KEY', placeholder),
+    ):
+        # Must not raise even though the placeholder is present
+        warnings = settings.validate_settings()
+        assert isinstance(warnings, list)

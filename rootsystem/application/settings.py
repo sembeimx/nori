@@ -146,6 +146,19 @@ TORTOISE_ORM = {
 # ---------------------------------------------------------------------------
 
 
+def _db_credential_errors() -> list[str]:
+    """Production database credential checks, extracted to keep
+    ``validate_settings`` under the complexity gate (ruff C901).
+    """
+    if not (DB_ENABLED and DB_ENGINE != 'sqlite' and not DEBUG):
+        return []
+    return [
+        f'{var} is required for production databases'
+        for var in ('DB_USER', 'DB_PASSWORD', 'DB_NAME')
+        if not os.environ.get(var)
+    ]
+
+
 def validate_settings() -> list[str]:
     """Validate configuration at startup.
 
@@ -167,19 +180,22 @@ def validate_settings() -> list[str]:
     errors: list[str] = []
 
     # Database credentials required for non-sqlite in production
-    if DB_ENABLED and DB_ENGINE != 'sqlite' and not DEBUG:
-        if not os.environ.get('DB_USER'):
-            errors.append('DB_USER is required for production databases')
-        if not os.environ.get('DB_PASSWORD'):
-            errors.append('DB_PASSWORD is required for production databases')
-        if not os.environ.get('DB_NAME'):
-            errors.append('DB_NAME is required for production databases')
+    errors.extend(_db_credential_errors())
 
     # Template and static dirs should exist
     if not os.path.isdir(TEMPLATE_DIR):
         errors.append(f'TEMPLATE_DIR not found: {TEMPLATE_DIR}')
     if not os.path.isdir(STATIC_DIR):
         errors.append(f'STATIC_DIR not found: {STATIC_DIR}')
+
+    # Reject the .env.example placeholder in production (INV-015 docs↔code).
+    # The real placeholder is 'change-me-in-production' (see .env.example line 5).
+    # docs/deployment.md previously named it 'change-me' — that is now corrected.
+    if not DEBUG and SECRET_KEY == 'change-me-in-production':  # noqa: S105 — placeholder sentinel, not a secret
+        errors.append(
+            'SECRET_KEY is still the .env.example placeholder ("change-me-in-production") '
+            '— generate a real secret (python3 -c "import secrets; print(secrets.token_urlsafe(64))")'
+        )
 
     # JWT secret should differ from SECRET_KEY in production
     if not DEBUG and JWT_SECRET == SECRET_KEY:
