@@ -188,18 +188,19 @@ Listed in order of historical discovery (oldest first). IDs are stable.
 - **Status**: Active
 - **Severity (max instance)**: HIGH
 - **Bug class**: A condition in the CSRF middleware intended as convenience becomes a bypass — either a Content-Type exemption that browsers can satisfy cross-origin, or body buffering that creates a DoS amplifier.
-- **Fix recipe**: (a) **No content-type exemptions** for browser-readable methods. JSON clients must send `X-CSRF-Token` header. (b) **Check the header before reading the body** so streaming and multipart uploads stay streamed. (c) Refuse `multipart/form-data` without the header (do NOT buffer to extract token). (d) Cap urlencoded body buffering at `CSRF_FORM_MAX_BODY_SIZE` (default 1 MiB).
+- **Fix recipe**: (a) **No content-type exemptions** for browser-readable methods. JSON clients must send `X-CSRF-Token` header. (b) **Check the header before reading the body** so streaming and multipart uploads stay streamed. (c) Refuse `multipart/form-data` without the header (do NOT buffer to extract token). (d) Cap urlencoded body buffering at `CSRF_FORM_MAX_BODY_SIZE` (default **10 MB**). The CSRF implementation is now a stateless **signed double-submit cookie** (v2.0.0) — request-shape rules (a)–(d) remain unchanged; see INV-030 for the cookie-signing invariant.
 - **Detector maturity**:
   - L1: yes (manual review on `core/auth/csrf.py` changes)
-  - L2: pre-merge checklist for csrf.py — verify header-first, multipart refusal, body cap intact
+  - L2: pre-merge checklist for csrf.py — verify header-first, multipart refusal, body cap intact, cookie = `{nonce}.{sig}` (not bare nonce)
   - L3: behavior tests + docs↔code mismatch caught by INV-015 manual checklist
 - **Coverage by area**:
   - `core/auth/csrf.py`: full behavior coverage
 - **Instances**:
   - v1.17.0: removed `application/json` short-circuit
   - v1.22.0: multipart-without-header refused, body cap configurable
-- **Regression tests**: `test_multipart_without_header_is_refused`, `test_multipart_with_header_passes_without_buffering`, `test_form_body_cap_is_configurable`
-- **Related**: INV-015 (docs↔code coherence — body cap previously documented as 10 MB while code is 1 MiB)
+  - v2.0.0: session-bound CSRF replaced by signed double-submit cookie; body cap aligned to 10 MB (INV-015 instance closed)
+- **Regression tests**: `test_multipart_without_header_is_refused`, `test_multipart_with_header_passes_without_buffering`, `test_form_body_cap_is_configurable`, `test_form_body_cap_default_is_10mb`
+- **Related**: INV-015 (docs↔code coherence — body cap aligned to 10 MB in v2.0.0), INV-030 (signed double-submit cookie — the CSRF wire-format invariant)
 
 ---
 
@@ -483,7 +484,7 @@ Listed in order of historical discovery (oldest first). IDs are stable.
   - v1.33.0: per-user `session_version` counter
   - v1.33.1: explicit TTL on `session_guard` cache writes
 - **Regression tests**: `test_load_permissions_refuses_inactive_user`, `test_login_required_denies_when_session_version_revoked`, `test_require_role_denies_when_session_version_revoked`, `test_require_any_role_denies_when_session_version_revoked`, `test_require_permission_denies_when_session_revoked`, `test_cache_writes_respect_configurable_ttl`, plus 18 more in `test_session_guard.py`
-- **Related**: INV-007 (JWT revocation — same family of "auth must support fast invalidation")
+- **Related**: INV-007 (JWT revocation — same family of "auth must support fast invalidation"), INV-030 (CSRF cookie statelessness — the deliberate CSRF ⟂ auth boundary)
 
 ---
 
@@ -786,6 +787,34 @@ Listed in order of historical discovery (oldest first). IDs are stable.
 
 ---
 
+### INV-030: CSRF cookie must be a signed structure; Set-Cookie must never be cached
+
+- **CWE**: CWE-352 (CSRF)
+- **First seen**: v2.0.0
+- **Status**: Active
+- **Severity (max instance)**: HIGH
+- **Bug class (two coupled forms)**:
+  1. *Unsigned double-submit*: a scheme where the submitted token equals (or is trivially derivable from) the cookie value with **no internal signature**. An attacker who can WRITE a cookie on the target domain (subdomain XSS, MITM on a sibling host, cookie-tossing) sets cookie=X and field=X and bypasses CSRF entirely.
+  2. *Cached `Set-Cookie`*: caching the CSRF `Set-Cookie` header (e.g. via `cache_response`) shares one cookie value across every visitor for the cache TTL. An attacker harvests the shared value and a valid (replayable, even if masked) token from the cached page and forges a cross-site request that every co-visitor's auto-sent shared cookie matches → site-wide CSRF bypass for the full TTL.
+- **Fix recipe**:
+  - The cookie value MUST be the **signed structure** `{nonce}.{sig}` where `nonce = secrets.token_hex(32)` and `sig = HMAC-SHA256(SECRET_KEY, nonce)` hexdigest. The submitted value is the cookie value, accepted **raw or BREACH-masked** (server unmasks then compares). Validation is two constant-time checks: (1) recompute the sig over the cookie's nonce and `compare_digest` → reject forged cookies; (2) `compare_digest` the (unmasked) submission to the cookie value. A bare-nonce (unsigned) cookie MUST be rejected at check (1). `SECRET_KEY` is read via `core.conf.config`.
+  - **`Set-Cookie` MUST be per visitor and MUST NEVER be cached.** `cache_response` MUST cache only body/status/media_type — it does today (`core/cache.py` caches `{'body_b64', 'status_code', 'media_type'}` only). This property is **load-bearing** for CSRF correctness; protect it with a regression test (`test_cache_response_never_emits_cached_set_cookie`). The `CsrfMiddleware` send-wrapper sets the CSRF `Set-Cookie` on the **live** response only, never via the cache value.
+- **Boundary (CSRF ⟂ auth)**: The CSRF cookie is stateless and cannot be server-invalidated. A user with a revoked session (INV-016) still holds a valid CSRF cookie — this is acceptable because the auth decorators (`login_required`, `require_role`, `require_any_role`, `require_permission`) reject the request at the authorization layer before any handler runs. CSRF proves origin, not identity. Do NOT file "CSRF cookie outlives session revocation" as a finding.
+- **Boundary (CSRF ⟂ XSS)**: An XSS-capable attacker reads the live cookie and the DOM, defeating **any** CSRF wire format. This is out of scope for CSRF; mitigate XSS via CSP and escaping. Do NOT use read-leak/XSS scenarios to argue a CSRF token shape.
+- **Detector maturity**:
+  - L1: yes (manual review on `core/auth/csrf.py` cookie structure + `core/cache.py` header caching)
+  - L2: pre-merge checklist — cookie = `{nonce}.{sig}`, sig verified before match, unsigned cookie rejected, masking present, `cache_response` caches no headers
+  - L3: behavior tests (`test_validate_rejects_signature_invalid_cookie`, `test_validate_rejects_unsigned_naive_double_submit`, `test_masked_token_differs_per_render`, `test_cache_response_never_emits_cached_set_cookie`, `test_forged_cookie_writer_attack_fails`)
+- **Coverage by area**:
+  - `core/auth/csrf.py`: full behavior coverage (cookie structure + dual-accept validation)
+  - `core/cache.py`: regression pin that `Set-Cookie` is never cached
+- **Instances**:
+  - v2.0.0: signed double-submit cookie replaces session-bound synchronizer token; `Set-Cookie` confirmed uncached and pinned with regression test
+- **Regression tests**: `test_validate_accepts_raw_cookie_value`, `test_validate_accepts_masked_cookie_value`, `test_validate_rejects_signature_invalid_cookie`, `test_validate_rejects_unsigned_naive_double_submit`, `test_cache_response_never_emits_cached_set_cookie`, `test_forged_cookie_writer_attack_fails`
+- **Related**: INV-004 (CSRF request-shape rejection), INV-016 (session revocation — the auth-layer counterpart to this cookie's statelessness), INV-029 (CSRF_COOKIE_* defaults via config.get)
+
+---
+
 ## Roadmap — L1/L2 entries to graduate to L3
 
 These are the highest-leverage Semgrep/test mechanizations remaining. Sorted by impact × frequency.
@@ -816,3 +845,4 @@ When you complete an audit pass, append here:
 | 2026-05-25 | full sweep (code + docs + tests) | none (all 4 Criticals matched existing INVs: INV-004 docs side, INV-026 shell, INV-016 require_role/any_role test gap, INV-007 OAuth subscript propagation) | INV-015 (4 doc mismatches), INV-027 (cli.py:20 `_APP_DIR`) | Shipped Semgrep CI (PR #28) — 5 custom rules across INV-001, INV-002, INV-007, INV-021, INV-027 |
 | 2026-05-26 | iter 3 graduation: INV-002 + INV-001 to L3 full | none | none | Added 3 new Semgrep rules: `nori-sync-time-sleep-in-async`, `nori-sync-requests-import-in-services`, `nori-sync-subprocess-in-async`. `services/*` swept manually for INV-001 partner calls — zero usages. Full repo scan: 8 rules × 71 files = 0 findings. Convergence metric: 0 new classes, 0 regressions — pure mechanization work. |
 | 2026-05-26 | git/release/docs flow review | none | INV-015 (4 new instances: mike fiction in `mkdocs.yml`, VPS+rsync fiction in `docs/deployment.md`, 2 dead anchors in code_quality.md + dependencies.md) | Cleanup PR: pinned `mkdocs-material>=9.7.6` in deploy workflow, added `--strict` to `mkdocs build`, removed unused `extra.version: mike` stanza, rewrote `docs/deployment.md` Documentation site section to describe the actual Firebase + GH Actions pipeline, fixed both dead anchors, added `[Unreleased]` section to CHANGELOG. Convergence metric: 0 new classes, 4 INV-015 regressions caught manually — confirms that L3 for INV-015 remains infeasible (would have needed a docs-vs-real-infra check that no static tool can do). |
+| 2026-06-11 | csrf-double-submit v2.0.0 docs slice | INV-030 (signed cookie + Set-Cookie never cached) | INV-004 (body cap updated to 10 MB, signed-cookie context added), INV-016 (added cross-reference to INV-030 per CSRF ⟂ auth boundary) | CSRF rewrite: stateless signed double-submit cookie replaces session-bound synchronizer token. INV-004 fix recipe updated (10 MB body cap, signed double-submit context). INV-016 "Related" gains INV-030 back-reference. New INV-030 covers both unsigned-cookie and cached-Set-Cookie bypass forms with L3 regression tests. |

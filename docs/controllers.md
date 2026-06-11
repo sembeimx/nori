@@ -134,7 +134,7 @@ async def create(self, request: Request):
         return templates.TemplateResponse(request, 'product/form.html', {
             'errors': {}
         })
-        # csrf_field is a Jinja2 global — use {{ csrf_field(request.session)|safe }} in the template
+        # csrf_field is a Jinja2 global — use {{ csrf_field(request)|safe }} in the template
 
     # 2. If the user sends a POST, we process the logic here
     form = dict(await request.form())

@@ -44,6 +44,18 @@ else:
         },
     }
 
+# CSRF — Signed double-submit cookie (v2.0.0)
+# All keys are read by core via config.get(key, default) — INV-029.
+# Override any of these in settings.py or via environment-specific config.
+CSRF_COOKIE_NAME = os.environ.get('CSRF_COOKIE_NAME', 'csrftoken')
+# Use '__Host-csrftoken' for single-host HTTPS deployments (Decision 4).
+CSRF_COOKIE_SECURE = not DEBUG  # True in production; forced True for __Host- names
+CSRF_COOKIE_SAMESITE = os.environ.get('CSRF_COOKIE_SAMESITE', 'Lax')
+CSRF_COOKIE_HTTPONLY = False  # MUST stay False — the JS shim reads document.cookie
+CSRF_COOKIE_PATH = os.environ.get('CSRF_COOKIE_PATH', '/')
+CSRF_COOKIE_MAX_AGE = None  # Session cookie by default; set to int seconds if needed
+CSRF_FORM_MAX_BODY_SIZE = int(os.environ.get('CSRF_FORM_MAX_BODY_SIZE', 10 * 1024 * 1024))  # 10 MB
+
 # CORS
 CORS_ORIGINS = [o.strip() for o in os.environ.get('CORS_ORIGINS', '').split(',') if o.strip()]
 CORS_ALLOW_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS']

@@ -1065,3 +1065,275 @@ async def test_redis_atomic_update_modifies_existing(fake_redis_with_lua):
     result = await backend.atomic_update('counter', lambda v: v + 1)
     assert result == 6
     assert await backend.get('counter') == 6
+
+
+# ---------------------------------------------------------------------------
+# REQ-CSRF-017, design §1.5 — cache_response MUST NOT cache Set-Cookie
+# WU-1: RED tests for cache + CSRF interaction
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_cache_response_never_emits_cached_set_cookie():
+    """A cache_response-served (cache-hit) response carries no Set-Cookie from the cache dict.
+
+    REQ-CSRF-017, design §1.5: the cache dict is exactly {body_b64, status_code, media_type}.
+    This test pins the existing correct behavior against regression.
+    """
+    from starlette.responses import Response
+
+    class FakeURL:
+        path = '/csrf-pin-test'
+        query = ''
+
+    class FakeRequest:
+        method = 'GET'
+        url = FakeURL()
+
+    class Ctrl:
+        @cache_response(ttl=60)
+        async def page(self, request):
+            return Response('<form>hi</form>', media_type='text/html', status_code=200)
+
+    ctrl = Ctrl()
+    req = FakeRequest()
+
+    # Warm the cache
+    resp1 = await ctrl.page(req)
+    assert resp1.status_code == 200
+
+    # Verify the cache dict does NOT contain Set-Cookie or any header data
+    backend = get_backend()
+    cache_key = 'view:/csrf-pin-test:'
+    cached = await backend.get(cache_key)
+    assert cached is not None, 'Cache entry was not created'
+    # The cached dict must contain ONLY these three keys (no headers)
+    assert set(cached.keys()) == {'body_b64', 'status_code', 'media_type'} or set(cached.keys()) == {
+        'body',
+        'status_code',
+        'media_type',
+    }, f'Cache dict must not contain headers; got keys: {set(cached.keys())}'
+    # Explicitly no Set-Cookie in the cached dict
+    assert 'set-cookie' not in cached
+    assert 'Set-Cookie' not in cached
+    assert 'headers' not in cached
+
+    # Cache-hit response must not carry Set-Cookie from the cache
+    resp2 = await ctrl.page(req)
+    # The Response object returned by cache_response on hit must not have Set-Cookie
+    # (cookie issuance is CsrfMiddleware's job, not cache_response's job)
+    if hasattr(resp2, 'headers'):
+        set_cookie_val = resp2.headers.get('set-cookie', '')
+        assert set_cookie_val == '', f'Cache-hit response must not replay Set-Cookie; got: {set_cookie_val!r}'
+
+
+def _extract_field_value(html: str, field_name: str = '_csrf_token') -> str:
+    """Pull the value of a named hidden input out of a rendered HTML form."""
+    import re
+
+    m = re.search(rf'name="{re.escape(field_name)}"\s+value="([^"]*)"', html)
+    if not m:
+        m = re.search(rf'value="([^"]*)"\s+name="{re.escape(field_name)}"', html)
+    assert m, f'No {field_name} hidden input found in: {html!r}'
+    return m.group(1)
+
+
+@pytest.mark.asyncio
+async def test_cross_visitor_cached_page_submit_with_shim_succeeds():
+    """Genuine cross-visitor cache-hit + shim scenario.
+
+    REQ-CSRF-011 / REQ-CSRF-017: a `cache_response`-decorated form page is warmed by
+    Visitor A (cookie A; the cached HTML embeds A's masked token). Visitor B GETs the
+    SAME page through the real CsrfMiddleware + cache_response stack and:
+
+      (a) receives a cache HIT serving A's cached body (A's stale embedded token), AND
+      (b) receives their OWN distinct Set-Cookie (cookie B != cookie A) from the
+          live send-wrapper (the cache layer never replays Set-Cookie — §1.5).
+
+    The shim then copies B's OWN raw cookie value into X-CSRF-Token before submit, and
+    B's POST validates (200). A control assertion (B replays A's stale cached field with
+    no shim) is covered by test_cross_visitor_cached_page_submit_without_shim_403s.
+    """
+    from core.auth.csrf import CsrfMiddleware, csrf_field
+    from starlette.responses import Response
+
+    from tests.test_core.test_csrf import (
+        _Captured,
+        _make_receive,
+        _passthrough_app,
+        _scope,
+        _scope_with_cookie,
+    )
+
+    # --- The cached form page. csrf_field embeds the warming visitor's masked token. ---
+    class FormCtrl:
+        @cache_response(ttl=60)
+        async def form_page(self, request):
+            field = csrf_field(request)
+            return Response(f'<form method="post">{field}</form>', media_type='text/html')
+
+    ctrl = FormCtrl()
+
+    class FakeURL:
+        path = '/cached-form'
+        query = ''
+
+    class CacheRequest:
+        """Request shim that cache_response and csrf_field both understand."""
+
+        method = 'GET'
+        url = FakeURL()
+
+        def __init__(self, scope: dict):
+            self.scope = scope
+            # Cookies parsed off the incoming Cookie header, plus any pending cookie.
+            self.cookies: dict[str, str] = {}
+            for key, value in scope.get('headers', []):
+                if key.lower() == b'cookie':
+                    raw = value.decode('latin1')
+                    for part in raw.split(';'):
+                        if '=' in part:
+                            name, _, val = part.partition('=')
+                            self.cookies[name.strip()] = val.strip()
+
+    # --- Visitor A: first GET, no cookie. CsrfMiddleware seeds a pending cookie, the
+    #     handler renders csrf_field(A's pending cookie), the cache stores A's body, and
+    #     the send-wrapper issues Set-Cookie: csrftoken=cookie_A on A's live response. ---
+    scope_a = _scope('GET', path='/cached-form')
+    cap_a = _Captured()
+
+    async def app_a(scope, receive, send):
+        resp = await ctrl.form_page(CacheRequest(scope))
+        await resp(scope, receive, send)
+
+    mw = CsrfMiddleware(app_a)
+    await mw(scope_a, await _make_receive(), cap_a.send)
+
+    assert cap_a.status == 200
+    set_cookies_a = [c for c in cap_a.set_cookie_headers() if 'csrftoken=' in c]
+    assert set_cookies_a, 'Visitor A must receive a Set-Cookie issuing their per-visitor cookie'
+    cookie_a = set_cookies_a[0].split('csrftoken=')[1].split(';')[0].strip()
+    cached_field_a = _extract_field_value(cap_a.body.decode())
+
+    # --- Visitor B: GET the SAME page WITH their own pre-existing valid cookie.
+    #     cache_response serves A's cached body (cache HIT — A's stale masked field),
+    #     while CsrfMiddleware leaves B's own cookie in place (no reissue). ---
+    from tests.test_core.test_csrf import _signed_cookie
+
+    _nonce_b, cookie_b = _signed_cookie()
+    assert cookie_b != cookie_a, 'Per-visitor cookies must differ (B != A)'
+
+    scope_b = _scope_with_cookie('GET', 'csrftoken', cookie_b)
+    scope_b['path'] = '/cached-form'
+    cap_b = _Captured()
+
+    async def app_b(scope, receive, send):
+        resp = await ctrl.form_page(CacheRequest(scope))
+        await resp(scope, receive, send)
+
+    mw_b = CsrfMiddleware(app_b)
+    await mw_b(scope_b, await _make_receive(), cap_b.send)
+
+    assert cap_b.status == 200
+    # B was served A's CACHED body — the embedded field is A's stale masked token.
+    served_field_b = _extract_field_value(cap_b.body.decode())
+    assert served_field_b == cached_field_a, (
+        "Visitor B must receive a cache HIT serving A's cached body (A's stale token)"
+    )
+    # B holds their OWN distinct cookie (already present — not reissued, not A's).
+    reissued_b = [c for c in cap_b.set_cookie_headers() if 'csrftoken=' in c]
+    assert not reissued_b, 'B already holds a valid cookie; it must not be reissued by the cache hit'
+
+    # --- The shim: before submit, B copies B's OWN raw cookie value into X-CSRF-Token,
+    #     overwriting the stale cached field. B's POST must validate (200). ---
+    post_scope_b = _scope_with_cookie('POST', 'csrftoken', cookie_b, headers=[(b'x-csrf-token', cookie_b.encode())])
+    cap_post = _Captured()
+    mw_post = CsrfMiddleware(_passthrough_app)
+    await mw_post(post_scope_b, await _make_receive(), cap_post.send)
+    assert cap_post.status == 200, (
+        f"With the shim, B submitting B's own raw cookie value must succeed; got {cap_post.status}"
+    )
+
+    # --- Control: WITHOUT the shim, B submits the stale cached field (A's masked token)
+    #     against B's own cookie -> 403 (documented no-JS limitation, not a bypass). ---
+    from urllib.parse import urlencode
+
+    body_no_shim = urlencode({'_csrf_token': served_field_b}).encode()
+    post_scope_no_shim = _scope_with_cookie(
+        'POST',
+        'csrftoken',
+        cookie_b,
+        headers=[(b'content-type', b'application/x-www-form-urlencoded')],
+    )
+    cap_no_shim = _Captured()
+    mw_no_shim = CsrfMiddleware(_passthrough_app)
+    await mw_no_shim(post_scope_no_shim, await _make_receive(body_no_shim), cap_no_shim.send)
+    assert cap_no_shim.status == 403, (
+        f"Without the shim, B replaying A's stale cached field must 403; got {cap_no_shim.status}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_cross_visitor_cached_page_submit_without_shim_403s():
+    """Visitor B submits A's stale cached field value (no shim correction) -> 403.
+
+    REQ-CSRF-011: documented no-JS limitation for cached form pages.
+    """
+    import hmac as _hmac
+    import secrets
+
+    import settings
+    from core.auth.csrf import CsrfMiddleware
+
+    # Visitor A's cookie (warmed the cache)
+    nonce_a = secrets.token_hex(32)
+    sig_a = _hmac.new(settings.SECRET_KEY.encode(), nonce_a.encode(), 'sha256').hexdigest()
+    cookie_a = f'{nonce_a}.{sig_a}'
+
+    # Visitor B's cookie
+    nonce_b = secrets.token_hex(32)
+    sig_b = _hmac.new(settings.SECRET_KEY.encode(), nonce_b.encode(), 'sha256').hexdigest()
+    cookie_b = f'{nonce_b}.{sig_b}'
+
+    # B submits A's stale cached field value (no shim to correct it)
+    # The urlencoded body contains A's raw cookie value as _csrf_token
+    body = f'_csrf_token={cookie_a}&name=alice'.encode()
+
+    from tests.test_core.test_csrf import _Captured, _make_receive, _passthrough_app, _scope_with_cookie
+
+    scope_b = _scope_with_cookie(
+        'POST',
+        'csrftoken',
+        cookie_b,  # B's own cookie in the browser
+        headers=[(b'content-type', b'application/x-www-form-urlencoded')],
+    )
+
+    cap = _Captured()
+    mw = CsrfMiddleware(_passthrough_app)
+    await mw(scope_b, await _make_receive(body), cap.send)
+    assert cap.status == 403, f"Without shim, B submitting A's stale token must fail with 403; got {cap.status}"
+
+
+@pytest.mark.asyncio
+async def test_forged_cookie_writer_attack_fails():
+    """Attacker sets cookie {nonce}.{bad_sig} + submits same value -> 403 at check (1).
+
+    REQ-CSRF-002, REQ-CSRF-003: writer-attacker cannot forge a valid signature.
+    """
+    import secrets
+
+    from core.auth.csrf import CsrfMiddleware
+
+    nonce = secrets.token_hex(32)
+    bad_sig = 'c' * 64  # not a valid HMAC under SECRET_KEY
+    forged_cookie = f'{nonce}.{bad_sig}'
+
+    from tests.test_core.test_csrf import _Captured, _make_receive, _passthrough_app, _scope_with_cookie
+
+    headers = [(b'x-csrf-token', forged_cookie.encode())]
+    scope = _scope_with_cookie('POST', 'csrftoken', forged_cookie, headers=headers)
+
+    cap = _Captured()
+    mw = CsrfMiddleware(_passthrough_app)
+    await mw(scope, await _make_receive(), cap.send)
+    assert cap.status == 403, f'Forged cookie (bad sig) must be rejected at check (1) with 403; got {cap.status}'
