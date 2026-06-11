@@ -98,13 +98,13 @@ Every `POST` form **must** include a CSRF token. `csrf_field` is a Jinja2 global
 
 ```html
 <form method="POST" action="/articles">
-    {{ csrf_field(request.session)|safe }}
+    {{ csrf_field(request)|safe }}
     <input type="text" name="title" />
     <button type="submit">Create</button>
 </form>
 ```
 
-For AJAX requests, use the raw token via `csrf_token(request.session)` in the `X-CSRF-Token` header. See [Forms & Validation](forms_validation.md) for full details.
+For AJAX requests, use the raw token via `csrf_token(request)` in the `X-CSRF-Token` header. See [Forms & Validation](forms_validation.md) for full details.
 
 ## Flash Messages
 

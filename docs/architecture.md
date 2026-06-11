@@ -120,8 +120,8 @@ Response ←──┘
 | **RequestIdMiddleware** | `core.http.request_id` | Generates a UUID per request (or propagates incoming `X-Request-ID`). Stored in `request.state.request_id`. Added to every response as `X-Request-ID` header. Enables end-to-end tracing across logs and services. |
 | **SecurityHeadersMiddleware** | `core.http.security_headers` | Injects security headers on every response: `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `X-XSS-Protection: 1; mode=block`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy: camera=(), microphone=(), geolocation=()`, `Strict-Transport-Security` (HSTS, 1 year). Optional CSP if configured. |
 | **CORSMiddleware** | `starlette.middleware.cors` | Only added if `CORS_ORIGINS` is set in `.env`. Handles `OPTIONS` preflight and adds `Access-Control-*` headers. |
-| **SessionMiddleware** | `starlette.middleware.sessions` | Creates and validates signed session cookies using `SECRET_KEY`. Populates `request.session` as a dict-like object. Required by CSRF, auth decorators, and flash messages. |
-| **CsrfMiddleware** | `core.auth.csrf` | Validates CSRF tokens on state-changing methods (POST, PUT, DELETE, PATCH). Skips safe methods (GET, HEAD, OPTIONS). Checks `X-CSRF-Token` header first, then `_csrf_token` form field (form bodies only — JSON clients must send the header). Auto-generates token if missing. Returns 403 on mismatch, 413 on oversized body (DoS protection, 10 MB limit). |
+| **SessionMiddleware** | `starlette.middleware.sessions` | Creates and validates signed session cookies using `SECRET_KEY`. Populates `request.session` as a dict-like object. Required by auth decorators, flash messages, and OAuth state (CSRF is stateless as of v2.0.0 and no longer depends on it). |
+| **CsrfMiddleware** | `core.auth.csrf` | Stateless signed double-submit cookie CSRF (v2.0.0). Issues a per-visitor `{nonce}.{sig}` cookie via a `send`-wrapper (never cached). Validates with two constant-time checks: (1) HMAC cookie integrity, (2) double-submit match (raw or BREACH-masked). Checks `X-CSRF-Token` header first (no body read); falls back to `_csrf_token` urlencoded field. JSON and multipart clients must use the header. Returns 403 on mismatch, 413 on body exceeding 10 MB cap. |
 
 ### Why This Order Matters
 
@@ -130,7 +130,7 @@ Middleware order matters. Request ID wraps everything because every log line nee
 - **Request ID first**: ensures every log message — including middleware errors — has a trace ID.
 - **Security headers early**: guarantees all responses get security headers, even on middleware failures.
 - **CORS before session**: preflight `OPTIONS` requests must be handled before session cookie processing.
-- **Session before CSRF**: CSRF middleware reads `scope['session']` to get/set the CSRF token, so the session must be populated first.
+- **Session before CSRF**: session is populated before CSRF runs, so auth decorators downstream can read session data after CSRF validation passes. (CSRF itself is now stateless and does not read the session.)
 - **CSRF last**: processes the request body after all other middleware can read from the request.
 
 ---
