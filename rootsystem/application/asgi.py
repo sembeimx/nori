@@ -179,7 +179,7 @@ exception_handlers = {} if settings.DEBUG else {404: not_found, 500: server_erro
 def _build_middleware(settings_module) -> list[Middleware]:
     stack = [
         Middleware(RequestIdMiddleware),
-        Middleware(SecurityHeadersMiddleware),
+        Middleware(SecurityHeadersMiddleware, hsts=not settings_module.DEBUG),
         Middleware(
             SessionMiddleware,
             secret_key=settings_module.SECRET_KEY,

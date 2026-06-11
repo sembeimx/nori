@@ -110,6 +110,48 @@ def test_trusted_proxies_warning_silent_when_attribute_missing():
     assert emitted is True
 
 
+def test_security_headers_middleware_hsts_disabled_in_debug():
+    """SecurityHeadersMiddleware must be configured with hsts=False when DEBUG=True.
+
+    Emitting HSTS over HTTP (local dev) pins the browser to HTTPS for up to a
+    year, breaking subsequent HTTP development sessions. The fix is to pass
+    hsts=not settings_module.DEBUG to the middleware constructor.
+    """
+    debug_settings = SimpleNamespace(
+        SECRET_KEY='test-secret',
+        DEBUG=True,
+        CORS_ORIGINS=[],
+        CORS_ALLOW_METHODS=['GET', 'POST'],
+        CORS_ALLOW_HEADERS=['*'],
+        CORS_ALLOW_CREDENTIALS=False,
+    )
+    stack = _build_middleware(debug_settings)
+    sec_entry = next(m for m in stack if m.cls.__name__ == 'SecurityHeadersMiddleware')
+    # kwargs dict on a Middleware namedtuple; 'hsts' must be False in DEBUG
+    assert sec_entry.kwargs.get('hsts') is False, (
+        'SecurityHeadersMiddleware must be configured with hsts=False when DEBUG=True '
+        'so HSTS is not pinned on local HTTP sessions.'
+    )
+
+
+def test_security_headers_middleware_hsts_enabled_in_production():
+    """SecurityHeadersMiddleware must be configured with hsts=True when DEBUG=False."""
+    prod_settings = SimpleNamespace(
+        SECRET_KEY='test-secret',
+        DEBUG=False,
+        CORS_ORIGINS=[],
+        CORS_ALLOW_METHODS=['GET', 'POST'],
+        CORS_ALLOW_HEADERS=['*'],
+        CORS_ALLOW_CREDENTIALS=False,
+    )
+    stack = _build_middleware(prod_settings)
+    sec_entry = next(m for m in stack if m.cls.__name__ == 'SecurityHeadersMiddleware')
+    assert sec_entry.kwargs.get('hsts') is True, (
+        'SecurityHeadersMiddleware must be configured with hsts=True when DEBUG=False '
+        'so production HTTPS is properly secured.'
+    )
+
+
 def test_trusted_proxies_warning_silent_with_real_logger(monkeypatch, caplog):
     """End-to-end with the real ``logging`` API — verifies the helper
     actually emits a record at WARNING level on the expected logger,
