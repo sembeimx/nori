@@ -72,7 +72,7 @@ import hmac
 import secrets
 from hashlib import sha256
 from html import escape as _html_escape
-from typing import MutableMapping, Protocol, runtime_checkable
+from typing import MutableMapping, Protocol
 from urllib.parse import parse_qs
 
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
@@ -463,9 +463,14 @@ def _validate_submission(submitted: str, cookie_val: str) -> bool:
     """
     try:
         candidate = _unmask(submitted) if _looks_masked(submitted) else submitted
-    except ValueError:
+    except (ValueError, TypeError):
         return False
-    return hmac.compare_digest(candidate, cookie_val)
+    # Compare BYTES, not str: ``_unmask`` can yield a valid-UTF-8 but non-ASCII
+    # ``str`` for an attacker-crafted masked token, and ``hmac.compare_digest``
+    # raises ``TypeError`` on non-ASCII ``str``. Encoding both sides keeps the
+    # comparison constant-time and content-agnostic — a non-ASCII candidate
+    # simply compares unequal and returns False (-> 403) instead of crashing.
+    return hmac.compare_digest(candidate.encode('utf-8'), cookie_val.encode('utf-8'))
 
 
 def _make_send_wrapper(scope: Scope, send: Send) -> Send:
@@ -561,7 +566,6 @@ async def _send_413(send: Send) -> None:
 # ---------------------------------------------------------------------------
 
 
-@runtime_checkable
 class _CsrfRequest(Protocol):
     """Structural type for the objects ``csrf_field`` / ``csrf_token`` accept.
 

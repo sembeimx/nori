@@ -224,6 +224,84 @@ async def test_validate_rejects_mismatched_submission():
 
 
 # ---------------------------------------------------------------------------
+# REQ-CSRF-003 / REQ-CSRF-006 — non-ASCII unmask must not crash (DoS guard)
+#
+# `_unmask` ends in `raw_bytes.decode('utf-8')`, so an attacker-crafted masked
+# token can unmask to a VALID-UTF-8 but NON-ASCII str. `hmac.compare_digest`
+# on a non-ASCII str raises TypeError. `_validate_submission` must compare
+# bytes so the crafted token simply returns False (-> 403) instead of letting
+# the TypeError escape the middleware (500 / DoS).
+# ---------------------------------------------------------------------------
+
+
+def _craft_non_ascii_unmask_token() -> str:
+    """Build a masked token that unmasks to a valid-UTF-8 NON-ASCII str.
+
+    With a zero mask, the XORed bytes equal the desired payload verbatim, so the
+    envelope unmasks to ('é' * 40), which `str.decode('utf-8')` accepts but
+    `hmac.compare_digest` rejects with TypeError when compared as a str.
+    """
+    from core.auth.csrf import _MASK_LEN
+
+    desired = ('é' * 40).encode('utf-8')
+    mask = b'\x00' * _MASK_LEN
+    return base64.b64encode(mask + desired).decode('ascii')
+
+
+def test_validate_submission_non_ascii_unmask_returns_false_not_raises():
+    """Unit: a token unmasking to non-ASCII returns False (must NOT raise TypeError).
+
+    Regression for the DoS: `hmac.compare_digest` on a non-ASCII str raises
+    TypeError, which `_validate_submission` only-catching-ValueError let escape.
+    """
+    from core.auth.csrf import _validate_submission
+
+    crafted = _craft_non_ascii_unmask_token()
+    cookie_val = 'a' * 64 + '.' + 'b' * 64
+    # Must return a bool (False), not raise.
+    assert _validate_submission(crafted, cookie_val) is False
+
+
+def test_validate_submission_ascii_wrong_masked_token_returns_false():
+    """Unit: a plain ASCII-but-wrong masked token still returns False (no regression)."""
+    from core.auth.csrf import _mask, _validate_submission
+
+    _nonce, cookie_val = _signed_cookie()
+    _nonce2, other_cookie = _signed_cookie()
+    wrong_masked = _mask(other_cookie)  # masks a DIFFERENT cookie value
+    assert _validate_submission(wrong_masked, cookie_val) is False
+
+
+def test_validate_submission_legitimate_masked_token_roundtrips():
+    """Unit: a legitimate _mask(cookie) still validates (round-trip not broken)."""
+    from core.auth.csrf import _mask, _validate_submission
+
+    _nonce, cookie_val = _signed_cookie()
+    legit_masked = _mask(cookie_val)
+    assert _validate_submission(legit_masked, cookie_val) is True
+
+
+@pytest.mark.asyncio
+async def test_non_ascii_unmask_header_returns_403_not_500():
+    """Integration: a valid signed cookie + crafted non-ASCII-unmask token in the
+    X-CSRF-Token header returns 403 — the middleware must NOT let the TypeError
+    propagate as an unhandled 500.
+
+    REQ-CSRF-003, REQ-CSRF-006 (any invalid token -> 403).
+    """
+    _nonce, cookie_val = _signed_cookie()
+    crafted = _craft_non_ascii_unmask_token()
+    headers = [(b'x-csrf-token', crafted.encode('latin1'))]
+    scope = _scope_with_cookie('POST', 'csrftoken', cookie_val, headers=headers)
+
+    cap = _Captured()
+    mw = CsrfMiddleware(_passthrough_app)
+    # Must not raise; must answer 403.
+    await mw(scope, await _make_receive(), cap.send)
+    assert cap.status == 403
+
+
+# ---------------------------------------------------------------------------
 # REQ-CSRF-009 — BREACH masking: per-render masks differ, both validate
 # ---------------------------------------------------------------------------
 
