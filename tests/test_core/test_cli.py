@@ -355,6 +355,31 @@ def test_app_dir_is_absolute_and_cwd_independent(monkeypatch, tmp_path):
     )
 
 
+def test_backup_dir_is_absolute_and_cwd_independent(monkeypatch, tmp_path):
+    """cli._BACKUP_DIR must be absolute and anchored to the install root,
+    not resolved relative to the process CWD (INV-027).
+
+    framework:update writes safety backups under _BACKUP_DIR. While it was
+    ``os.path.join('rootsystem', '.framework_backups')`` (CWD-relative), running
+    the CLI from any directory other than the repo root wrote backups to
+    ``$CWD/rootsystem/.framework_backups`` — the wrong tree — and aborted the
+    update if that CWD was unwritable. Same bug class as _APP_DIR, same file.
+    """
+    original = cli._BACKUP_DIR
+    monkeypatch.chdir(tmp_path)
+    assert pathlib.Path(cli._BACKUP_DIR).is_absolute(), (
+        f'cli._BACKUP_DIR must be an absolute path (INV-027), got: {cli._BACKUP_DIR!r}'
+    )
+    import os as _os
+    assert cli._BACKUP_DIR.endswith(_os.path.join('rootsystem', '.framework_backups')), (
+        f'cli._BACKUP_DIR must end with rootsystem/.framework_backups, got: {cli._BACKUP_DIR!r}'
+    )
+    # Value must not change when CWD changes (proves it is not CWD-relative)
+    assert cli._BACKUP_DIR == original, (
+        'cli._BACKUP_DIR changed when CWD changed — it is still CWD-relative'
+    )
+
+
 # ---------------------------------------------------------------------------
 # routes:list — must boot Nori config before importing routes
 # ---------------------------------------------------------------------------

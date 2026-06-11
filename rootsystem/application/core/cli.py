@@ -485,7 +485,7 @@ _GITHUB_REPO = 'sembeimx/nori'
 _GITHUB_API = 'https://api.github.com'
 _CORE_DIR = os.path.join(_APP_DIR, 'core')
 _FRAMEWORK_MODELS_DIR = os.path.join(_APP_DIR, 'models', 'framework')
-_BACKUP_DIR = os.path.join('rootsystem', '.framework_backups')
+_BACKUP_DIR = str(pathlib.Path(_APP_DIR).parent / '.framework_backups')
 
 _REQUIREMENTS_NORI_FILE = 'requirements.nori.txt'
 
