@@ -70,9 +70,10 @@ from __future__ import annotations
 import base64
 import hmac
 import secrets
+from collections.abc import MutableMapping
 from hashlib import sha256
 from html import escape as _html_escape
-from typing import MutableMapping, Protocol
+from typing import Protocol
 from urllib.parse import parse_qs
 
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
@@ -107,7 +108,7 @@ def _form_body_cap() -> int:
 
 
 def _cookie_name() -> str:
-    return config.get('CSRF_COOKIE_NAME', 'csrftoken')
+    return str(config.get('CSRF_COOKIE_NAME', 'csrftoken'))
 
 
 # One-time guard so the __Host-/insecure misconfiguration warning fires once per
@@ -150,7 +151,7 @@ def _cookie_secure() -> bool:
 
 
 def _cookie_samesite() -> str:
-    return config.get('CSRF_COOKIE_SAMESITE', 'Lax')
+    return str(config.get('CSRF_COOKIE_SAMESITE', 'Lax'))
 
 
 def _cookie_httponly() -> bool:
@@ -162,11 +163,12 @@ def _cookie_path() -> str:
     name = _cookie_name()
     if name.startswith('__Host-'):
         return '/'  # __Host- requires Path=/
-    return config.get('CSRF_COOKIE_PATH', '/')
+    return str(config.get('CSRF_COOKIE_PATH', '/'))
 
 
 def _cookie_max_age() -> int | None:
-    return config.get('CSRF_COOKIE_MAX_AGE', None)
+    value = config.get('CSRF_COOKIE_MAX_AGE', None)
+    return int(value) if value is not None else None
 
 
 # ---------------------------------------------------------------------------
@@ -618,7 +620,7 @@ def csrf_token(request: _CsrfRequest) -> str:
     name = _cookie_name()
     cookies: dict = getattr(request, 'cookies', {}) or {}
     scope: dict = getattr(request, 'scope', {}) or {}
-    return cookies.get(name) or scope.get('csrf_pending_cookie', '')
+    return str(cookies.get(name) or scope.get('csrf_pending_cookie', ''))
 
 
 def csrf_cookie_name() -> str:

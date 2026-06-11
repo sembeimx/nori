@@ -19,13 +19,11 @@ from __future__ import annotations
 
 import base64
 import hmac
-import os
 from urllib.parse import urlencode
 
 import pytest
 from core.auth.csrf import CsrfMiddleware, csrf_field, csrf_token
 from core.auth.security import Security
-
 
 # ---------------------------------------------------------------------------
 # ASGI test helpers
@@ -119,6 +117,7 @@ def _signed_cookie(secret: str | None = None, nonce: str | None = None) -> tuple
     """
     if secret is None:
         import settings
+
         secret = settings.SECRET_KEY
     if nonce is None:
         nonce = Security.generate_csrf_token()
@@ -380,9 +379,7 @@ async def test_header_token_path_still_short_circuits():
     """
     _nonce, cookie_val = _signed_cookie()
     headers = [(b'x-csrf-token', cookie_val.encode())]
-    scope = _scope_with_cookie(
-        'POST', 'csrftoken', cookie_val, headers=headers
-    )
+    scope = _scope_with_cookie('POST', 'csrftoken', cookie_val, headers=headers)
 
     body_read = {'count': 0}
 
@@ -790,17 +787,16 @@ async def test_host_prefix_insecure_logs_warning_once(monkeypatch):
     try:
         # Two issuances — the warning must fire on the FIRST only.
         cap1 = await _issue_cookie()
-        cap2 = await _issue_cookie()
+        await _issue_cookie()  # second issuance — warning must NOT fire again
     finally:
         csrf_logger.removeHandler(handler)
 
     host_warnings = [
-        r for r in captured_records
+        r
+        for r in captured_records
         if r.levelno == logging.WARNING and '__Host-' in r.getMessage() and 'CSRF_COOKIE_SECURE' in r.getMessage()
     ]
-    assert len(host_warnings) == 1, (
-        f'__Host-/insecure warning must fire exactly once; fired {len(host_warnings)} times'
-    )
+    assert len(host_warnings) == 1, f'__Host-/insecure warning must fire exactly once; fired {len(host_warnings)} times'
 
     # The cookie is STILL force-secured (warning is in addition, not instead).
     issued = [c for c in cap1.set_cookie_headers() if '__Host-csrftoken=' in c]
@@ -820,9 +816,7 @@ async def test_samesite_default_is_lax():
 
     csrf_set_cookies = [c for c in cap.set_cookie_headers() if 'csrftoken=' in c]
     assert csrf_set_cookies, 'Expected Set-Cookie header'
-    assert 'SameSite=Lax' in csrf_set_cookies[0], (
-        f'Default SameSite must be Lax; got: {csrf_set_cookies[0]!r}'
-    )
+    assert 'SameSite=Lax' in csrf_set_cookies[0], f'Default SameSite must be Lax; got: {csrf_set_cookies[0]!r}'
 
 
 @pytest.mark.asyncio

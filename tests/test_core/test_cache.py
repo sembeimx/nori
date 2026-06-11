@@ -1080,7 +1080,6 @@ async def test_cache_response_never_emits_cached_set_cookie():
     REQ-CSRF-017, design §1.5: the cache dict is exactly {body_b64, status_code, media_type}.
     This test pins the existing correct behavior against regression.
     """
-    from core.cache import cache_set, cache_get
     from starlette.responses import Response
 
     class FakeURL:
@@ -1109,10 +1108,11 @@ async def test_cache_response_never_emits_cached_set_cookie():
     cached = await backend.get(cache_key)
     assert cached is not None, 'Cache entry was not created'
     # The cached dict must contain ONLY these three keys (no headers)
-    assert set(cached.keys()) == {'body_b64', 'status_code', 'media_type'} or \
-           set(cached.keys()) == {'body', 'status_code', 'media_type'}, (
-        f'Cache dict must not contain headers; got keys: {set(cached.keys())}'
-    )
+    assert set(cached.keys()) == {'body_b64', 'status_code', 'media_type'} or set(cached.keys()) == {
+        'body',
+        'status_code',
+        'media_type',
+    }, f'Cache dict must not contain headers; got keys: {set(cached.keys())}'
     # Explicitly no Set-Cookie in the cached dict
     assert 'set-cookie' not in cached
     assert 'Set-Cookie' not in cached
@@ -1124,9 +1124,7 @@ async def test_cache_response_never_emits_cached_set_cookie():
     # (cookie issuance is CsrfMiddleware's job, not cache_response's job)
     if hasattr(resp2, 'headers'):
         set_cookie_val = resp2.headers.get('set-cookie', '')
-        assert set_cookie_val == '', (
-            f'Cache-hit response must not replay Set-Cookie; got: {set_cookie_val!r}'
-        )
+        assert set_cookie_val == '', f'Cache-hit response must not replay Set-Cookie; got: {set_cookie_val!r}'
 
 
 def _extract_field_value(html: str, field_name: str = '_csrf_token') -> str:
@@ -1240,7 +1238,7 @@ async def test_cross_visitor_cached_page_submit_with_shim_succeeds():
     # B was served A's CACHED body — the embedded field is A's stale masked token.
     served_field_b = _extract_field_value(cap_b.body.decode())
     assert served_field_b == cached_field_a, (
-        'Visitor B must receive a cache HIT serving A\'s cached body (A\'s stale token)'
+        "Visitor B must receive a cache HIT serving A's cached body (A's stale token)"
     )
     # B holds their OWN distinct cookie (already present — not reissued, not A's).
     reissued_b = [c for c in cap_b.set_cookie_headers() if 'csrftoken=' in c]
@@ -1248,14 +1246,12 @@ async def test_cross_visitor_cached_page_submit_with_shim_succeeds():
 
     # --- The shim: before submit, B copies B's OWN raw cookie value into X-CSRF-Token,
     #     overwriting the stale cached field. B's POST must validate (200). ---
-    post_scope_b = _scope_with_cookie(
-        'POST', 'csrftoken', cookie_b, headers=[(b'x-csrf-token', cookie_b.encode())]
-    )
+    post_scope_b = _scope_with_cookie('POST', 'csrftoken', cookie_b, headers=[(b'x-csrf-token', cookie_b.encode())])
     cap_post = _Captured()
     mw_post = CsrfMiddleware(_passthrough_app)
     await mw_post(post_scope_b, await _make_receive(), cap_post.send)
     assert cap_post.status == 200, (
-        f'With the shim, B submitting B\'s own raw cookie value must succeed; got {cap_post.status}'
+        f"With the shim, B submitting B's own raw cookie value must succeed; got {cap_post.status}"
     )
 
     # --- Control: WITHOUT the shim, B submits the stale cached field (A's masked token)
@@ -1273,7 +1269,7 @@ async def test_cross_visitor_cached_page_submit_with_shim_succeeds():
     mw_no_shim = CsrfMiddleware(_passthrough_app)
     await mw_no_shim(post_scope_no_shim, await _make_receive(body_no_shim), cap_no_shim.send)
     assert cap_no_shim.status == 403, (
-        f'Without the shim, B replaying A\'s stale cached field must 403; got {cap_no_shim.status}'
+        f"Without the shim, B replaying A's stale cached field must 403; got {cap_no_shim.status}"
     )
 
 
@@ -1283,10 +1279,11 @@ async def test_cross_visitor_cached_page_submit_without_shim_403s():
 
     REQ-CSRF-011: documented no-JS limitation for cached form pages.
     """
-    from core.auth.csrf import CsrfMiddleware
     import hmac as _hmac
-    import settings
     import secrets
+
+    import settings
+    from core.auth.csrf import CsrfMiddleware
 
     # Visitor A's cookie (warmed the cache)
     nonce_a = secrets.token_hex(32)
@@ -1302,7 +1299,7 @@ async def test_cross_visitor_cached_page_submit_without_shim_403s():
     # The urlencoded body contains A's raw cookie value as _csrf_token
     body = f'_csrf_token={cookie_a}&name=alice'.encode()
 
-    from tests.test_core.test_csrf import _scope_with_cookie, _Captured, _make_receive, _passthrough_app
+    from tests.test_core.test_csrf import _Captured, _make_receive, _passthrough_app, _scope_with_cookie
 
     scope_b = _scope_with_cookie(
         'POST',
@@ -1314,9 +1311,7 @@ async def test_cross_visitor_cached_page_submit_without_shim_403s():
     cap = _Captured()
     mw = CsrfMiddleware(_passthrough_app)
     await mw(scope_b, await _make_receive(body), cap.send)
-    assert cap.status == 403, (
-        f'Without shim, B submitting A\'s stale token must fail with 403; got {cap.status}'
-    )
+    assert cap.status == 403, f"Without shim, B submitting A's stale token must fail with 403; got {cap.status}"
 
 
 @pytest.mark.asyncio
@@ -1325,14 +1320,15 @@ async def test_forged_cookie_writer_attack_fails():
 
     REQ-CSRF-002, REQ-CSRF-003: writer-attacker cannot forge a valid signature.
     """
-    from core.auth.csrf import CsrfMiddleware
     import secrets
+
+    from core.auth.csrf import CsrfMiddleware
 
     nonce = secrets.token_hex(32)
     bad_sig = 'c' * 64  # not a valid HMAC under SECRET_KEY
     forged_cookie = f'{nonce}.{bad_sig}'
 
-    from tests.test_core.test_csrf import _scope_with_cookie, _Captured, _make_receive, _passthrough_app
+    from tests.test_core.test_csrf import _Captured, _make_receive, _passthrough_app, _scope_with_cookie
 
     headers = [(b'x-csrf-token', forged_cookie.encode())]
     scope = _scope_with_cookie('POST', 'csrftoken', forged_cookie, headers=headers)
@@ -1340,6 +1336,4 @@ async def test_forged_cookie_writer_attack_fails():
     cap = _Captured()
     mw = CsrfMiddleware(_passthrough_app)
     await mw(scope, await _make_receive(), cap.send)
-    assert cap.status == 403, (
-        f'Forged cookie (bad sig) must be rejected at check (1) with 403; got {cap.status}'
-    )
+    assert cap.status == 403, f'Forged cookie (bad sig) must be rejected at check (1) with 403; got {cap.status}'

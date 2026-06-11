@@ -41,13 +41,14 @@ def test_csrf_field_accepts_request():
 
     REQ-CSRF-009: the function accepts a request object, not a session dict.
     """
+    import hmac
+
     from core.auth.csrf import csrf_field
     from core.auth.security import Security
 
-    import hmac
-
     nonce = Security.generate_csrf_token()
     import settings
+
     sig = hmac.new(settings.SECRET_KEY.encode(), nonce.encode(), 'sha256').hexdigest()
     cookie_val = f'{nonce}.{sig}'
 
@@ -69,11 +70,11 @@ def test_csrf_field_uses_pending_cookie_when_no_cookie():
 
     REQ-CSRF-009: first-request coordination via scope seam.
     """
+    import hmac
+
+    import settings
     from core.auth.csrf import csrf_field
     from core.auth.security import Security
-
-    import hmac
-    import settings
 
     nonce = Security.generate_csrf_token()
     sig = hmac.new(settings.SECRET_KEY.encode(), nonce.encode(), 'sha256').hexdigest()
@@ -95,11 +96,11 @@ def test_csrf_token_returns_raw_cookie_value():
 
     REQ-CSRF-010.
     """
+    import hmac
+
+    import settings
     from core.auth.csrf import csrf_token
     from core.auth.security import Security
-
-    import hmac
-    import settings
 
     nonce = Security.generate_csrf_token()
     sig = hmac.new(settings.SECRET_KEY.encode(), nonce.encode(), 'sha256').hexdigest()
@@ -110,9 +111,7 @@ def test_csrf_token_returns_raw_cookie_value():
         scope: dict = {}
 
     result = csrf_token(_FakeRequest())
-    assert result == cookie_val, (
-        f'csrf_token(request) must return the raw cookie value {cookie_val!r}; got {result!r}'
-    )
+    assert result == cookie_val, f'csrf_token(request) must return the raw cookie value {cookie_val!r}; got {result!r}'
 
 
 def test_csrf_token_returns_pending_cookie_on_first_visit():
@@ -120,11 +119,11 @@ def test_csrf_token_returns_pending_cookie_on_first_visit():
 
     REQ-CSRF-010.
     """
+    import hmac
+
+    import settings
     from core.auth.csrf import csrf_token
     from core.auth.security import Security
-
-    import hmac
-    import settings
 
     nonce = Security.generate_csrf_token()
     sig = hmac.new(settings.SECRET_KEY.encode(), nonce.encode(), 'sha256').hexdigest()
@@ -171,9 +170,7 @@ def test_custom_csrf_cookie_name_reaches_rendered_base_html(monkeypatch):
     # The global is rendered BEFORE the csrf.js include so it is set when the shim runs.
     global_pos = rendered.index('window.NORI_CSRF_COOKIE_NAME')
     include_pos = rendered.index('<script src="/static/js/csrf.js"')
-    assert global_pos < include_pos, (
-        'window.NORI_CSRF_COOKIE_NAME must be rendered before the csrf.js include'
-    )
+    assert global_pos < include_pos, 'window.NORI_CSRF_COOKIE_NAME must be rendered before the csrf.js include'
 
 
 def test_default_csrf_cookie_name_reaches_rendered_base_html():
