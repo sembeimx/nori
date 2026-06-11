@@ -181,6 +181,15 @@ def validate_settings() -> list[str]:
     if not os.path.isdir(STATIC_DIR):
         errors.append(f'STATIC_DIR not found: {STATIC_DIR}')
 
+    # Reject the .env.example placeholder in production (INV-015 docs↔code).
+    # The real placeholder is 'change-me-in-production' (see .env.example line 5).
+    # docs/deployment.md previously named it 'change-me' — that is now corrected.
+    if not DEBUG and SECRET_KEY == 'change-me-in-production':
+        errors.append(
+            'SECRET_KEY is still the .env.example placeholder ("change-me-in-production") '
+            '— generate a real secret (python3 -c "import secrets; print(secrets.token_urlsafe(64))")'
+        )
+
     # JWT secret should differ from SECRET_KEY in production
     if not DEBUG and JWT_SECRET == SECRET_KEY:
         errors.append('JWT_SECRET should be set independently from SECRET_KEY in production')
