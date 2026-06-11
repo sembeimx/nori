@@ -346,13 +346,12 @@ def test_app_dir_is_absolute_and_cwd_independent(monkeypatch, tmp_path):
         f'cli._APP_DIR must be an absolute path (INV-027), got: {cli._APP_DIR!r}'
     )
     import os as _os
+
     assert cli._APP_DIR.endswith(_os.path.join('rootsystem', 'application')), (
         f'cli._APP_DIR must end with rootsystem/application, got: {cli._APP_DIR!r}'
     )
     # Value must not change when CWD changes (proves it is not CWD-relative)
-    assert cli._APP_DIR == original, (
-        'cli._APP_DIR changed when CWD changed — it is still CWD-relative'
-    )
+    assert cli._APP_DIR == original, 'cli._APP_DIR changed when CWD changed — it is still CWD-relative'
 
 
 def test_backup_dir_is_absolute_and_cwd_independent(monkeypatch, tmp_path):
@@ -371,13 +370,12 @@ def test_backup_dir_is_absolute_and_cwd_independent(monkeypatch, tmp_path):
         f'cli._BACKUP_DIR must be an absolute path (INV-027), got: {cli._BACKUP_DIR!r}'
     )
     import os as _os
+
     assert cli._BACKUP_DIR.endswith(_os.path.join('rootsystem', '.framework_backups')), (
         f'cli._BACKUP_DIR must end with rootsystem/.framework_backups, got: {cli._BACKUP_DIR!r}'
     )
     # Value must not change when CWD changes (proves it is not CWD-relative)
-    assert cli._BACKUP_DIR == original, (
-        'cli._BACKUP_DIR changed when CWD changed — it is still CWD-relative'
-    )
+    assert cli._BACKUP_DIR == original, 'cli._BACKUP_DIR changed when CWD changed — it is still CWD-relative'
 
 
 # ---------------------------------------------------------------------------
@@ -1130,10 +1128,14 @@ def update_env(tmp_path, monkeypatch):
     monkeypatch.setattr(cli, '_CORE_DIR', str(core_dir))
     monkeypatch.setattr(cli, '_FRAMEWORK_MODELS_DIR', str(framework_models_dir))
     monkeypatch.setattr(cli, '_BACKUP_DIR', backup_dir)
-    monkeypatch.setattr(cli, '_FRAMEWORK_DIRS', {
-        'rootsystem/application/core/': str(core_dir),
-        'rootsystem/application/models/framework/': str(framework_models_dir),
-    })
+    monkeypatch.setattr(
+        cli,
+        '_FRAMEWORK_DIRS',
+        {
+            'rootsystem/application/core/': str(core_dir),
+            'rootsystem/application/models/framework/': str(framework_models_dir),
+        },
+    )
     # requirements.nori.txt remains CWD-relative (it lives at the project root
     # next to nori.py). The monkeypatch.chdir below ensures that relative
     # lookup resolves to tmp_path/requirements.nori.txt during the test.
