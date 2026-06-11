@@ -2,7 +2,7 @@
 pytest>=9.0.3
 pytest-asyncio>=1.3.0
 pytest-cov>=7.1.0
-cryptography>=42.0
+cryptography>=47.0.0
 ruff>=0.15.12
 pre-commit>=4.6.0
 mypy>=1.20.2
@@ -10,6 +10,6 @@ pip-audit>=2.10.0
 interrogate>=1.7
 filelock>=3.29.0
 hypothesis>=6.150
-fakeredis>=2.20
+fakeredis>=2.35.1
 redis<8  # fakeredis Lua bridge returns nested ZRANGE WITHSCORES pairs under redis-py 8 (real Redis is flat); unpin when fakeredis ships redis-8 compat
 lupa>=2.0
