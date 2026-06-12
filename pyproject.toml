@@ -206,3 +206,10 @@ exclude_lines = [
     # Defensive guards in CLI subprocess scripts that only run in error paths.
     "raise AssertionError",
 ]
+
+[tool.aerich]
+# Consolidated here (issue #22) so a Nori project ships a single pyproject.toml.
+# `location` is resolved relative to the CLI's working directory
+# (rootsystem/application/), so migrations live at rootsystem/application/migrations/.
+tortoise_orm = "settings.TORTOISE_ORM"
+location = "./migrations"

@@ -275,6 +275,75 @@ def test_migrate_downgrade_omits_delete_flag_by_default():
 
 
 # ---------------------------------------------------------------------------
+# aerich config resolution (issue #22 — single root pyproject.toml)
+# ---------------------------------------------------------------------------
+
+
+def _make_aerich_project(tmp_path, *, root_has_aerich: bool, legacy_exists: bool = True):
+    """Build a fake project tree and return (app_dir, root_pyproject, legacy)."""
+    app_dir = tmp_path / 'proj' / 'rootsystem' / 'application'
+    app_dir.mkdir(parents=True)
+    aerich_table = '[tool.aerich]\ntortoise_orm = "settings.TORTOISE_ORM"\nlocation = "./migrations"\n'
+    root_pyproject = tmp_path / 'proj' / 'pyproject.toml'
+    root_pyproject.write_text('[tool.ruff]\n' + (aerich_table if root_has_aerich else ''))
+    legacy = app_dir / 'pyproject.toml'
+    if legacy_exists:
+        legacy.write_text(aerich_table)
+    return str(app_dir), str(root_pyproject), str(legacy)
+
+
+def test_has_aerich_table_detects_presence_absence_and_missing(tmp_path):
+    present = tmp_path / 'a.toml'
+    present.write_text('[tool.ruff]\n[tool.aerich]\nlocation = "./migrations"\n')
+    absent = tmp_path / 'b.toml'
+    absent.write_text('[tool.ruff]\nline-length = 100\n')
+    inline_comment = tmp_path / 'c.toml'
+    inline_comment.write_text('[tool.aerich]  # consolidated\nlocation = "./migrations"\n')
+    commented_out = tmp_path / 'd.toml'
+    commented_out.write_text('# [tool.aerich]\n[tool.ruff]\n')
+    assert cli._has_aerich_table(str(present)) is True
+    assert cli._has_aerich_table(str(inline_comment)) is True
+    assert cli._has_aerich_table(str(absent)) is False
+    assert cli._has_aerich_table(str(commented_out)) is False
+    assert cli._has_aerich_table(str(tmp_path / 'missing.toml')) is False
+
+
+def test_aerich_config_prefers_root_when_it_has_table(tmp_path, monkeypatch):
+    app_dir, root_pyproject, _legacy = _make_aerich_project(tmp_path, root_has_aerich=True)
+    monkeypatch.setattr(cli, '_APP_DIR', app_dir)
+    assert cli._aerich_config() == root_pyproject
+
+
+def test_aerich_config_falls_back_to_legacy_when_root_lacks_table(tmp_path, monkeypatch):
+    app_dir, _root, legacy = _make_aerich_project(tmp_path, root_has_aerich=False)
+    monkeypatch.setattr(cli, '_APP_DIR', app_dir)
+    assert cli._aerich_config() == legacy
+
+
+def test_migrate_commands_pass_dash_c_config(migrations_env):
+    """Every aerich invocation must carry `-c <config>` (issue #22)."""
+    expected = cli._aerich_config()
+    cases = [
+        (cli.migrate_init, ()),
+        (cli.migrate_make, ('x',)),
+        (cli.migrate_upgrade, ()),
+        (cli.migrate_downgrade, ()),
+        (cli.migrate_fix, ()),
+    ]
+    for fn, args in cases:
+        with patch('subprocess.run') as mock_run:
+            fn(*args)
+        aerich_calls = [c for c in mock_run.call_args_list if 'aerich' in c.args[0]]
+        assert aerich_calls, f'{fn.__name__} ran no aerich call'
+        for call in aerich_calls:
+            argv = call.args[0]
+            assert _aerich_arg(call, '-c') == expected, f'{fn.__name__} missing -c'
+            # -c is a top-level aerich option and MUST precede the subcommand;
+            # the code places it immediately after 'aerich'.
+            assert argv[argv.index('aerich') + 1] == '-c', f'{fn.__name__} -c not before subcommand'
+
+
+# ---------------------------------------------------------------------------
 # User commands — discovery must be CWD-independent
 # ---------------------------------------------------------------------------
 
