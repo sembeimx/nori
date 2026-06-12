@@ -13,6 +13,10 @@ When a release is cut, rename `[Unreleased]` to `[X.Y.Z] — YYYY-MM-DD` and see
 - **Single `pyproject.toml` per project ([#22](https://github.com/sembeimx/nori/issues/22))**: the aerich config (`[tool.aerich]`) now lives in the root `pyproject.toml` alongside ruff/mypy/coverage/interrogate, so a new Nori project ships **one** `pyproject.toml` instead of two. The CLI passes `aerich -c <root-pyproject>` to every `migrate:*` command; `location` stays relative to the migrations' working directory, so existing migrations are unaffected.
   - **Existing projects**: nothing breaks. The CLI prefers the root `[tool.aerich]` but transparently falls back to the legacy `rootsystem/application/pyproject.toml` when the root lacks it. To consolidate, move `[tool.aerich]` into your root `pyproject.toml` and delete `rootsystem/application/pyproject.toml`.
 
+### Dependencies
+
+- Raised minimum versions (all already validated in CI): `cryptography>=47.0.0`, `httpx>=0.28.1`, `aiosmtplib>=5.1.0`, `asyncmy>=0.2.11` (framework); `fakeredis>=2.35.1` (dev). Consolidates Dependabot #23–#27.
+
 ---
 
 ## [2.0.1] — 2026-06-11
