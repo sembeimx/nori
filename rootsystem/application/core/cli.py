@@ -264,10 +264,35 @@ def _read_tortoise_apps() -> tuple[str, ...]:
     return apps or _DEFAULT_APPS
 
 
+def _has_aerich_table(path: str) -> bool:
+    """True if the TOML file at ``path`` declares a ``[tool.aerich]`` table."""
+    try:
+        with open(path, encoding='utf-8') as fh:
+            # Strip any inline comment before matching so `[tool.aerich]  # note`
+            # still resolves; a commented-out `# [tool.aerich]` correctly does not.
+            return any(line.split('#', 1)[0].strip() == '[tool.aerich]' for line in fh)
+    except OSError:
+        return False
+
+
+def _aerich_config() -> str:
+    """Resolve the pyproject.toml carrying ``[tool.aerich]``, to pass via aerich ``-c``.
+
+    Prefers the consolidated root ``pyproject.toml`` (Nori 2.1+). Falls back to the
+    legacy in-app ``rootsystem/application/pyproject.toml`` for projects that upgraded
+    before the consolidation and still carry it. Both paths derive from ``_APP_DIR``
+    (anchored to this module via ``__file__``), so resolution is CWD-independent.
+    """
+    app_dir = pathlib.Path(_APP_DIR)
+    root = str(app_dir.parent.parent / 'pyproject.toml')
+    legacy = str(app_dir / 'pyproject.toml')
+    return root if _has_aerich_table(root) else legacy
+
+
 def migrate_init() -> None:
     print('Initializing Aerich migrations...')
     subprocess.run(
-        [sys.executable, '-m', 'aerich', 'init', '-t', 'settings.TORTOISE_ORM'],
+        [sys.executable, '-m', 'aerich', '-c', _aerich_config(), 'init', '-t', 'settings.TORTOISE_ORM'],
         cwd=_APP_DIR,
         env=_quiet_env(),
     )
@@ -286,7 +311,7 @@ def migrate_init() -> None:
             continue
         print(f"  Generating initial migrations and tables for app '{app}'...")
         subprocess.run(
-            [sys.executable, '-m', 'aerich', '--app', app, 'init-db'],
+            [sys.executable, '-m', 'aerich', '-c', _aerich_config(), '--app', app, 'init-db'],
             cwd=_APP_DIR,
             env=_quiet_env(),
         )
@@ -295,7 +320,7 @@ def migrate_init() -> None:
 def migrate_make(name: str, app: str = 'models') -> None:
     print(f'Creating migration: {name} (app: {app})...')
     subprocess.run(
-        [sys.executable, '-m', 'aerich', '--app', app, 'migrate', '--name', name],
+        [sys.executable, '-m', 'aerich', '-c', _aerich_config(), '--app', app, 'migrate', '--name', name],
         cwd=_APP_DIR,
         env=_quiet_env(),
     )
@@ -306,7 +331,7 @@ def migrate_upgrade(app: str | None = None) -> None:
     for a in apps:
         print(f'Running migrations (upgrade) for app: {a}...')
         subprocess.run(
-            [sys.executable, '-m', 'aerich', '--app', a, 'upgrade'],
+            [sys.executable, '-m', 'aerich', '-c', _aerich_config(), '--app', a, 'upgrade'],
             cwd=_APP_DIR,
             env=_quiet_env(),
         )
@@ -314,7 +339,7 @@ def migrate_upgrade(app: str | None = None) -> None:
 
 def migrate_downgrade(steps: int = 1, delete: bool = False, app: str = 'models') -> None:
     print(f'Rolling back {steps} migration(s) for app: {app}...')
-    cmd = [sys.executable, '-m', 'aerich', '--app', app, 'downgrade', '-v', str(steps)]
+    cmd = [sys.executable, '-m', 'aerich', '-c', _aerich_config(), '--app', app, 'downgrade', '-v', str(steps)]
     if delete:
         cmd.append('-d')
     subprocess.run(cmd, cwd=_APP_DIR, env=_quiet_env())
@@ -323,7 +348,7 @@ def migrate_downgrade(steps: int = 1, delete: bool = False, app: str = 'models')
 def migrate_fix() -> None:
     print('Fixing migration files to current Aerich format...')
     subprocess.run(
-        [sys.executable, '-m', 'aerich', 'fix-migrations'],
+        [sys.executable, '-m', 'aerich', '-c', _aerich_config(), 'fix-migrations'],
         cwd=_APP_DIR,
         env=_quiet_env(),
     )
