@@ -8,6 +8,12 @@ When a release is cut, rename `[Unreleased]` to `[X.Y.Z] — YYYY-MM-DD` and see
 
 ## [Unreleased]
 
+_Nothing accumulated yet — add entries here as they ship to `main` so the next release cut is just a rename + date stamp._
+
+---
+
+## [2.1.0] — 2026-06-11
+
 ### Changed
 
 - **Single `pyproject.toml` per project ([#22](https://github.com/sembeimx/nori/issues/22))**: the aerich config (`[tool.aerich]`) now lives in the root `pyproject.toml` alongside ruff/mypy/coverage/interrogate, so a new Nori project ships **one** `pyproject.toml` instead of two. The CLI passes `aerich -c <root-pyproject>` to every `migrate:*` command; `location` stays relative to the migrations' working directory, so existing migrations are unaffected.
