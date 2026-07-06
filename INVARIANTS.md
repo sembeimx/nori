@@ -136,16 +136,18 @@ Listed in order of historical discovery (oldest first). IDs are stable.
     - `nori-sync-time-sleep-in-async` (ERROR): `time.sleep()` in `core/* + services/*` async def (excludes tests)
     - `nori-sync-requests-import-in-services` (ERROR): `import requests` / `from requests import X` in `services/*` (httpx is the contract)
     - `nori-sync-subprocess-in-async` (ERROR): `subprocess.run/check_output/check_call/Popen` in async def in `core/* + services/*` (excludes `core/cli.py` which is a sync entry script)
-  - Still L1/L2: sync crypto/hashing (`hashlib.pbkdf2_hmac`, `bcrypt.hashpw`), image decoding, `urllib.request.urlopen`. Difficult to mechanize without false positives because these calls are legitimate in non-async contexts; rely on per-PR review.
+  - Still L1/L2: sync crypto/hashing (`hashlib.pbkdf2_hmac`, `bcrypt.hashpw`), image decoding, `urllib.request.urlopen`. Difficult to mechanize without false positives because these calls are legitimate in non-async contexts; rely on per-PR review. 2026-07-06 audit: the 3 new instances below (`spool.write()`, a streaming `hashlib.sha256()` loop, a Jinja `.render()` call) are also not matched by any of the 4 L3 rules above — same false-positive-risk rationale, still L1/L2.
 - **Coverage by area**:
   - `services/storage_gcs.py`: swept Round 4 (RSA + cred load via to_thread)
   - `services/*` (open, time.sleep, requests import, subprocess in async): L3 since 2026-05-26
   - `core/*` (time.sleep, subprocess in async): L3 since 2026-05-26
   - `core/cli.py`: excluded from subprocess rule (sync entry script — subprocess.run is correct primitive)
-  - `core/http/upload.py`: swept Round 3 (`asyncio.to_thread` for disk write)
+  - `core/http/upload.py`: swept Round 3 (`asyncio.to_thread` for disk write) — **2026-07-06 audit found a second, unwrapped site**: see Instances (`_spool_body`)
   - `core/auth/security.py`: swept v1.22.0 (PBKDF2 async)
   - `core/tasks.py`: swept v1.27.0 (background dispatcher offloads sync)
   - `core/queue_worker.py`: swept v1.30.0 (execute_payload offloads sync)
+  - `services/storage_s3.py`: **2026-07-06 audit found open** — see Instances (`_hash_and_size`)
+  - `core/mail.py`: **2026-07-06 audit found open** — see Instances (`_render_template`)
   - Other crypto callsites (JWT signing, etc.): **NOT explicitly swept** at L3
 - **Instances**:
   - v1.17.0: `core/http/upload.py` write_bytes on loop
@@ -153,7 +155,10 @@ Listed in order of historical discovery (oldest first). IDs are stable.
   - v1.22.0: `core/auth/security.py` PBKDF2 hash_password / verify_password
   - v1.27.0: `core/tasks.py` background() sync dispatch
   - v1.30.0: `core/queue_worker.py` execute_payload sync dispatch
-- **Regression tests**: `test_hash_password_does_not_block_event_loop`, `test_background_sync_callable_does_not_block_event_loop`, `test_execute_payload_offloads_sync_callable_to_thread`
+  - 2026-07-06 audit: `core/http/upload.py` `_spool_body` — `spool.write()` (~401) rolls the multipart body to disk past the 8 MB RAM threshold (`_SPOOL_RAM_LIMIT`) unwrapped, inside an `async def`
+  - 2026-07-06 audit: `services/storage_s3.py` `_hash_and_size` (~122-139, called ~208) — full-body `hashlib.sha256()` streaming loop runs unwrapped; sibling `services/storage_gcs.py` offloads its equivalent credential/JWT work via `asyncio.to_thread`
+  - 2026-07-06 audit: `core/mail.py` `_render_template` (~82-85, called ~227) — sync Jinja2 `tmpl.render()` runs unwrapped on the event loop
+- **Regression tests**: `test_hash_password_does_not_block_event_loop`, `test_background_sync_callable_does_not_block_event_loop`, `test_execute_payload_offloads_sync_callable_to_thread`; pending for the 3 2026-07-06 instances (see GitHub issues)
 - **Related**: INV-022 (httpx per-call adds latency same family)
 
 ---
@@ -266,12 +271,13 @@ Listed in order of historical discovery (oldest first). IDs are stable.
 - **Coverage by area**:
   - `core/auth/jwt.py`: covered (revocation + claim access)
   - `core/auth/oauth.py`: covered
-  - `services/oauth_*`: covered (callbacks also propagate HTTPStatusError with log — see PR #28)
+  - `services/oauth_*`: covered (callbacks also propagate HTTPStatusError with log — see PR #28) — **2026-07-06 audit found a regression**: see Instances (`oauth_github.py`)
   - Backend `_store` attribute access elsewhere: **NOT explicitly swept**
 - **Instances**:
   - v1.16.0: `_is_blacklisted` read `backend._store` — only worked on MemoryBackend
   - v1.18.0: `revoke_token` raised `ValueError` on missing `jti` (RFC-optional)
-- **Regression tests**: `test_revoke_token_blocks_verify_under_redis_backend`, plus the v1.18.0 missing-`jti` test
+  - 2026-07-06 audit: `services/oauth_github.py` (~148) `token_resp.json()['access_token']` — bare subscript crashes with `KeyError` on GitHub's documented 200-OK-with-error-body response shape (no HTTP 4xx status, so `raise_for_status_logged` never fires to catch it first). The existing test only mocks a 400 status, giving false confidence that this path is covered. Fix recipe (a) above applies unchanged.
+- **Regression tests**: `test_revoke_token_blocks_verify_under_redis_backend`, plus the v1.18.0 missing-`jti` test; pending for the oauth_github 2026-07-06 instance — needs a 200-OK-with-error-body test case (see GitHub issues)
 - **Related**: INV-005 (OAuth unverified email — same family of "defensive defaults for third-party data")
 
 ---
@@ -426,10 +432,12 @@ Listed in order of historical discovery (oldest first). IDs are stable.
   - `core/http/upload.py`: covered
   - `services/storage_s3.py`, `storage_gcs.py`: covered (streaming protocol)
   - Future storage drivers: contract enforced via protocol tests
+  - `core/ws.py`: **2026-07-06 audit found open** — see Instances (per-message size cap)
 - **Instances**:
   - v1.21.0: `save_upload` chunked read
   - v1.23.0: full driver protocol refactor (file-like, not bytes)
-- **Regression tests**: `test_save_upload_passes_file_like_to_driver`, `test_save_upload_streaming_handles_payload_above_ram_threshold`
+  - 2026-07-06 audit: `core/ws.py` per-message size cap — `await websocket.receive_text()` (~87-90) fully buffers the frame before `len(data) > self.max_message_size` (~95) ever runs, so the buffer-then-check anti-pattern this INV was named for recurs on a different transport. The code comment (~33-36) frames `_MAX_MESSAGE_SIZE = 1 MiB` as the real ceiling ("generous... rejects the obvious DoS"), but the actual ceiling on what gets buffered before Nori's check runs is uvicorn's `ws_max_size` default of 16 MiB — a frame between 1 MiB and 16 MiB is fully accepted and buffered by uvicorn, handed to Nori as `data`, and only then rejected. Filed as a new instance of this INV rather than a new class: the pattern (fully buffer, then check size) is identical to the upload case, just on a different transport.
+- **Regression tests**: `test_save_upload_passes_file_like_to_driver`, `test_save_upload_streaming_handles_payload_above_ram_threshold`; pending for the `core/ws.py` 2026-07-06 instance (see GitHub issues)
 - **Related**: INV-017 (SVG XSS — adjacent upload hardening)
 
 ---
@@ -458,7 +466,9 @@ Listed in order of historical discovery (oldest first). IDs are stable.
   - v1.15.4: CORS at `insert(1, ...)` while docs documented `insert(2, ...)`
   - 2026-05-25 audit: 4 mismatches (CSRF JSON exemption, body cap 10MB vs 1MiB, SECRET_KEY validation claim, exempt_paths type)
   - 2026-05-26 git/release flow review: 4 more — `mkdocs.yml` declared `provider: mike` with mike never installed anywhere; `docs/deployment.md` "Documentation site" section described a VPS+rsync+Apache+Certbot pipeline while the actual deploy is Firebase Hosting + GitHub Actions; `docs/code_quality.md:129` linked to `cli.md#framework-check-config` while the real slug is `#frameworkcheck-config`; `docs/dependencies.md:111` linked to `observability.md#upgrading-an-existing-site` which never existed.
-- **Regression tests**: `test_middleware_order_with_cors_keeps_security_headers_outside_cors` pins the specific v1.15.4 invariant. `mkdocs build --strict` in CI (since 2026-05-26) catches the WARNING-level subset (unknown nav entries, theme overrides). Dead anchors remain at INFO level — caught only by manual sweep until a separate link-checker is added.
+  - 2026-07-06 full-spectrum audit — MED-ish (doc-only) regressions: CSP report-only default (`core/http/security_headers.py`) is documented in `docs/security.md` but not cross-referenced from `docs/middleware.md` or `docs/architecture.md`, where a reader auditing middleware defaults would also look for it; `docs/logging.md` (~92-98) and `docs/deployment.md` (~401) document three phantom loggers — `nori.throttle`, `nori.upload`, `nori.cache` — that no module actually creates (`get_logger()` prefixes with `nori.`, but no callsite passes `'throttle'`, `'upload'`, or `'cache'`); `docs/dependencies.md` is stale on two axes — the `cryptography>=42.0` example (~39, ~142) should read `>=47.0.0` per `requirements-dev.txt`, and it never mentions `tomlkit` even though `requirements.nori.txt` now declares it for aerich; `docs/code_quality.md`'s per-module mypy strict example (~337-340) lists 3 modules while `pyproject.toml`'s actual `[[tool.mypy.overrides]]` list (~135-141) has 6 (`core.auth.csrf`, `core.auth.jwt`, `core.auth.oauth` are undocumented).
+  - 2026-07-06 full-spectrum audit — LOW-severity (doc-only) regressions found in the same pass: `docs/code_quality.md` states the coverage floor is 82% without noting the actual baseline is ~86% (the floor number is correct, the "current" framing reads as if 82 were current); `docs/cli.md`'s `make:model` example shows `table = 'products'` (plural) while the generator (`core/cli.py` ~182) emits `table = '{name.lower()}'` (singular); `CLAUDE.md` §5 "Validation Rules" list is missing `password_strength` even though it's a fully implemented rule (`core/http/validation.py`); `docs/code_quality.md`'s Dependabot excerpt (~419) lists `hypothesis` in the `dev-tooling` group and `mypy` (no wildcard), while the real `.github/dependabot.yml` (~26-33) has no `hypothesis` entry and uses `mypy*`; `docs/code_quality.md`'s SBOM excerpt (~456-460, ~471-473) is stale against `.github/workflows/sbom.yml` (venv name, install location of `cyclonedx-bom`, invocation form, and output filename all differ); `docs/authentication.md`'s login example (line 51) calls `Security.verify_password(...)` without `await` — since `verify_password` is `async def`, `not <coroutine>` is always `False`, so that exact snippet never rejects a wrong password.
+- **Regression tests**: `test_middleware_order_with_cors_keeps_security_headers_outside_cors` pins the specific v1.15.4 invariant. `mkdocs build --strict` in CI (since 2026-05-26) catches the WARNING-level subset (unknown nav entries, theme overrides). Dead anchors remain at INFO level — caught only by manual sweep until a separate link-checker is added. The 2026-07-06 instances above are all doc-only fixes pending (see GitHub issues) — this INV's L3-infeasibility conclusion (per Detector maturity) holds; they were only caught by the per-PR/per-release manual sweep.
 - **Related**: every other INV (the docs side of every INV should match the code)
 
 ---
@@ -678,7 +688,7 @@ Listed in order of historical discovery (oldest first). IDs are stable.
   - L3: documented in `docs/installation.md`; no pytest (installer is one-shot)
 - **Coverage by area**:
   - `docs/install.py`: covered
-  - `core/cli.py:framework_update`: future opportunity — currently relies on GitHub TLS but does not verify
+  - `core/cli.py:framework_update`: future opportunity — currently relies on GitHub TLS but does not verify (**re-confirmed still open 2026-07-06** — the `framework:update` subparser still has no `--checksum` flag)
 - **Instances**:
   - v1.17.0: `--checksum` flag added
 - **Regression tests**: none (installer one-shot; manual end-to-end on release)
@@ -735,12 +745,14 @@ Listed in order of historical discovery (oldest first). IDs are stable.
   - L3: `.semgrep/nori-rules.yml::nori-cli-cwd-relative-path` (ERROR, since 2026-05). Restricted to `core/cli.py`. Does NOT catch `os.path.join('literal', ...)`.
 - **Coverage by area**:
   - `core/cli.py`: L3 active for `Path(...)`; `os.path.join` form still L1
+  - `core/_patches.py`: **2026-07-06 audit found open** — see Instances (`_APP_DIR`)
   - `core/`, `services/` more broadly: L2 only
 - **Instances**:
   - Multiple historical CLI fixes per AGENTS.md §7
   - 2026-05 audit flagged `_APP_DIR` and `_BACKUP_DIR` in `cli.py` as CWD-relative `os.path.join('rootsystem', ...)` literals — **both fixed 2026-06-11**, anchored to `__file__` (`_APP_DIR = str(pathlib.Path(__file__).resolve().parent.parent)`; `_BACKUP_DIR` derived from it)
   - `_REQUIREMENTS_NORI_FILE = 'requirements.nori.txt'` stays intentionally project-root-relative (lives next to `nori.py`); revisit only if a non-root-CWD failure surfaces
-- **Regression tests**: `test_app_dir_is_absolute_and_cwd_independent`, `test_backup_dir_is_absolute_and_cwd_independent` (chdir to a temp dir; assert the constant stays absolute and unchanged) — dedicated path-resolution coverage as of 2026-06-11
+  - 2026-07-06 audit: `core/_patches.py` (~24-26) has its own `_APP_DIR = os.path.join('rootsystem', 'application')` — a separate CWD-relative constant from the one fixed in `cli.py` 2026-06-11 (same name, different variable, never anchored). `framework_update()` invokes `_patches.apply()` in-process after the framework directories are replaced on disk; on a wrong-CWD invocation, `_ASGI_FILE` (derived from `_APP_DIR`) resolves to a nonexistent path, and each patcher's `if not os.path.exists(...): return False` guard makes the patch silently no-op instead of failing loud. This is exactly the gap the roadmap entry below ("extend to `os.path.join`, broaden to `core/`, `services/`") predicted.
+- **Regression tests**: `test_app_dir_is_absolute_and_cwd_independent`, `test_backup_dir_is_absolute_and_cwd_independent` (chdir to a temp dir; assert the constant stays absolute and unchanged) — dedicated path-resolution coverage as of 2026-06-11; pending for the `core/_patches.py` 2026-07-06 instance (see GitHub issues)
 - **Related**: INV-026
 
 ---
@@ -816,6 +828,202 @@ Listed in order of historical discovery (oldest first). IDs are stable.
 
 ---
 
+### INV-031: ORM structural-invariant mutation must be atomic (check-then-write race)
+
+- **CWE**: CWE-362 (Race Condition) + CWE-835 (Loop with Unreachable Exit Condition — the non-terminating-query consequence)
+- **First seen**: v2.1.0 (2026-07-06 audit)
+- **Status**: Active
+- **Severity (max instance)**: HIGH
+- **Bug class**: An ORM method reads current state, validates a structural invariant (e.g. "not a cycle", "not a duplicate"), then writes — with no transaction or row lock spanning the check and the write. Concurrent callers each observe a pre-write state that individually passes validation, so their interleaved writes jointly violate the invariant the check existed to enforce.
+- **Fix recipe**: Wrap the check and the write in `in_transaction()` with `select_for_update()` on the row(s) being validated, so a concurrent mutator blocks until the first transaction commits or rolls back; as defense in depth, bound any recursive traversal that assumes the invariant holds (visited-set or depth cap) so a violation degrades to a wrong answer instead of a hang.
+- **Detector maturity**:
+  - L1: yes
+  - L2: absent
+  - L3: absent (fix pending)
+- **Coverage by area**:
+  - `core/mixins/tree.py`: swept 2026-07-06 — found open (`move_to`, `ancestors`/`descendants`)
+  - Other ORM mixins with structural invariants (if any are added): **NOT swept**
+- **Instances**:
+  - 2026-07-06 audit: `core/mixins/tree.py` `move_to()` (~184-200) checks that `new_parent_id` is not in the current `descendant_ids` set, then `setattr` + `save(update_fields=...)` with no `atomic()`/`select_for_update` around the span — two concurrent `move_to()` calls each pass the check against the pre-move tree and jointly form a parent cycle (reproduced via `asyncio.gather` on first attempt). Downstream, `ancestors()` (~90-132) and `descendants()` (~134-164) build `WITH RECURSIVE ... UNION ALL` queries with no visited-set or depth cap, so once a cycle exists the recursive CTE never terminates (observed hang >4s) — a DB-level DoS stacked on top of the corrupted tree.
+- **Regression tests**: pending — fix tracked in audit 2026-07-06 (see GitHub issues)
+- **Related**: INV-001 (cache read-modify-write race — same TOCTOU family, different layer: cache value vs. ORM structural invariant)
+
+---
+
+### INV-032: Serializers must not emit unfetched ORM relations
+
+- **CWE**: Nori-specific (correctness; breaks the most common serialization path)
+- **First seen**: v2.1.0 (2026-07-06 audit)
+- **Status**: Active
+- **Severity (max instance)**: HIGH
+- **Bug class**: A `to_dict()`-style serializer iterates the model's full declared field set instead of its actual DB columns, so any unfetched relation on the instance yields a live `QuerySet`/`ReverseRelation`/related-model object — a value that is not JSON-serializable and was never opted into by the caller.
+- **Fix recipe**: Iterate `self._meta.db_fields` (or explicitly skip `self._meta.fetch_fields`) instead of `_meta.fields_map`, so only actual column values are serialized; relations become opt-in via an explicit include mechanism, never emitted implicitly.
+- **Detector maturity**:
+  - L1: yes
+  - L2: absent
+  - L3: absent (fix pending)
+- **Coverage by area**:
+  - `core/mixins/model.py`: swept 2026-07-06 — found open (`to_dict`)
+  - Other serialization paths (`core/collection.py` `to_list`, see INV-008): not re-swept for this specific failure mode
+- **Instances**:
+  - 2026-07-06 audit: `core/mixins/model.py` `to_dict()` (~70-78) iterates `self._meta.fields_map` instead of `_meta.db_fields`; a plain `.get()` followed by `JSONResponse(model.to_dict())` raises `TypeError: Object of type QuerySet is not JSON serializable` for any model with a foreign key. `prefetch_related` does not fix it — the value becomes a raw model instance instead, still not serializable. The bare `except Exception` around the field access (~77-78) never fires here because `getattr` on an unfetched relation returns an object rather than raising.
+- **Regression tests**: pending — fix tracked in audit 2026-07-06 (see GitHub issues)
+- **Related**: INV-008 (`protected_fields` must be respected — same serializer, adjacent failure mode)
+
+---
+
+### INV-033: A global request-body size ceiling must exist
+
+- **CWE**: CWE-400 (Uncontrolled Resource Consumption)
+- **First seen**: v2.1.0 (2026-07-06 audit)
+- **Status**: Active
+- **Severity (max instance)**: HIGH
+- **Bug class**: Size caps applied only to specific parsers (file upload, CSRF form-body extraction) leave the general-purpose `request.json()` / `request.form()` entry points unbounded, so any handler that reads the body directly is an unauthenticated memory-exhaustion DoS.
+- **Fix recipe**: Add a `MaxBodySizeMiddleware` early in the ASGI stack that rejects on an oversized `Content-Length` and enforces a running cap while draining `receive()`, independent of what any downstream parser does; default it via `config.get('MAX_BODY_SIZE', default)` per INV-029.
+- **Detector maturity**:
+  - L1: yes
+  - L2: absent
+  - L3: absent (fix pending)
+- **Coverage by area**:
+  - `core/auth/csrf.py`: header-token path swept 2026-07-06 — found open (passes the body through untouched)
+  - ASGI middleware stack: no global body-size middleware exists
+- **Instances**:
+  - 2026-07-06 audit: no `MAX_BODY_SIZE` middleware or setting exists anywhere in `core/`. `core/auth/csrf.py` (~392-398) takes the header-token path whenever `X-CSRF-Token` is present and passes the body through completely untouched, and every JSON request must use that path (there is no form-encoded token to extract from JSON) — so an anonymous client, which can self-serve the non-HttpOnly CSRF cookie via any GET, POSTs a multi-GB JSON body and `request.json()` buffers it unbounded. No uvicorn/gunicorn default cap or documented nginx cap exists in the shipped deploy path either.
+- **Regression tests**: pending — fix tracked in audit 2026-07-06 (see GitHub issues)
+- **Related**: INV-014 (upload streaming cap — same class, different entry point), INV-004 (CSRF body cap — the form-encoded sibling of this gap), INV-029 (settings-default contract for the new `MAX_BODY_SIZE` key)
+
+---
+
+### INV-034: Rate-limit keys must use the route template, not the literal path
+
+- **CWE**: CWE-770 (Allocation of Resources Without Limits or Throttling) + CWE-799 (Improper Control of Interaction Frequency)
+- **First seen**: v2.1.0 (2026-07-06 audit)
+- **Status**: Active
+- **Severity (max instance)**: HIGH
+- **Bug class**: A throttle bucket keyed on the literal request path gives every distinct path-parameter value its own independent bucket, so a client bypasses the intended per-endpoint limit simply by enumerating the parameter; if the backing store has no key-count ceiling, that same enumeration also grows it unbounded.
+- **Fix recipe**: Key the bucket on the matched route pattern (e.g. `request.scope['route'].path_format`), never the literal path; give any in-memory throttle store a `max_keys`/LRU eviction ceiling, mirroring the pattern already used by the cache backend.
+- **Detector maturity**:
+  - L1: yes
+  - L2: absent
+  - L3: absent (fix pending)
+- **Coverage by area**:
+  - `core/http/throttle.py`: swept 2026-07-06 — found open (key construction)
+  - `core/http/throttle_backends.py`: swept 2026-07-06 — found open (`MemoryBackend` has no key ceiling)
+- **Instances**:
+  - 2026-07-06 audit: `core/http/throttle.py` (~51) builds the key as `f'{ip}:{request.url.path}'`; reproduced 500/500 requests allowed against a configured 5-per-60s limit by varying a path parameter. `core/http/throttle_backends.py` `MemoryBackend` (~76-83) has no `max_keys`/LRU cap, unlike `MemoryCacheBackend` (`core/cache.py` ~138-141, default cap 10,000) — the same enumeration that defeats the limit also grows the backing dict without bound.
+- **Regression tests**: pending — fix tracked in audit 2026-07-06 (see GitHub issues)
+- **Related**: INV-001 (cache RMW atomicity — `MemoryCacheBackend`'s `max_keys` is the pattern to mirror), INV-009 (client-IP parsing — the other half of the throttle key)
+
+---
+
+### INV-035: Cache backends must have identical value semantics
+
+- **CWE**: Nori-specific (portability/correctness)
+- **First seen**: v2.1.0 (2026-07-06 audit)
+- **Status**: Active
+- **Severity (max instance)**: MED
+- **Bug class**: Pluggable cache backends that (de)serialize cached values differently make application code silently backend-dependent — logic tested against one backend changes shape, or breaks outright, when deployed against another.
+- **Fix recipe**: Route the in-memory backend's values through the same serialize/deserialize step the Redis backend uses (or assert at the API boundary that only JSON-safe values are accepted), so both backends round-trip identically regardless of which one is configured.
+- **Detector maturity**:
+  - L1: yes
+  - L2: absent
+  - L3: absent (fix pending)
+- **Coverage by area**:
+  - `core/cache.py`: swept 2026-07-06 — found open (`MemoryCacheBackend` vs `RedisCacheBackend` divergence)
+- **Instances**:
+  - 2026-07-06 audit: `core/cache.py` — `MemoryCacheBackend` stores live object references (a cached `tuple`/`datetime`/`Decimal`/`UUID` round-trips exactly, but a later mutation of the original object aliases the cached entry), while `RedisCacheBackend` serializes via `json.dumps`/`json.loads` (~297, ~303) (a `tuple` comes back a `list`; `datetime`/`Decimal`/`UUID` come back `str`; a raw `set()` raises `TypeError`). Code written and tested against `CACHE_BACKEND=memory` silently changes shape — or breaks — under `CACHE_BACKEND=redis`. `docs/caching.md` documents only the `set()` `TypeError` case, not the tuple-to-list shape change or the memory-aliasing hazard.
+- **Regression tests**: pending — fix tracked in audit 2026-07-06 (see GitHub issues)
+- **Related**: INV-015 (docs↔code coherence — the doc gap on this same divergence)
+
+---
+
+### INV-036: Declarative type coercion must special-case bool
+
+- **CWE**: CWE-704 (Incorrect Type Conversion)
+- **First seen**: v2.1.0 (2026-07-06 audit)
+- **Status**: Active
+- **Severity (max instance)**: HIGH
+- **Bug class**: Coercing a string request parameter to a `bool`-annotated type via the type's own constructor (`bool(s)`) inverts almost every falsy-looking input, because in Python only the empty string is falsy for `bool(str)` — `bool('false')`, `bool('0')`, and `bool('no')` are all `True`.
+- **Fix recipe**: Special-case `bool` before the generic `param.annotation(val)` constructor call — accept a fixed truthy set (e.g. `{'true','1','yes','on'}`, case-insensitive) and treat everything else as `False`; log a warning when a required parameter with no default cannot be resolved instead of silently injecting `None`.
+- **Detector maturity**:
+  - L1: yes
+  - L2: absent
+  - L3: absent (fix pending)
+- **Coverage by area**:
+  - `core/http/inject.py`: swept 2026-07-06 — found open (`_SAFE_COERCE_TYPES` bool handling)
+- **Instances**:
+  - 2026-07-06 audit: `core/http/inject.py` (~14, 74-91) — `_SAFE_COERCE_TYPES` includes `bool` and coerces path/query params via `param.annotation(val)`, so `?active=false`, `?active=0`, and `?active=no` all become `True` (reproduced through the real `@inject()` decorator). Secondary instance in the same fix scope: when a required parameter (no default, not resolved from path/query/form) can't be resolved, it is silently set to `None` (~79, ~90) instead of logging or raising — a caller relying on the annotation being non-optional gets a silent `None` instead of a clear error.
+- **Regression tests**: pending — fix tracked in audit 2026-07-06 (see GitHub issues)
+- **Related**: INV-018 (numeric validation footguns — same family of "declarative input handling has an untested corner")
+
+---
+
+### INV-037: Cache-population races must be coalesced (thundering herd on TTL expiry)
+
+- **CWE**: CWE-400 (Uncontrolled Resource Consumption — thundering herd / cache stampede)
+- **First seen**: v2.1.0 (2026-07-06 audit)
+- **Status**: Active
+- **Severity (max instance)**: MED
+- **Bug class**: A cache-aside read path (`cache_get` miss → recompute → `cache_set`) has no single-flight/coalescing guard, so every request that arrives while the key is missing or mid-recompute independently repeats the same expensive work. This is distinct from INV-001 (an RMW that corrupts a value derived from the read): here each concurrent writer computes and stores the same correct value, so the result is not wrong — the hazard is redundant work, not corruption — but a hot key's TTL expiry can still trigger N simultaneous executions of the wrapped handler, which is its own resource-exhaustion / latency-spike risk.
+- **Fix recipe**: Add a per-key single-flight guard (an in-process/distributed lock keyed on `cache_key`, or a short-TTL "recompute in progress" sentinel) around the miss path, so only one caller recomputes while concurrent callers wait for the result or briefly serve the stale value (stale-while-revalidate).
+- **Detector maturity**:
+  - L1: yes
+  - L2: absent
+  - L3: absent (fix pending)
+- **Coverage by area**:
+  - `core/cache.py` `cache_response`: swept 2026-07-06 — found open
+  - Other cache-aside call sites (any hand-rolled `cache_get`/`cache_set` pair outside `cache_response`): not swept for this specific failure mode
+- **Instances**:
+  - 2026-07-06 audit: `core/cache.py` `cache_response` decorator (~518-578) — the miss path (~541-576: `cache_get` → `func()` → `cache_set`) has no lock or in-flight marker between the read and the write; concurrent requests arriving during the same TTL-expiry window each independently execute the full wrapped handler.
+- **Regression tests**: pending — fix tracked in audit 2026-07-06 (see GitHub issues)
+- **Related**: INV-001 (cache RMW atomicity — same file, adjacent but distinct concurrency hazard: correctness-breaking RMW vs. redundant-work stampede)
+
+---
+
+### INV-038: Public collection APIs must resolve element fields consistently for dicts and objects
+
+- **CWE**: Nori-specific (correctness / silent API footgun)
+- **First seen**: v2.1.0 (2026-07-06 audit)
+- **Status**: Active
+- **Severity (max instance)**: HIGH
+- **Bug class**: A collection/data-structure helper that accepts both mapping (`dict`) and object elements but resolves a field via `getattr(item, key, ...)`-first (or with no `dict` branch at all) silently mishandles `dict` elements: `getattr` returns a bound method when `key` collides with a `dict` method name (`items`, `keys`, `get`, ...), and a missing `dict` branch degrades ordering/grouping/dedup to a no-op or a single `None` bucket instead of raising. The API looks like it supports dicts but produces wrong results with no error.
+- **Fix recipe**: Route every element-field access through a single `dict`-first accessor (check `isinstance(item, Mapping)` before `getattr`), reusing the one correct helper rather than re-implementing access per method.
+- **Detector maturity**:
+  - L1: yes
+  - L2: absent
+  - L3: absent (fix pending)
+- **Coverage by area**:
+  - `core/collection.py`: swept 2026-07-06 — found open (`pluck`/`where`/`sort_by`/`group_by`/`unique`/`to_dict`)
+- **Instances**:
+  - 2026-07-06 audit: `core/collection.py` — `_get_field()` resolves `dict`-first correctly but is used only by `sum`/`avg`/`min`/`max`; `pluck`/`where` use `getattr(item, key, ...)`-first (returns a bound method on a key like `'items'`); `sort_by`/`group_by`/`unique` have no `dict` branch at all (reproduced on `[{'price': ...}]`: `sort_by` silently no-ops, `group_by` collapses every element under a `None` key, `unique` collapses to one survivor); `to_dict(key)` hard-crashes with `AttributeError` (its `getattr` has no default). The class docstring and `pluck`'s doctest promise `dict` support.
+- **Regression tests**: pending — fix tracked in audit 2026-07-06 (see GitHub issues)
+- **Related**: INV-032 (serializer relation-leak — sibling `to_dict` correctness), INV-008 (protected_fields serialization)
+
+---
+
+### INV-039: Driver URL path segments must be validated or encoded before interpolation into outbound requests
+
+- **CWE**: CWE-22 (Improper Limitation of a Pathname — path traversal into an outbound request URL)
+- **First seen**: v2.1.0 (2026-07-06 audit)
+- **Status**: Active
+- **Severity (max instance)**: HIGH
+- **Bug class**: A service driver that interpolates caller-supplied identifiers (index name, document id, object key) directly into an outbound HTTP client's URL **path** — with no allow-list validation or percent-encoding — lets `../` segments escape the intended resource scope and reach other endpoints of the backend, authenticated with the app's own API credentials. httpx collapses dot-segments before the request goes on the wire, so the traversal is real, not cosmetic. Distinct from INV-006, which escapes user input inside a backend query/filter **DSL string**: this is the URL path structure of the request itself.
+- **Fix recipe**: Validate path-segment inputs against a strict allow-list (e.g. `^[A-Za-z0-9_-]+$`) at the public API boundary (`core/search.py`), and/or percent-encode each segment with `urllib.parse.quote(safe='')` in the driver before interpolation.
+- **Detector maturity**:
+  - L1: yes
+  - L2: absent
+  - L3: absent (fix pending)
+- **Coverage by area**:
+  - `services/search_meilisearch.py`: swept 2026-07-06 — found open (`index`/`doc_id` path interpolation)
+  - `core/search.py`: swept 2026-07-06 — found open (public API passes `index`/`doc_id` through unvalidated)
+  - Storage drivers (`services/storage_s3.py`, `storage_gcs.py`) build request paths from object keys similarly — not yet swept for this specific class
+- **Instances**:
+  - 2026-07-06 audit: `services/search_meilisearch.py` (~212, 245, 269) interpolate `index`/`doc_id` into the REST URL path (`f'{base}/indexes/{index}/documents/{doc_id}'`) with no validation; `core/search.py` applies none either. Wire-captured: `DELETE .../documents/../../../keys/<x>` is sent as `DELETE /keys/<x>` with the `Authorization: Bearer {MEILISEARCH_API_KEY}` master key attached — reaching Meilisearch's key-management endpoints. Reachability requires the app to pass request-controlled input as `doc_id`/`index` (the documented pattern uses `model.id`); the driver already validates filter-dict keys via `_SAFE_KEY` but not path segments — an inconsistency indicating accidental omission. Severity HIGH (not CRITICAL) because no shipped Nori code wires request input into these calls; it is a framework defense-in-depth gap the app can trip.
+- **Regression tests**: pending — fix tracked in audit 2026-07-06 (see GitHub issues)
+- **Related**: INV-006 (search filter DSL value escaping — same driver, different injection surface)
+
+---
+
 ## Roadmap — L1/L2 entries to graduate to L3
 
 These are the highest-leverage Semgrep/test mechanizations remaining. Sorted by impact × frequency.
@@ -848,3 +1056,4 @@ When you complete an audit pass, append here:
 | 2026-05-26 | iter 3 graduation: INV-002 + INV-001 to L3 full | none | none | Added 3 new Semgrep rules: `nori-sync-time-sleep-in-async`, `nori-sync-requests-import-in-services`, `nori-sync-subprocess-in-async`. `services/*` swept manually for INV-001 partner calls — zero usages. Full repo scan: 8 rules × 71 files = 0 findings. Convergence metric: 0 new classes, 0 regressions — pure mechanization work. |
 | 2026-05-26 | git/release/docs flow review | none | INV-015 (4 new instances: mike fiction in `mkdocs.yml`, VPS+rsync fiction in `docs/deployment.md`, 2 dead anchors in code_quality.md + dependencies.md) | Cleanup PR: pinned `mkdocs-material>=9.7.6` in deploy workflow, added `--strict` to `mkdocs build`, removed unused `extra.version: mike` stanza, rewrote `docs/deployment.md` Documentation site section to describe the actual Firebase + GH Actions pipeline, fixed both dead anchors, added `[Unreleased]` section to CHANGELOG. Convergence metric: 0 new classes, 4 INV-015 regressions caught manually — confirms that L3 for INV-015 remains infeasible (would have needed a docs-vs-real-infra check that no static tool can do). |
 | 2026-06-11 | csrf-double-submit v2.0.0 docs slice | INV-030 (signed cookie + Set-Cookie never cached) | INV-004 (body cap updated to 10 MB, signed-cookie context added), INV-016 (added cross-reference to INV-030 per CSRF ⟂ auth boundary) | CSRF rewrite: stateless signed double-submit cookie replaces session-bound synchronizer token. INV-004 fix recipe updated (10 MB body cap, signed double-submit context). INV-016 "Related" gains INV-030 back-reference. New INV-030 covers both unsigned-cookie and cached-Set-Cookie bypass forms with L3 regression tests. |
+| 2026-07-06 | full-spectrum audit (code + docs + tests), post-v2.1.0 — 6 lenses + 2 adversarial verifiers | INV-031 (ORM structural-invariant TOCTOU), INV-032 (serializer relation-leak), INV-033 (missing global body cap), INV-034 (throttle key granularity), INV-035 (cache backend value-semantics parity), INV-036 (declarative bool coercion), INV-037 (cache-population stampede), INV-038 (collection dict/object field-access footgun), INV-039 (driver URL path-segment injection) | INV-002 (3 new sync-on-loop sites: upload spool, storage_s3 hash, mail render), INV-007 (oauth_github 200-OK-with-error-body KeyError), INV-014 (WebSocket per-message cap buffers before checking — filed as a new instance of this class rather than a new INV), INV-015 (CSP report-only cross-doc gap, 3 phantom loggers, stale dependencies.md, mypy strict-list undercount, plus 6 lower-severity doc mismatches), INV-025 (re-confirmed open — `framework:update` still has no `--checksum`), INV-027 (`core/_patches.py` separate CWD-relative `_APP_DIR`) | Convergence: 9 genuinely new classes (INV-031..039) vs 6 existing INVs regressed/reconfirmed across ~17 individual unswept-site instances — high new-class ratio holds (older classes are mostly mechanized/L3, so the fresh crop skews new). Cross-cutting heuristic surfaced by this audit, worth watching for in future sweeps: "Nori hardens the code path it wrote but the general-purpose entry point one layer up/sideways is unguarded" (uploads capped but not `request.json()`; cache RMW atomic per INV-001 but tree mutation per INV-031 is not; WS size comment claims 1 MiB but the real ceiling is uvicorn's 16 MiB). One false positive caught by adversarial verify and dropped: validation `_check_unique`'s `$1`/`$2` placeholders are fine as-is — SQLite's grammar natively supports `$NNN` markers; the "broken on SQLite" claim from one lens tested raw `sqlite3`, not Tortoise's backend. All fixes tracked in GitHub issues #42–#47 (pending): #42 public-API correctness (INV-032/036/038), #43 availability/DoS (INV-002/033/034/037), #44 tree TOCTOU (INV-031), #45 security hardening (INV-007/025/027/035/039), #46 docs coherence (INV-015), #47 test-quality gaps (INV-004/011/017). |
