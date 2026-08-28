@@ -9,7 +9,7 @@ mypy>=1.20.2
 pip-audit>=2.10.0
 interrogate>=1.7
 filelock>=3.29.0
-hypothesis>=6.150
+hypothesis>=6.155.2
 fakeredis>=2.35.1
 redis<8  # fakeredis Lua bridge returns nested ZRANGE WITHSCORES pairs under redis-py 8 (real Redis is flat); unpin when fakeredis ships redis-8 compat
 lupa>=2.0
