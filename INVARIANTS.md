@@ -486,14 +486,14 @@ Listed in order of historical discovery (oldest first). IDs are stable.
   - L2: per-decorator audit on every change to `core/auth/decorators.py`
   - L3: behavior tests for all 4 session-aware decorators (`login_required`, `require_role`, `require_any_role`, `require_permission`) — completed in PR #28
 - **Coverage by area**:
-  - `core/auth/decorators.py`: covered
+  - `core/auth/decorators.py`: covered; rejected sessions are cleared before both HTML redirects and JSON refusals.
   - `core/auth/session_guard.py`: covered (circuit breaker + TTL)
   - User session storage (Starlette default vs custom): contract documented in `docs/authentication.md`
 - **Instances**:
   - v1.31.0: `load_permissions` `is_active` gate
   - v1.33.0: per-user `session_version` counter
   - v1.33.1: explicit TTL on `session_guard` cache writes
-- **Regression tests**: `test_load_permissions_refuses_inactive_user`, `test_login_required_denies_when_session_version_revoked`, `test_require_role_denies_when_session_version_revoked`, `test_require_any_role_denies_when_session_version_revoked`, `test_require_permission_denies_when_session_revoked`, `test_cache_writes_respect_configurable_ttl`, plus 18 more in `test_session_guard.py`
+- **Regression tests**: `test_load_permissions_refuses_inactive_user`, `test_login_required_denies_when_session_version_revoked`, `test_require_role_denies_when_session_version_revoked`, `test_require_any_role_denies_when_session_version_revoked`, `test_require_permission_denies_when_session_revoked`, `test_cache_writes_respect_configurable_ttl`, `test_revoked_session_is_cleared_before_login` (all four decorators with real cookie round trips), plus 18 more in `test_session_guard.py`
 - **Related**: INV-007 (JWT revocation — same family of "auth must support fast invalidation"), INV-030 (CSRF cookie statelessness — the deliberate CSRF ⟂ auth boundary)
 
 ---

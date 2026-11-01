@@ -40,6 +40,7 @@ def _session_revoked_response(request: Request) -> Response:
     Same shape as the no-user-id path so the user sees a consistent
     "log in again" experience regardless of which check triggered.
     """
+    request.session.clear()
     accept = request.headers.get('accept', '')
     if 'application/json' in accept:
         return JSONResponse({'error': 'Session revoked'}, status_code=401)
